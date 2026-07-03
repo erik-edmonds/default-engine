@@ -1,18 +1,19 @@
-import React, { useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
+import { useRef, useEffect } from 'react'
+import { useGLTF, useFBX, useAnimations } from '@react-three/drei'
 
 export function Avatar(props) {
-  const { nodes, materials } = useGLTF('/models/turquoise.glb')
+  const group = useRef()
+  const model = useFBX('/models/idle.fbx')
+  const { animations } = useFBX('/models/idle.fbx')
+  animations[0].name = 'Idle'
+  const { actions } = useAnimations(animations, group)
+  useEffect(() => {
+    actions['Idle']?.reset().play()
+  }, [])
+
   return (
-    <group {...props} dispose={null}>
-      <mesh
-        castShadow
-        receiveShadow
-        geometry={nodes.mesh_0.geometry}
-        material={nodes.mesh_0.material}
-      />
-    </group>
+    <primitive ref={group} object={model} {...props} dispose={null} />
   )
 }
 
-useGLTF.preload('/models/turquoise.glb')
+useFBX.preload('/models/idle.fbx')
