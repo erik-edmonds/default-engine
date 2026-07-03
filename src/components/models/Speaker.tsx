@@ -4,13 +4,6 @@ import { useGLTF } from '@react-three/drei'
 import { useFrame } from "@react-three/fiber"
 import { Howl } from "howler"
 
-function toggle(song) {
-  if (song.playing()) {
-    song.pause();
-  } else {
-    song.play();
-  }
-}
 
 export function Speaker(props) {
   const [sound, setSound] = useState(false);
@@ -18,18 +11,24 @@ export function Speaker(props) {
   const { nodes, materials } = useGLTF('/models/speaker.glb')
   const ref = useRef()
   const hover = useRef(false)
-  
-  useFrame((state) => {
-    hover.current.scale.x = hover.current.scale.y = hover.current.scale.z = THREE.MathUtils.lerp(hover.current.scale.z, hovered ? 75 : 65, 0.1)
-  })
-  
-  useEffect(() => {
-    const song = new Howl({
+  const song = new Howl({
       src: ['/sound/music.mp3'],
       loop: true,
       volume: 0.5,
     });
-    toggle(song, setSound)
+
+  useFrame((state) => {
+    hover.current.scale.x = hover.current.scale.y = hover.current.scale.z = THREE.MathUtils.lerp(hover.current.scale.z, hovered ? 55 : 45, 0.1)
+  })
+  
+  useEffect(() => {
+    if (!song.playing()) {
+    song.play();
+    setSound(true);
+  } else {
+    song.pause();
+    setSound(false);
+  }
   }, [sound])
       
   return (

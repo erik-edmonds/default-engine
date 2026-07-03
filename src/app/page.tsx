@@ -3,7 +3,7 @@
 import * as THREE from "three"
 import { createContext, useState, useRef, useEffect, Suspense } from "react"
 import { Canvas, useFrame, useThree } from "@react-three/fiber"
-import { Bvh, Environment, OrbitControls, ContactShadows, PerspectiveCamera } from "@react-three/drei"
+import { Bvh, Environment, OrbitControls, ContactShadows, Stars } from "@react-three/drei"
 import { Bloom, EffectComposer} from "@react-three/postprocessing"
 
 // Models
@@ -33,7 +33,7 @@ export default function Page() {
       
       if (now <= 14) setDay("day");
       else if(now <= 18 && now > 14) setDay("evening");
-      else setDay("day");
+      else setDay("night");
     };
 
     // Check immediately on load
@@ -51,10 +51,7 @@ export default function Page() {
         <EffectComposer>
           <Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} />
         </EffectComposer>
-        <mesh scale={500}>
-          <sphereGeometry />
-          <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
-        </mesh>
+        
          {/* <Dragonite scale={2} position={[0, 0, 0]} /> */}
          <Bvh firstHitOnly>
           <group position={[10, 5, -10]}>
@@ -63,6 +60,10 @@ export default function Page() {
          </Bvh>
          {day === "day" ? (
             <>
+              <mesh scale={500}>
+                <sphereGeometry />
+                <meshStandardMaterial color="#86edf8" roughness={0.7} side={THREE.BackSide} />
+              </mesh>
               <Sun scale={4} position={[15, 10, -20]} rotation={[Math.PI / 2, 0, 0]} />
               <ambientLight intensity={1.5} />
               <spotLight position={[0, 20, 2]} angle={0.5} decay={1} distance={90} penumbra={1} intensity={20} color="white" />
@@ -71,6 +72,10 @@ export default function Page() {
             </>
           ): day === "evening" ? (
             <>
+              <mesh scale={500}>
+                <sphereGeometry />
+                <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
+              </mesh>
               <ambientLight intensity={0.3} />
               <spotLight position={[0, 20, 2]} angle={0.5} decay={1} distance={90} penumbra={1} intensity={20} color="white" />
               <spotLight position={[-19, 0, -8]} color="red" angle={0.25} decay={0.75} distance={185} penumbra={-1} intensity={20} />
@@ -78,7 +83,12 @@ export default function Page() {
             </>
           ): (
             <>
+              <mesh scale={500}>
+                <sphereGeometry />
+                <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
+              </mesh>
               <Moon scale={0.15} position={[15, 10, -20]} />
+              <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
               <ambientLight intensity={0.75} color="#0b47a7" />
               <ambientLight intensity={0.05} color="#white" />
               <spotLight position={[-10, 15, 0]} angle={45} decay={1} distance={185} penumbra={1} intensity={15} color="white" />
@@ -91,15 +101,16 @@ export default function Page() {
             </>
           )}
       
-         <Avatar scale={0.013} position={[-1, -1.75, 2]} />
-         <Speaker scale={65} position={[-2.5, -1.75, 5]} rotation={[Math.PI/10, Math.PI / 6, Math.PI/15]} />
+         {/* <Avatar scale={0.013} position={[-1, -1.75, 2]} /> */}
+         <Speaker scale={65} position={[-2.75, -2.25, 2.5]} rotation={[-Math.PI/9, Math.PI / 6, Math.PI/15]} />
          <Island scale={0.02} position={[0, -5, 0]} />
-         <Mountains scale={3} position={[2, -5, -30]} rotation={[0, -Math.PI / 2, 0]} />
-         <Surfboard scale={0.25} position={[1, -1, -2]} rotation={[0, Math.PI / 4, 0]} />
-         <Chair scale={0.25} position={[-2.5, -1.25, 1]} rotation={[0, Math.PI / 4, 0]} />
+         <Mountains scale={3.5} position={[-3, -5, -30]} rotation={[0, -Math.PI / 2, 0]} />
+         <Surfboard scale={0.25} position={[3, -1.25, 2]} rotation={[Math.PI/10, Math.PI / 4, -Math.PI/10]} />
+         <Chair scale={0.05} position={[-3.5, -1.25, 1]} rotation={[0, -Math.PI / 4, 0]} />
          <Desk scale={0.25} position={[0.35, -0.1, 0.25]} rotation={[0, Math.PI / 8, 0]} />
          <Ball scale={0.55} position={[3, -0.3, -12]} rotation={[0, 0, 0]} />
         <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} />
+        <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
       </Canvas>
   )
 }
