@@ -23,6 +23,10 @@ import { Ball } from "@/components/models/Ball"
 import { Mountains } from "@/components/models/Mountains"
 
 import { data } from "@/helpers/store"
+import { ScrambleTitle } from "@/components/ScrambleTitle"
+
+import { Campfire } from "@/components/models/Campfire"
+import { DeadCampfire } from "@/components/models/DeadCampfire"
 
 export default function Page() {
   const [day, setDay] = useState("day");
@@ -32,7 +36,7 @@ export default function Page() {
       const now = new Date().getHours();
       
       if (now <= 14) setDay("day");
-      else if(now <= 18 && now > 14) setDay("evening");
+      else if(now <= 18 && now > 14) setDay("day");
       else setDay("night");
     };
 
@@ -47,6 +51,17 @@ export default function Page() {
 
 
   return (
+    <div className="relative w-screen h-screen overflow-hidden">
+      <div className="pointer-events-none absolute bottom-12 left-12 z-10 font-sans text-white">
+        <h1 className="text-5xl font-black leading-[0.9] tracking-tight drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
+          Erik
+          <br />
+          Edmonds
+        </h1>
+        <div className="mt-4">
+          <ScrambleTitle text="Data Scientist" />
+        </div>
+      </div>
       <Canvas camera={{ position: [0, 0, 15], fov: 45 }} style={{ width: "100vw", height: "100vh" }}>
         <EffectComposer>
           <Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} />
@@ -65,6 +80,7 @@ export default function Page() {
                 <meshStandardMaterial color="#86edf8" roughness={0.7} side={THREE.BackSide} />
               </mesh>
               <Sun scale={4} position={[15, 10, -20]} rotation={[Math.PI / 2, 0, 0]} />
+              <DeadCampfire scale={1.5} position={[1.75, -2, 2]}/>
               <ambientLight intensity={1.5} />
               <spotLight position={[0, 20, 2]} angle={0.5} decay={1} distance={90} penumbra={1} intensity={20} color="white" />
               <spotLight position={[-19, 0, -8]} color="white" angle={0.25} decay={0.75} distance={185} penumbra={-1} intensity={20} />
@@ -77,6 +93,7 @@ export default function Page() {
                 <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
               </mesh>
               <ambientLight intensity={0.3} />
+              <Campfire scale={1.5} position={[1.75, -2, 2]} />
               <spotLight position={[0, 20, 2]} angle={0.5} decay={1} distance={90} penumbra={1} intensity={20} color="white" />
               <spotLight position={[-19, 0, -8]} color="red" angle={0.25} decay={0.75} distance={185} penumbra={-1} intensity={20} />
               <spotLight position={[19, 0, -8]} color="#ff7d1c" angle={0.25} decay={0.75} distance={185} penumbra={-1} intensity={20} />
@@ -87,6 +104,7 @@ export default function Page() {
                 <sphereGeometry />
                 <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
               </mesh>
+              <Campfire scale={1.5} position={[1.75, -2, 2]} />
               <Moon scale={0.15} position={[15, 10, -20]} />
               <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
               <ambientLight intensity={0.75} color="#0b47a7" />
@@ -100,7 +118,8 @@ export default function Page() {
               <spotLight position={[19, 0, -8]} color="#022154" angle={0.25} decay={0.75} distance={185} penumbra={-1} intensity={50} />
             </>
           )}
-      
+
+        {/* <Scuba scale={0.5} position={[0, -1.5, 0]} /> */}
          {/* <Avatar scale={0.013} position={[-1, -1.75, 2]} /> */}
          <Speaker scale={65} position={[-2.75, -2.25, 2.5]} rotation={[-Math.PI/9, Math.PI / 6, Math.PI/15]} />
          <Island scale={0.02} position={[0, -5, 0]} />
@@ -110,7 +129,8 @@ export default function Page() {
          <Desk scale={0.25} position={[0.35, -0.1, 0.25]} rotation={[0, Math.PI / 8, 0]} />
          <Ball scale={0.55} position={[3, -0.3, -12]} rotation={[0, 0, 0]} />
         <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} />
-        <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
+        <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} /> 
       </Canvas>
+    </div>
   )
 }
