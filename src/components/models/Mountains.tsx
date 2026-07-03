@@ -28,12 +28,6 @@ export function Mountains(props) {
           <mesh
             castShadow
             receiveShadow
-            geometry={nodes.Plane_4.geometry}
-            material={materials['Material.022']}
-          />
-          <mesh
-            castShadow
-            receiveShadow
             geometry={nodes.Plane_5.geometry}
             material={materials['Material.004']}
           />

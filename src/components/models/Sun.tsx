@@ -10,7 +10,7 @@ export function Sun(props) {
         receiveShadow
         geometry={nodes.Object_4.geometry}
         material={materials.lambert2SG}
-        rotation={[Math.PI / 2, 0, 0]}>\
+        rotation={[Math.PI / 2, 0, 0]}>
       </mesh>
     </group>
   )

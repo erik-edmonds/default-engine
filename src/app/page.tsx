@@ -25,9 +25,6 @@ import { Mountains } from "@/components/models/Mountains"
 import { data } from "@/helpers/store"
 
 export default function Page() {
-  const controls = useRef()
-  const speaker = useRef()
-
   const [day, setDay] = useState("day");
 
   useEffect(() => {
@@ -47,6 +44,7 @@ export default function Page() {
 
     return () => clearInterval(intervalId);
   }, []);
+
 
   return (
       <Canvas camera={{ position: [0, 0, 15], fov: 45 }} style={{ width: "100vw", height: "100vh" }}>
@@ -94,7 +92,7 @@ export default function Page() {
           )}
       
          <Avatar scale={0.013} position={[-1, -1.75, 2]} />
-         <Speaker ref={speaker} scale={50} position={[-2, -1.75, 0]} rotation={[0, Math.PI / 4, 0]} />
+         <Speaker scale={65} position={[-2.5, -1.75, 5]} rotation={[Math.PI/10, Math.PI / 6, Math.PI/15]} />
          <Island scale={0.02} position={[0, -5, 0]} />
          <Mountains scale={3} position={[2, -5, -30]} rotation={[0, -Math.PI / 2, 0]} />
          <Surfboard scale={0.25} position={[1, -1, -2]} rotation={[0, Math.PI / 4, 0]} />
