@@ -26,9 +26,15 @@ const VIEWS = {
 };
 
 export default function Page() {
-  const [day, setDay] = useState("day");
+  const [day, setDay] = useState();
   const ActiveComponent = VIEWS[day];
 
+  const time = () => {
+    const now = new Date().getHours();
+    if (now <= 14) return "day";
+    else if(now <= 18 && now > 14) return "evening";
+    else return "night"
+  }
 
   useEffect(() => {
     const checkTime = () => {
@@ -36,7 +42,7 @@ export default function Page() {
       
       if (now <= 14) setDay("day");
       else if(now <= 18 && now > 14) setDay("evening");
-      else setDay("day");
+      else setDay("night");
     };
 
     checkTime();
@@ -49,13 +55,14 @@ export default function Page() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
-      <div className="absolute top-10 right-1/8 z-10">
+      <div className="absolute top-10 right-1/10 z-10">
         <Flex gap="small" align="flex-end" vertical>
           <Segmented
             size="large"
             style={{ 
               backgroundColor: 'rgba(255, 255, 255, 0.50)', 
             }}
+            defaultValue={time}
             shape="round"
             options={[
               { value: "day", icon: <SunOutlined /> },
@@ -88,14 +95,6 @@ export default function Page() {
         </EffectComposer>
         <Scene />
         <ActiveComponent />
-        {/* day === "day" ? (
-            <Day />
-          ): day === "evening" ? (
-            <Evening />
-          ): (
-            <Night />
-          )
-        */}
         <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} />
       </Canvas>
     </div>
