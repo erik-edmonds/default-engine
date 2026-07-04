@@ -12,6 +12,8 @@ import { Desk } from "@/components/models/Desk"
 import { Ball } from "@/components/models/Ball"
 import { Mountains } from "@/components/models/Mountains"
 
+import { Ultraball } from "@/components/models/Ultraball"
+
 import { data } from "@/helpers/store"
 
 function CameraTracker() {
@@ -39,7 +41,7 @@ export function Scene() {
     return (
         <>
             <Bvh firstHitOnly>
-                <group position={[15, 5, -10]}>
+                <group position={[10, 5, -10]}>
                     <Clouds data={data} range={15} />
                 </group>
             </Bvh>
@@ -52,7 +54,9 @@ export function Scene() {
             <Surfboard scale={0.25} position={[3, -1.25, 2]} rotation={[Math.PI/10, Math.PI / 4, -Math.PI/10]} />
             <Chair scale={0.05} position={[-3.5, -1.25, 1]} rotation={[0, -Math.PI / 4, 0]} />
             <Desk scale={0.25} position={[0.35, -0.1, 0.25]} rotation={[0, Math.PI / 10, 0]} />
-            <Ball scale={0.55} position={[3, -0.3, -12]} rotation={[0, 0, 0]} />
+            <Ball scale={0.55} position={[3, -0.3, -12]} />
+            <Ultraball scale={0.25} position={[-3,-1.5,0.2]} rotation={[0,Math.PI/10,Math.PI/10]}/>
+            
         </>
     )
 }

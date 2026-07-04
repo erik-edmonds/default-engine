@@ -3,6 +3,7 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import { easing } from 'maath'
+import { Charizard } from "@/components/models/Charizard"
 
 export function Desk(props) {
     const { nodes, materials } = useGLTF('/models/desk.glb')
@@ -18,6 +19,7 @@ export function Desk(props) {
 })
   return (
     <group ref={desk} {...props} dispose={null}>
+      <Charizard scale={1} position={[-2,-1,2]} rotation={[0,-Math.PI/4,0]}/>
       <group position={[-0.002, 0, -1.731]} rotation={[-Math.PI / 2, 0, 1.768]}>
         <group rotation={[Math.PI / 2, 0, 0]}>
           <mesh
