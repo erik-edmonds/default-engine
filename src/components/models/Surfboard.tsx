@@ -14,7 +14,7 @@ export function Surfboard(props) {
           position={[0, 0, 0.089]}
           rotation={[0, 0, Math.PI / 2]}
           scale={[1.376, 0.126, 4.396]}> 
-          <meshStandardMaterial color="red" />
+          <meshStandardMaterial color="#ff7d1c" />
         </mesh>
       </group>
     </group>

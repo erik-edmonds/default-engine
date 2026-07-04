@@ -19,13 +19,20 @@ export function Desk(props) {
   return (
     <group ref={desk} {...props} dispose={null}>
       <group position={[-0.002, 0, -1.731]} rotation={[-Math.PI / 2, 0, 1.768]}>
-        <mesh
-          castShadow
-          receiveShadow
-          geometry={nodes.Object_4.geometry}
-          material={materials.Material}
-          rotation={[Math.PI / 2, 0, 0]}
-        />
+        <group rotation={[Math.PI / 2, 0, 0]}>
+          <mesh
+            castShadow
+            receiveShadow
+            geometry={nodes.Object_4.geometry}
+            material={materials['Material.001']}
+          />
+          <mesh
+            castShadow
+            receiveShadow
+            geometry={nodes.Object_4001.geometry}>
+            <meshStandardMaterial color={"white"} emissive={"white"} emissiveIntensity={1}  />
+          </mesh>
+        </group>
       </group>
     </group>
   )

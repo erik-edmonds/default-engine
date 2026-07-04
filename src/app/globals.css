@@ -24,3 +24,7 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.ant-segmented-item:hover {
+  background-color: #ff7d1c !important;
+}
