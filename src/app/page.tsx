@@ -55,7 +55,7 @@ export default function Page() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
-      <div className="absolute top-10 right-1/10 z-10">
+      <div className="absolute top-10 right-1/12 z-10">
         <Flex gap="small" align="flex-end" vertical>
           <Segmented
             size="large"
@@ -74,9 +74,17 @@ export default function Page() {
       </div>
       <div className="pointer-events-none absolute top-3/5 left-40 z-10 font-sans text-white">
         <div className="relative">
-          <h1 className="text-7xl font-extralight text-black leading-[0.9] tracking-tight">
-            Erik<br />Edmonds
-          </h1>
+          { day === "night" ? 
+            (
+              <h1 className="text-7xl font-bold text-[#c3c2c2] leading-[0.9] tracking-tight">
+                Erik<br />Edmonds
+              </h1>
+            ) : (
+              <h1 className="text-7xl font-bold text-black leading-[0.9] tracking-tight">
+              Erik<br />Edmonds
+            </h1>
+            )
+          }
             <div className="relative mt-0 grid justify-items-end">
               <ScrambleTitle text="Data Scientist" />
             </div>
