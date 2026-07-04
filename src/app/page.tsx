@@ -26,31 +26,23 @@ const VIEWS = {
 };
 
 export default function Page() {
-  const [day, setDay] = useState();
-  const ActiveComponent = VIEWS[day];
-
   const time = () => {
     const now = new Date().getHours();
-    if (now <= 14 && now > 6) return "day";
-    else if(now <= 18 && now > 14) return "evening";
-    else return "night"
+    if (now <= 17 && now > 6) {
+      return "day"
+    }
+    else if(now <= 18 && now > 14) {
+      return "evening"
+    }
+    else {
+      return "night"
+    }
   }
 
-  useEffect(() => {
-    const checkTime = () => {
-      const now = new Date().getHours();
-      
-      if (now <= 14 && now > 6) setDay("day");
-      else if(now <= 18 && now > 14) setDay("evening");
-      else setDay("night");
-    };
+  const [day, setDay] = useState(time);
+  const ActiveComponent = VIEWS[day];
 
-    checkTime();
-
-    const intervalId = setInterval(checkTime, 60000);
-
-    return () => clearInterval(intervalId);
-  }, []);
+  
 
 
   return (
@@ -60,7 +52,7 @@ export default function Page() {
           <Segmented
             size="medium"
             style={{ 
-              backgroundColor: 'rgba(147, 143, 143, 0.75)', 
+              backgroundColor: 'rgba(147, 143, 143, 0.5)', 
             }}
             defaultValue={time}
             shape="round"
