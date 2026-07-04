@@ -76,7 +76,7 @@ export default function Page() {
         <div className="relative">
           { day === "night" ? 
             (
-              <h1 className="text-7xl font-bold text-[#c3c2c2] leading-[0.9] tracking-tight">
+              <h1 className="text-7xl font-bold text-white leading-[0.9] tracking-tight">
                 Erik<br />Edmonds
               </h1>
             ) : (
