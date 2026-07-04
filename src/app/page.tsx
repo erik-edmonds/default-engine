@@ -4,7 +4,7 @@ import {  useState, useRef, useEffect, Suspense } from "react"
 import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import {  OrbitControls, ContactShadows, Helper } from "@react-three/drei"
 import { Bloom, EffectComposer} from "@react-three/postprocessing"
-import { MoonOutlined, SunOutlined, StarOutlined } from "@ant-design/icons";
+import { MoonOutlined, SunOutlined, CloudOutlined } from "@ant-design/icons";
 import { Flex, Segmented, ConfigProvider } from "antd";
 
 // Models
@@ -55,19 +55,19 @@ export default function Page() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
-      <div className="absolute top-10 right-1/12 z-10">
+      <div className="absolute top-10 right-1/2 z-10">
         <Flex gap="small" align="flex-end" vertical>
           <Segmented
-            size="large"
+            size="medium"
             style={{ 
-              backgroundColor: 'rgba(255, 255, 255, 0.50)', 
+              backgroundColor: 'rgba(147, 143, 143, 0.75)', 
             }}
             defaultValue={time}
             shape="round"
             options={[
               { value: "day", icon: <SunOutlined /> },
-              { value: "evening", icon: <MoonOutlined />},
-              { value: "night", icon: <StarOutlined /> },
+              { value: "evening", icon: <CloudOutlined /> },
+              { value: "night", icon: <MoonOutlined />},
             ]}
             onChange={(event) => setDay(event)}/>
         </Flex>
@@ -77,6 +77,11 @@ export default function Page() {
           { day === "night" ? 
             (
               <h1 className="text-7xl font-bold text-white leading-[0.9] tracking-tight">
+                Erik<br />Edmonds
+              </h1>
+            ) : day === "evening" ? 
+            (
+              <h1 className="text-7xl font-bold text-[#242424] leading-[0.9] tracking-tight">
                 Erik<br />Edmonds
               </h1>
             ) : (
@@ -101,7 +106,6 @@ export default function Page() {
         </EffectComposer>
         <Scene />
         <ActiveComponent />
-        <OrbitControls enablePan={true} enableRotate={true} enableDamping={true}/>
         <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} />
       </Canvas>
     </div>
