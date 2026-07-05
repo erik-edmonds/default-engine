@@ -1,18 +1,17 @@
-import React, { useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 
 export function Scuba(props) {
-  const { nodes, materials } = useGLTF('/models/scuba.glb')
+  const { nodes, materials } = useGLTF('/models/Avatars/scuba.glb')
   return (
     <group {...props} dispose={null}>
-      <mesh
-        castShadow
-        receiveShadow
-        geometry={nodes.mesh_0.geometry}
-        material={nodes.mesh_0.material}
+      <skinnedMesh
+        geometry={nodes.Mesh_0.geometry}
+        material={materials['Material.001']}
+        skeleton={nodes.Mesh_0.skeleton}
       />
+      <primitive object={nodes.root} />
     </group>
   )
 }
 
-useGLTF.preload('/models/scuba.glb')
+useGLTF.preload('/models/Avatars/scuba.glb')

@@ -4,7 +4,7 @@ import { Campfire } from "@/components/models/Campfire"
 export function Evening() {
     return (
         <>
-            <mesh scale={500}>
+            <mesh scale={800}>
             <sphereGeometry />
             <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
             </mesh>

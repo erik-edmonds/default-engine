@@ -6,7 +6,7 @@ import * as THREE from "three"
 export function Night() {
     return (
         <>
-              <mesh scale={500}>
+              <mesh scale={800}>
                 <sphereGeometry />
                 <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
               </mesh>

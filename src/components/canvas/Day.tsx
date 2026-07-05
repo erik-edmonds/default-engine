@@ -5,7 +5,7 @@ import { DeadCampfire } from "@/components/models/DeadCampfire"
 export function Day() {
     return (
         <>
-            <mesh scale={500}>
+            <mesh scale={800}>
             <sphereGeometry />
             <meshStandardMaterial color="#86edf8" roughness={0.7} side={THREE.BackSide} />
             </mesh>

@@ -9,12 +9,11 @@ export function Speaker(props) {
   const [sound, setSound] = useState(false);
   const [hovered, setHover] = useState(false)
   const { nodes, materials } = useGLTF('/models/speaker.glb')
-  const ref = useRef()
   const hover = useRef(false)
   const song = new Howl({
       src: ['/sound/music.mp3'],
-      loop: true,
       volume: 0.5,
+      autoplay: false
     });
 
   useFrame((state) => {

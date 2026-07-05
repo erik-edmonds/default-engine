@@ -16,4 +16,4 @@ export function Sun(props) {
   )
 }
 
-useGLTF.preload('/sun.glb')
+useGLTF.preload('/models/sun.glb')
