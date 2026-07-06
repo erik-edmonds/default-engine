@@ -11,7 +11,7 @@ export function Night() {
                 <meshStandardMaterial color="#27c6e5" roughness={0.7} side={THREE.BackSide} />
               </mesh>
               <Campfire scale={1.5} position={[1.75, -2, 2]} />
-              <Moon scale={0.15} position={[15, 10, -20]} />
+              <Moon scale={0.15} position={[20, 10, -20]} />
               <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
               <ambientLight intensity={0.75} color="#0b47a7" />
               <ambientLight intensity={0.05} color="#white" />

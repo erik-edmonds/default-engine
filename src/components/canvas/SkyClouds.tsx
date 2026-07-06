@@ -12,9 +12,9 @@ const SKY_ANCHOR_Z = 6
 const CLOUD_SPACING = 100
 const CLOUD_COUNT = 5
 
-// Roughly where the camera sits along X once the sky journey starts, matching
-// CameraController's AVATAR_POSITION.x.
-const CAMERA_X = 7
+// Pushed well clear of the avatar's straight flight path (x=-1.3) since they
+// were previously close enough to clip it.
+const CAMERA_X = 20
 // Assumed viewing distance (units of Z) used only to estimate the world-space
 // X offset for the 10%-from-edge placement below — tune by eye once visible.
 const CLOUD_APPROACH_DISTANCE = 50

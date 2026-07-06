@@ -1,6 +1,6 @@
 "use client"
 
-import { forwardRef, useImperativeHandle, useRef } from "react"
+import { forwardRef, useImperativeHandle } from "react"
 import * as THREE from "three"
 import { useThree } from "@react-three/fiber"
 import gsap from "gsap"
@@ -26,7 +26,6 @@ export interface CameraControllerHandle {
 
 export const CameraController = forwardRef<CameraControllerHandle>((_props, ref) => {
   const { camera } = useThree()
-  const skyBaseZ = useRef(0)
 
   useImperativeHandle(ref, () => ({
     // Move closer, straight in front of the avatar, while lerping rotation
@@ -53,21 +52,19 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     flyUp: () =>
       new Promise<void>((resolve) => {
         gsap.to(camera.position, {
+          x: "+=2",
           y: "+=100",
+          z: "+=2",
           duration: 5,
           ease: "power2.inOut",
           onComplete: () => resolve(),
         })
       }),
-    // Captures the current depth as the anchor for the scroll-driven sky
-    // flight, so setSkyOffset can move relative to wherever flyUp() landed.
-    beginSkyJourney: () => {
-      skyBaseZ.current = camera.position.z
-    },
-    // offsetZ is a positive magnitude; scroll moves the camera forward (-Z).
-    setSkyOffset: (offsetZ: number) => {
-      camera.position.z = skyBaseZ.current - offsetZ
-    },
+    // The camera holds its post-flyUp position for the whole choreographed
+    // sequence (see AvatarController) — only the avatar moves, so its
+    // left/right motion and turns read clearly against a steady frame.
+    beginSkyJourney: () => {},
+    setSkyOffset: () => {},
   }))
 
   return null

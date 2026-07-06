@@ -23,6 +23,15 @@ const VIEWS = {
   night: Night,
 };
 
+// Placeholder copy synced to AvatarController's KEYFRAMES — swap for real
+// content later. Shows whichever cue's threshold was most recently passed,
+// anchored opposite the avatar's current side (or centered for the closing CTA).
+const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
+  { threshold: 75, text: "Digital Nomad", align: "left" }, // avatar is on the right
+  { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" }, // avatar is on the left
+  { threshold: 375, text: "Let's Connect — Contact Me", align: "center" }, // closing CTA
+];
+
 export default function Page() {
   const time = () => {
     const now = new Date().getHours();
@@ -39,41 +48,65 @@ export default function Page() {
 
   const [day, setDay] = useState(time);
   const [motion, setMotion] = useState(false);
+  const [skyText, setSkyText] = useState("");
+  const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
   const ActiveComponent = VIEWS[day];
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
-  const isUpSequenceRunning = useRef(false);
+  const isSequenceRunning = useRef(false);
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
+  const skyTextRef = useRef("");
 
   const handleUpClick = async () => {
-    if (isUpSequenceRunning.current) return
-    isUpSequenceRunning.current = true
+    if (isSequenceRunning.current) return
+    isSequenceRunning.current = true
 
     await cameraControllerRef.current?.zoomIn()
-    await avatarControllerRef.current?.spinAndTransform()
+    await avatarControllerRef.current?.spinAndTransform("dragonite")
     await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()])
 
     cameraControllerRef.current?.beginSkyJourney()
     avatarControllerRef.current?.beginSkyJourney()
     isInSkyJourney.current = true
 
-    isUpSequenceRunning.current = false
+    isSequenceRunning.current = false
   };
 
-  // Once in the sky, scrolling down flies the camera+avatar forward (-Z)
-  // past the placeholder clouds (in lockstep, so the avatar stays centered
-  // while the clouds appear to approach) — 5 clouds, 100 units apart, plus
-  // a little buffer past the last one. Placeholder distance/sensitivity, tune later.
+  // No camera movement at all — the avatar transforms in place, slides to the
+  // island's water edge, then hops/dives below the surface and disappears.
+  const handleDownClick = async () => {
+    if (isSequenceRunning.current) return
+    isSequenceRunning.current = true
+
+    await avatarControllerRef.current?.spinAndTransform("scuba")
+    await avatarControllerRef.current?.moveToIslandEdge()
+    await avatarControllerRef.current?.diveUnderwater()
+
+    isSequenceRunning.current = false
+  };
+
+  // Once in the sky, scrolling plays out the choreographed sequence in
+  // AvatarController.KEYFRAMES (the camera holds still — see CameraController).
+  // Matches KEYFRAMES' last stop at 450. Sensitivity reduced to 1/3 of the
+  // original (0.4) so the whole sequence takes 3x more scrolling to play out.
   useEffect(() => {
-    const SKY_JOURNEY_DISTANCE = 550
-    const SCROLL_SENSITIVITY = 0.4
+    const SKY_JOURNEY_DISTANCE = 450
+    const SCROLL_SENSITIVITY = 0.4 / 3
 
     const handleWheel = (event: WheelEvent) => {
       if (!isInSkyJourney.current) return
       skyOffset.current = Math.min(Math.max(skyOffset.current + event.deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE)
       cameraControllerRef.current?.setSkyOffset(skyOffset.current)
       avatarControllerRef.current?.setSkyOffset(skyOffset.current)
+
+      const activeCue = [...SKY_TEXT_CUES].reverse().find((cue) => skyOffset.current >= cue.threshold)
+      const nextText = activeCue?.text ?? ""
+      if (nextText !== skyTextRef.current) {
+        skyTextRef.current = nextText
+        setSkyText(nextText)
+        setSkyTextAlign(activeCue?.align ?? "center")
+      }
     }
 
     window.addEventListener("wheel", handleWheel, { passive: true })
@@ -127,6 +160,14 @@ export default function Page() {
           </div>
         </div>
       </div>
+      <div
+        className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${
+          skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"
+        }`}
+        style={{ opacity: skyText ? 1 : 0 }}
+      >
+        <span className="max-w-xl">{skyText}</span>
+      </div>
       <Canvas shadows camera={
         { 
           position: [-4.928243225199323, 2.4125281238269634, 12.519669594882314], 
@@ -158,8 +199,8 @@ export default function Page() {
         <button
           type="button"
           aria-label="Pan camera down"
-          disabled
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30 disabled:opacity-30"
+          onClick={handleDownClick}
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30"
         >
           <DownOutlined />
         </button>
