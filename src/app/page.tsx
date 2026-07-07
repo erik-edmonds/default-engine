@@ -1,8 +1,8 @@
 "use client"
 
 import {  useState, useRef, useEffect, Suspense, ViewTransition } from "react"
-import { Canvas, useFrame, useThree } from "@react-three/fiber"
-import {  OrbitControls, ContactShadows, Helper } from "@react-three/drei"
+import { Canvas } from "@react-three/fiber"
+import {  OrbitControls, ContactShadows } from "@react-three/drei"
 import { Bloom, EffectComposer} from "@react-three/postprocessing"
 import { MoonOutlined, SunOutlined, CloudOutlined, UpOutlined, DownOutlined } from "@ant-design/icons";
 import { Flex, Segmented } from "antd";
@@ -13,7 +13,6 @@ import { Night } from "@/components/canvas/Night"
 import { Scene } from "@/components/canvas/Scene"
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController"
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController"
-import { SkyClouds } from "@/components/canvas/SkyClouds"
 
 import { ScrambleTitle } from "@/components/ScrambleTitle"
 
@@ -23,13 +22,16 @@ const VIEWS = {
   night: Night,
 };
 
-// Placeholder copy synced to AvatarController's KEYFRAMES — swap for real
-// content later. Shows whichever cue's threshold was most recently passed,
-// anchored opposite the avatar's current side (or centered for the closing CTA).
+const COLORS = {
+  day: "white",
+  evening: "[#242424]",
+  night: "black"
+};
+
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
-  { threshold: 75, text: "Digital Nomad", align: "left" }, // avatar is on the right
-  { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" }, // avatar is on the left
-  { threshold: 375, text: "Let's Connect — Contact Me", align: "center" }, // closing CTA
+  { threshold: 75, text: "Digital Nomad", align: "left" },
+  { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" },
+  { threshold: 375, text: "Let's Connect — Contact Me", align: "center" }, 
 ];
 
 export default function Page() {
@@ -47,6 +49,7 @@ export default function Page() {
   }
 
   const [day, setDay] = useState(time);
+  const [text, setText] = useState(time);
   const [motion, setMotion] = useState(false);
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
@@ -73,8 +76,6 @@ export default function Page() {
     isSequenceRunning.current = false
   };
 
-  // No camera movement at all — the avatar transforms in place, slides to the
-  // island's water edge, then hops/dives below the surface and disappears.
   const handleDownClick = async () => {
     if (isSequenceRunning.current) return
     isSequenceRunning.current = true
@@ -86,10 +87,6 @@ export default function Page() {
     isSequenceRunning.current = false
   };
 
-  // Once in the sky, scrolling plays out the choreographed sequence in
-  // AvatarController.KEYFRAMES (the camera holds still — see CameraController).
-  // Matches KEYFRAMES' last stop at 450. Sensitivity reduced to 1/3 of the
-  // original (0.4) so the whole sequence takes 3x more scrolling to play out.
   useEffect(() => {
     const SKY_JOURNEY_DISTANCE = 450
     const SCROLL_SENSITIVITY = 0.4 / 3
@@ -113,7 +110,9 @@ export default function Page() {
     return () => window.removeEventListener("wheel", handleWheel)
   }, []);
 
-  
+  useEffect(() => {
+
+  }, )
 
 
   return (
@@ -132,29 +131,17 @@ export default function Page() {
               { value: "evening", icon: <CloudOutlined /> },
               { value: "night", icon: <MoonOutlined />},
             ]}
-            onChange={(event) => setDay(event)}/>
+            onChange={(event) => {
+              setDay(event)
+              setText(event)
+            }}/>
         </Flex>
       </div>
       <div className={` ${motion ? "invisible" : "visible"} transition-all transition-discrete duration-300 pointer-events-none absolute top-3/5 left-40 z-10 font-sans text-white`}>
         <div className="relative">
-          <ViewTransition>
-          { day === "night" ? 
-            (
-              <h1 className="text-7xl font-bold text-white leading-[0.9] tracking-tight">
-                Erik<br />Edmonds
-              </h1>
-            ) : day === "evening" ? 
-            (
-              <h1 className="text-7xl font-bold text-[#242424] leading-[0.9] tracking-tight">
-                Erik<br />Edmonds
-              </h1>
-            ) : (
-              <h1 className="text-7xl font-bold text-black leading-[0.9] tracking-tight">
-              Erik<br />Edmonds
-            </h1>
-            )
-          }
-          </ViewTransition>
+          <h1 className={`text-7xl font-bold text-${COLORS[text]} leading-[0.9] tracking-tight`}>
+            Erik<br />Edmonds
+          </h1> 
           <div className="relative mt-0 grid justify-items-end">
             <ScrambleTitle text="Data Scientist" />
           </div>
@@ -178,8 +165,9 @@ export default function Page() {
           <Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} />
         </EffectComposer>
         <Scene />
-          <ActiveComponent />
-        <SkyClouds />
+        <ActiveComponent />
+        <spotLight position={[-0.3, 110, 5.5]} angle={0.5} decay={0.9} distance={90} penumbra={0.8} intensity={20} color="white"/>
+        <spotLight position={[3, 1, -3]} angle={0.5} decay={1} distance={10} penumbra={0.9} intensity={20} color="white"/>
         <CameraController ref={cameraControllerRef} />
         <AvatarController ref={avatarControllerRef} />
         <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} />
@@ -199,9 +187,11 @@ export default function Page() {
         <button
           type="button"
           aria-label="Pan camera down"
-          onClick={handleDownClick}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30"
-        >
+          onClick={() => {
+            setMotion(true)
+            handleDownClick()
+          }}
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30">
           <DownOutlined />
         </button>
       </div>

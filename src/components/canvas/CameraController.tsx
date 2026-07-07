@@ -52,9 +52,8 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     flyUp: () =>
       new Promise<void>((resolve) => {
         gsap.to(camera.position, {
-          x: "+=2",
+          x: "+=1",
           y: "+=100",
-          z: "+=2",
           duration: 5,
           ease: "power2.inOut",
           onComplete: () => resolve(),

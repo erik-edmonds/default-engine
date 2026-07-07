@@ -17,17 +17,32 @@ const BASE_ROTATION: [number, number, number] = [0, 0, 0]
 // camera and avatar face each other at rest; π/2 = facing +X = facing screen-
 // right; π = facing -Z = facing away from camera). yOffset is added on top of
 // wherever flyUp() left the avatar (captured in beginSkyJourney) — it's 0
-// until the final stop, where the avatar rises toward the top-right corner as
-// it turns away. Z stays fixed throughout — a staged performance, not travel.
+// until the final stop. The final stop's x/yOffset are pulled back from an
+// earlier corner-exit design (they used to send the avatar off-screen
+// top-right) — now that Z_STOPS below brings the avatar closer to the camera
+// for this same stretch, it needs to stay within the (shrinking, as it gets
+// closer) frustum instead of exiting via x, so it ends up rising and turning
+// away modestly while staying on screen.
 const KEYFRAMES: { at: number; x: number; yOffset: number; rotY: number }[] = [
   { at: 0, x: BASE_POSITION[0], yOffset: 0, rotY: 0 }, // original position, facing camera
-  { at: 150, x: 1.7, yOffset: 0, rotY: 0 }, // right side of screen, still facing camera
+  // rotY is already a quarter of the way to facing screen-right here (not
+  // held at 0) so the turn starts the instant the avatar begins moving
+  // right, at the same constant rate all the way through KF2.
+  { at: 150, x: 1.53, yOffset: 0, rotY: Math.PI / 4 }, // right side of screen, turning right
   // Smaller offset than the right-side stop above — rotated to a narrow side
   // profile here (no wide wingspan giving visual margin like the front-facing
   // pose), so the same offset would push it almost entirely off-screen.
-  { at: 300, x: -2.3, yOffset: 0, rotY: Math.PI / 2 }, // left side of screen, facing screen-right
-  { at: 450, x: 6.7, yOffset: 3.5, rotY: Math.PI }, // rises toward top-right (not all the way), exits off-screen, facing away
+  { at: 300, x: -2.07, yOffset: 0, rotY: Math.PI / 2 }, // left side of screen, facing screen-right
+  { at: 450, x: 4, yOffset: 3, rotY: Math.PI }, // rises while turning fully away, staying visible for most of the approach but clearing the frustum entirely by the very end
 ]
+
+// Ease-in-out (smoothstep) — zero velocity at both ends of a segment, so
+// consecutive segments meet without a sudden change in speed/direction at the
+// keyframe in between. Plain linear segments were meeting at sharp angles,
+// reading as an abrupt "jerk" at every turn.
+function smoothstep(t: number) {
+  return t * t * (3 - 2 * t)
+}
 
 function getChoreographedPose(offset: number) {
   const clamped = Math.min(Math.max(offset, 0), KEYFRAMES[KEYFRAMES.length - 1].at)
@@ -36,18 +51,45 @@ function getChoreographedPose(offset: number) {
     const b = KEYFRAMES[i + 1]
     if (clamped <= b.at) {
       const t = (clamped - a.at) / (b.at - a.at)
+      const st = smoothstep(t)
       // Ease-in (cubic) for the rise only — subtle at first, quicker toward
-      // the end — while x/rotY keep a steady, linear pace.
+      // the end — while x/rotY get the smoothstep ease-in-out above.
       const yT = t * t * t
       return {
-        x: a.x + (b.x - a.x) * t,
+        x: a.x + (b.x - a.x) * st,
         yOffset: a.yOffset + (b.yOffset - a.yOffset) * yT,
-        rotY: a.rotY + (b.rotY - a.rotY) * t,
+        rotY: a.rotY + (b.rotY - a.rotY) * st,
       }
     }
   }
   const last = KEYFRAMES[KEYFRAMES.length - 1]
   return { x: last.x, yOffset: last.yOffset, rotY: last.rotY }
+}
+
+// Depth (z) is choreographed on its own timeline, independent of the KEYFRAMES
+// above — its pacing doesn't line up with the turn/rise breakpoints. The
+// avatar recedes as soon as scrolling starts, holds that distance through the
+// first turn, then — once the "Pokémon Trainer at Heart" text appears (offset
+// 225, matching SKY_TEXT_CUES in page.tsx) — reverses and moves closer for
+// the rest of the journey, ending nearer than the resting baseline.
+const Z_STOPS: { at: number; z: number }[] = [
+  { at: 0, z: BASE_POSITION[2] },
+  { at: 150, z: BASE_POSITION[2] - 1.5 },
+  { at: 225, z: BASE_POSITION[2] - 1.5 },
+  { at: 450, z: BASE_POSITION[2] + 1 },
+]
+
+function getSkyZ(offset: number) {
+  const clamped = Math.min(Math.max(offset, 0), Z_STOPS[Z_STOPS.length - 1].at)
+  for (let i = 0; i < Z_STOPS.length - 1; i++) {
+    const a = Z_STOPS[i]
+    const b = Z_STOPS[i + 1]
+    if (clamped <= b.at) {
+      const t = (clamped - a.at) / (b.at - a.at)
+      return a.z + (b.z - a.z) * smoothstep(t)
+    }
+  }
+  return Z_STOPS[Z_STOPS.length - 1].z
 }
 
 export interface AvatarControllerHandle {
@@ -105,16 +147,18 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
         })
       }),
     // Captures the height flyUp() landed at, so KEYFRAMES' yOffset can rise
-    // relative to it (z stays fixed — no equivalent capture needed there).
+    // relative to it (z is absolute world-space, no capture needed there).
     beginSkyJourney: () => {
       if (group.current) skyBaseY.current = group.current.position.y
     },
-    // Moves through the KEYFRAMES sequence (x + y + facing) as offset increases.
+    // Moves through the KEYFRAMES sequence (x + y + facing) plus the separate
+    // Z_STOPS depth timeline as offset increases.
     setSkyOffset: (offset: number) => {
       if (!group.current) return
       const pose = getChoreographedPose(offset)
       group.current.position.x = pose.x
       group.current.position.y = skyBaseY.current + pose.yOffset
+      group.current.position.z = getSkyZ(offset)
       group.current.rotation.y = pose.rotY
     },
     // Slides left only halfway to the water edge — no camera movement, no

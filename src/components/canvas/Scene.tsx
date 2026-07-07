@@ -1,7 +1,7 @@
 import * as THREE from "three"
-import { Bvh } from "@react-three/drei"
+import { Bvh, Detailed } from "@react-three/drei"
 import { useFrame } from "@react-three/fiber"
-import {  OrbitControls, ContactShadows, Helper, PerspectiveCamera} from "@react-three/drei"
+import { ContactShadows, Helper, PerspectiveCamera} from "@react-three/drei"
 
 import { Clouds } from "@/components/canvas/Sky"
 import { Speaker } from "@/components/models/Speaker"
@@ -15,7 +15,7 @@ import { Mountains } from "@/components/models/Mountains"
 import { Ultraball } from "@/components/models/Ultraball"
 
 
-import { data } from "@/helpers/store"
+import { data, surface } from "@/helpers/store"
 
 function CameraTracker() {
     //VERY IMPORTANT! Used for debuggin camera. TODO: Move this to some utils
@@ -42,10 +42,13 @@ export function Scene() {
     return (
         <>
             <Bvh firstHitOnly>
-                <group position={[10, 5, -10]}>
+                <group position={[15, 8, -10]}>
                     <Clouds data={data} range={15} />
                 </group>
+                {/* <Detailed distances={[0,0,0]}> */}
+                    {/* <Clouds data={surface} range={15} /> */}
             </Bvh>
+            <CameraTracker />
             <Speaker scale={65} position={[-2.5, -1.5, 1]} rotation={[-Math.PI/9, 0, Math.PI/15]} />
             <Island scale={0.02} position={[0, -5, 0]} />
             <Mountains scale={5} position={[10, -7, -35]} rotation={[0, Math.PI, 0]} />
