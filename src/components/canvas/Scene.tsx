@@ -46,9 +46,8 @@ export function Scene() {
                     <Clouds data={data} range={15} />
                 </group>
                 {/* <Detailed distances={[0,0,0]}> */}
-                    {/* <Clouds data={surface} range={15} /> */}
+                <Clouds data={surface} range={15} /> 
             </Bvh>
-            <CameraTracker />
             <Speaker scale={65} position={[-2.5, -1.5, 1]} rotation={[-Math.PI/9, 0, Math.PI/15]} />
             <Island scale={0.02} position={[0, -5, 0]} />
             <Mountains scale={5} position={[10, -7, -35]} rotation={[0, Math.PI, 0]} />

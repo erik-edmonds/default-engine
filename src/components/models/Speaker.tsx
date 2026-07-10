@@ -44,6 +44,7 @@ export function Speaker(props) {
           setHover(false)
         }
       }>
+      
       <group scale={0.01}>
         <mesh
           castShadow
