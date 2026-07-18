@@ -1,16 +1,15 @@
-import { useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 
 export function Moon(props) {
   const { nodes } = useGLTF('/models/moon.glb')
   return (
     <group {...props} dispose={null}>
-        <mesh
-            castShadow
-            receiveShadow
-            geometry={nodes.Object_4.geometry}
-            rotation={[Math.PI / 2, 0, 0]}> 
-            <meshStandardMaterial attach="material" emissiveIntensity={10}/>
+        {/* Unlit, same reasoning as Sun.tsx: the moon is a light source in
+            this scene, so it should read as a uniformly glowing disc
+            instead of having a dark side facing away from the directional
+            moonlight. */}
+        <mesh geometry={nodes.Object_4.geometry} rotation={[Math.PI / 2, 0, 0]}>
+            <meshBasicMaterial color="#eef2ff" toneMapped={false} />
         </mesh>
     </group>
   )
