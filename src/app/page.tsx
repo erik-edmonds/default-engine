@@ -2,7 +2,6 @@
 
 import {  useState, useRef, useEffect, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import  Image  from "next/image"
 import { Canvas } from "@react-three/fiber"
 import {  OrbitControls, ContactShadows, SpotLight } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
@@ -151,13 +150,6 @@ export default function Page() {
             }}/>
         </Flex>
       </div>
-      <div onClick={() => router.push("/")} className="absolute top-10 left-10 z-10">
-        <Image
-          src={`/images/diamond_${color}.png`}
-          width={75}
-          height={75}
-          alt="Homer"/>
-      </div>
       <div className={` ${motion ? "invisible" : "visible"} transition-all transition-discrete duration-300 pointer-events-none absolute top-3/5 left-40 z-10 font-sans text-white`}>
         <div className="relative">
           <h1 className={`text-7xl font-bold text-${COLORS[text]} leading-[0.9] tracking-tight`}>
@@ -191,7 +183,7 @@ export default function Page() {
         <SpotLight position={[3, 1, -3]} angle={0.5} decay={1} distance={10} penumbra={0.9} intensity={20} color="white"/>
         <CameraController ref={cameraControllerRef} />
         <AvatarController ref={avatarControllerRef} />
-        <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} />
+        <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
       </Canvas>
       <div className={`${motion ? "invisible" : "visible"} transition-all transition-discrete duration-700 fixed right-6 bottom-10 z-20 flex flex-col gap-3`}>
         <button

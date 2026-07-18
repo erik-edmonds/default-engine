@@ -13,5 +13,3 @@ export function Scuba(props) {
     </group>
   )
 }
-
-useGLTF.preload('/models/Avatars/scuba.glb')

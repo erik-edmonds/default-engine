@@ -13,5 +13,3 @@ export function Dragonite(props) {
     </group>
   )
 }
-
-useGLTF.preload('/models/Avatars/dragonite.glb')
