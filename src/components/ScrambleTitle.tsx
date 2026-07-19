@@ -37,12 +37,6 @@ export function ScrambleTitle({ text }: { text: string }) {
       bg.style.transform = "scaleX(1)"
     }
 
-    // Stage 2 (after the banner settles): reveal one character at a time,
-    // left to right. Only the current character flickers; everything after
-    // it stays blank until its turn, so the reveal reads as a left-to-right
-    // sweep instead of the whole word flickering at once. A tick counter
-    // (not elapsed wall-clock time) drives it, so a main-thread stall just
-    // pauses the reveal instead of jumping ahead once it clears.
     let tick = 0
     const render = () => {
       const activeIndex = Math.floor(tick / FLICKER_TICKS_PER_CHAR)

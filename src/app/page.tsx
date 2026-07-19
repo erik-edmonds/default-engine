@@ -7,6 +7,7 @@ import {  OrbitControls, ContactShadows, SpotLight } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
 import { MoonOutlined, SunOutlined, CloudOutlined, UpOutlined, DownOutlined } from "@ant-design/icons";
 import { Flex, Segmented } from "antd";
+import { useAppState } from "@/components/layout/StateProvider"
 
 import { Day } from "@/components/canvas/Day"
 import { Evening } from "@/components/canvas/Evening"
@@ -37,6 +38,7 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
 
 export default function Page() {
   const router = useRouter()
+  const {theme, setTheme} = useAppState()
   const time = () => {
     const now = new Date().getHours();
     if (now <= 17 && now > 6) {
@@ -145,6 +147,7 @@ export default function Page() {
             onChange={(event) => {
               setDay(event)
               setText(event)
+              setTheme(event)
               if (event === "day") setColor("light")
               else setColor("dark")
             }}/>

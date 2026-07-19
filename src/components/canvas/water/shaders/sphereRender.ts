@@ -1,0 +1,77 @@
+export const vertexShader = /* glsl */ `
+uniform vec3 sphereCenter;
+uniform float sphereRadius;
+
+varying vec3 vPosition;
+
+void main() {
+  vPosition = sphereCenter + position.xyz * sphereRadius;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(vPosition, 1.0);
+}
+`
+
+export const fragmentShader = /* glsl */ `
+precision highp float;
+
+const float IOR_AIR = 1.0;
+const float IOR_WATER = 1.333;
+
+const vec3 underwaterColor = vec3(0.4, 0.9, 1.0);
+
+uniform vec3 light;
+
+uniform vec3 sphereCenter;
+uniform float sphereRadius;
+
+uniform float poolWidth;
+uniform float poolHeight;
+uniform float poolLength;
+
+uniform sampler2D water;
+uniform sampler2D causticTex;
+
+varying vec3 vPosition;
+
+vec3 getSphereColor(vec3 point) {
+  vec3 color = vec3(0.5);
+
+  vec3 sphereNormal = (point - sphereCenter) / sphereRadius;
+
+  vec3 refractedLight = refract(-light, vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);
+  vec3 targetRefracted = refractedLight;
+
+  float litFactor = max(0.0, dot(sphereNormal, -targetRefracted));
+  float aoStrength = 0.6 * (1.0 - litFactor);
+
+  color *= 1.0 - aoStrength / pow((poolWidth + sphereRadius - abs(point.x)) / sphereRadius, 3.0);
+  color *= 1.0 - aoStrength / pow((poolLength + sphereRadius - abs(point.z)) / sphereRadius, 3.0);
+  color *= 1.0 - aoStrength / pow((point.y + poolHeight + sphereRadius) / sphereRadius, 3.0);
+
+  float diffuse = max(0.0, dot(-targetRefracted, sphereNormal)) * 0.5;
+
+  vec4 info = texture2D(water, point.xz * vec2(0.5 / poolWidth, 0.5 / poolLength) + 0.5);
+
+  if (point.y < info.r) {
+    vec4 caustic = texture2D(
+      causticTex,
+      0.75 *
+        (point.xz - point.y * targetRefracted.xz / targetRefracted.y) *
+        vec2(0.5 / poolWidth, 0.5 / poolLength) +
+        0.5
+    );
+    diffuse *= caustic.r * 4.0;
+  }
+
+  color += diffuse;
+  return color;
+}
+
+void main() {
+  gl_FragColor = vec4(getSphereColor(vPosition), 1.0);
+
+  vec4 info = texture2D(water, vPosition.xz * vec2(0.5 / poolWidth, 0.5 / poolLength) + 0.5);
+  if (vPosition.y < info.r) {
+    gl_FragColor.rgb *= underwaterColor * 1.2;
+  }
+}
+`
