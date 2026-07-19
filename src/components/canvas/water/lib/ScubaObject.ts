@@ -11,10 +11,17 @@ import { clampAndMoveObject, updatePhysics, type ObjectUpdateContext } from './S
 // tuned 3-sphere body/head/tail approximation, since Scuba's proportions
 // aren't known ahead of inspection -- see the plan's explicit note on
 // this simplification.
+// Vertical screen anchor for the diver: with cameraAnchorY tracking, this
+// is the diver's *only* driver of on-screen height (see worldPosition
+// below) -- deliberately not tied to floorClearance (which is a separate,
+// physics-only "how far can it be dragged toward the pool floor" bound),
+// so it can be tuned purely by how it looks on screen. Tuned empirically.
+const SCREEN_ANCHOR_Y = -0.1
+
 export class ScubaObjectModel {
   readonly boundingRadius = 0.25
   readonly floorClearance = 0.265
-  readonly position = new THREE.Vector3(0.7, this.floorClearance - 1, -0.2)
+  readonly position = new THREE.Vector3(0.7, SCREEN_ANCHOR_Y, -0.2)
   readonly velocity = new THREE.Vector3()
 
   enabled = false
