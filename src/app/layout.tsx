@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Favicon } from "@/components/layout/Icon";
 import { AppStateProvider } from "@/components/layout/StateProvider";
+import { Suspense } from "react";
+import Loading from "@/app/loading";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,9 +35,11 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
       <body className="min-h-full flex flex-col">
         <AppStateProvider>
           <div className="absolute z-50 top-5 left-5">
-            <Favicon />
+            <Favicon/>
           </div>
-          {children}
+          <Suspense fallback={null}>
+            {children}
+          </Suspense>
         </AppStateProvider>
       </body>
     </html>

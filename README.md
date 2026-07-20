@@ -1,18 +1,4 @@
-# IDEAS:
- - [ ] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
- - [ ] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
- - [ ] Bloom for sun and moon
-
 # TODO:
-- [ ] transition on change from sun/evening/night
-- [ ]fix music
-- [x] fix lighting
-    - [x] clouds in sky scene has no lights
-    - [x] on night the island looks too bright. It doesn't look like natural lighting
-    - [x] during day there is a strong glare on the lake to the right side
-    - [x] evening is pretty good, but the background needs to be improved
-- [ ] Optimize for mobile
-- [x] Create logo
 
 # ANIMATIONS!!!
 - [ ]Models are all rigged, but no animations are created ..
@@ -24,10 +10,44 @@
     - [ ] Flying up dragonite avatar
     - [ ] Floating in air dragonite avatar
 
+# Splash
+- [ ] Earth, zoom in island scene.
+
+# Homepage 
+- [ ] Add guassian blur in background? 
+    - [ ] Focus follows the mouse
+- [ ] transition on change from sun/evening/night
+- [ ] fix music
+- [ ] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
+- [ ] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
+- [ ] Stylize up/down button
+    - [ ] Maybe text boxes?
+- [ ] Add Dots over iteractive items
+    - [ ] On hover, have the outer ring pulse
+    - [ ] Add multiple dots on island and sky scene that the camera can move to?
+    - [ ] On rain from clouds, make screen appear wet as well
+    - SEE: https://jordan-breton.com/
+- [x] Create logo
+- [ ] Bloom for sun and moon
+    - [ ] Bloom added but now texture doesn't show
+- [x] fix lighting
+    - [x] clouds in sky scene has no lights
+    - [x] on night the island looks too bright. It doesn't look like natural lighting
+    - [x] during day there is a strong glare on the lake to the right side
+    - [x] evening is pretty good, but the background needs to be improved
+
+# Portfolio
+- [ ] 4 Cards:
+    - [ ] Make scenes with parts inside, and arts outside
+    - [ ] Add scenes in cards 
+        - [ ] gaussing splatting (Still relevant)
+        - [ ] multi agent simulation
+            - [ ] Carla integration
+        - [ ] Visualization
+            - [ ] Election 
+        - [ ] Data Science
+            - [ ] 
+
 # PERFORMANCE!!!
 - [ ] Combine scene models (island, surfboard, ultraball, beach ball, mountain) into one scene
-
-- [ ] Portfolios
-    - [ ] gaussing splatting (Still relevant)
-    - [ ] multi agent simulation
-    - [ ] Carla integration
+- [ ] Optimize for mobile

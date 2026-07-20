@@ -5,6 +5,8 @@ import * as THREE from "three"
 import { useThree } from "@react-three/fiber"
 import gsap from "gsap"
 
+import { ISLAND_CAMERA_POSITION } from "./earthIntroPath"
+
 // Without this, a stalled frame rate (heavy scene load, background tab, low-end
 // device) makes GSAP's default lag-smoothing cap each tick's perceived delta,
 // so tweens crawl for many real seconds instead of just running slightly choppy.
@@ -22,6 +24,7 @@ export interface CameraControllerHandle {
   flyUp: () => Promise<void>
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
+  revealIsland: () => Promise<void>
 }
 
 export const CameraController = forwardRef<CameraControllerHandle>((_props, ref) => {
@@ -64,6 +67,22 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // left/right motion and turns read clearly against a steady frame.
     beginSkyJourney: () => {},
     setSkyOffset: () => {},
+    // Straight-line push forward from wherever the Earth intro left the
+    // camera to the homepage's resting shot. Position-only, deliberately —
+    // the camera already faces this direction from frame one (see
+    // earthIntroPath.ts), so a pure dolly forward is what makes this read
+    // as a satellite zooming straight in rather than swooping/turning.
+    revealIsland: () =>
+      new Promise<void>((resolve) => {
+        gsap.to(camera.position, {
+          x: ISLAND_CAMERA_POSITION.x,
+          y: ISLAND_CAMERA_POSITION.y,
+          z: ISLAND_CAMERA_POSITION.z,
+          duration: 2,
+          ease: "power2.inOut",
+          onComplete: () => resolve(),
+        })
+      }),
   }))
 
   return null

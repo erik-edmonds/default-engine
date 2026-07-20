@@ -45,6 +45,8 @@ const CAMERA_FOV_DEG = 75
 const CAMERA_DISTANCE_TO_FRAME_PLANE = 2
 // "Slightly larger than the entire width of the screen."
 const POOL_WIDTH_MARGIN = 1.05
+// Pool made twice as wide as that screen-fit baseline.
+const POOL_WIDTH_SCALE = 2
 
 // Moves the water surface up on screen (from dead center toward the top)
 // by translating the pool+water assembly in world space, leaving the
@@ -68,7 +70,12 @@ const WATER_Y_OFFSET = 1.4
 // pool-group-local space (see the wrapping <group> below) so *their*
 // effective depth needs WATER_Y_OFFSET added back on top.
 const POOL_FLOOR_DEPTH = 3 * FRAME_SPACING + CARD_HEIGHT / 2
-const POOL_HEIGHT = POOL_FLOOR_DEPTH + WATER_Y_OFFSET
+// A little deeper than strictly necessary to reach Frame 4's bottom edge --
+// only added to the pool's own (visual) depth, not to POOL_FLOOR_DEPTH,
+// which stays tied to the frame gallery for Scuba's world-space physics/AO
+// reference.
+const POOL_DEPTH_EXTRA = 1
+const POOL_HEIGHT = POOL_FLOOR_DEPTH + WATER_Y_OFFSET + POOL_DEPTH_EXTRA
 
 function createOpticsUniforms(lightDirection: THREE.Vector3, lightDirection2: THREE.Vector3) {
   return {
@@ -136,7 +143,8 @@ export function WaterScene() {
   const size = useThree((state) => state.size)
   const scene = useThree((state) => state.scene)
 
-  const loadedTileTexture = useLoader(THREE.TextureLoader, '/water/blue.png')
+  //const loadedTileTexture = useLoader(THREE.TextureLoader, '/water/tiles.jpg')
+  const loadedTileTexture = useLoader(THREE.TextureLoader, '/water/tiles_cream.png')
   const loadedCubemap = useCubeTexture(['xpos.jpg', 'xneg.jpg', 'ypos.jpg', 'ypos.jpg', 'zpos.jpg', 'zneg.jpg'], {
     path: '/water/cubemap/',
   })
@@ -196,14 +204,15 @@ export function WaterScene() {
   )
 
   // Half-width of the pool: half the visible width at the frame plane,
-  // scaled up slightly so the pool is always a bit wider than the screen.
-  // Recomputes on resize (window/canvas size is the only thing that can
-  // change it -- fov and camera distance are both fixed).
+  // scaled up slightly so the pool is always a bit wider than the screen,
+  // then doubled again on top of that (POOL_WIDTH_SCALE). Recomputes on
+  // resize (window/canvas size is the only thing that can change it -- fov
+  // and camera distance are both fixed).
   const poolWidth = useMemo(() => {
     const fovRad = THREE.MathUtils.degToRad(CAMERA_FOV_DEG)
     const visibleHeight = 2 * CAMERA_DISTANCE_TO_FRAME_PLANE * Math.tan(fovRad / 2)
     const visibleWidth = visibleHeight * (size.width / size.height)
-    return (visibleWidth / 2) * POOL_WIDTH_MARGIN
+    return (visibleWidth / 2) * POOL_WIDTH_MARGIN * POOL_WIDTH_SCALE
   }, [size.width, size.height])
 
   // Bakes exact dimensions into vertex positions, so (unlike the materials

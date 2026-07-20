@@ -1,9 +1,9 @@
 "use client"
 
-import {  useState, useRef, useEffect, useTransition } from "react"
+import {  useState, useRef, useEffect, Suspense, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Canvas } from "@react-three/fiber"
-import {  OrbitControls, ContactShadows, SpotLight } from "@react-three/drei"
+import { OrbitControls, ContactShadows, SpotLight } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
 import { MoonOutlined, SunOutlined, CloudOutlined, UpOutlined, DownOutlined } from "@ant-design/icons";
 import { Flex, Segmented } from "antd";
@@ -16,7 +16,9 @@ import { Scene } from "@/components/canvas/Scene"
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController"
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController"
 
-import { ScrambleTitle } from "@/components/ScrambleTitle"
+import { ScrambleTitle } from "@/components/canvas/ScrambleTitle"
+import { EarthIntro } from "@/components/canvas/EarthIntro"
+import { EARTH_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath"
 
 const VIEWS = {
   day: Day,
@@ -35,6 +37,16 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
   { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" },
   { threshold: 375, text: "Let's Connect — Contact Me", align: "center" },
 ];
+
+// Earth-intro sequence: the camera starts framing Earth (positioned along
+// the flight path computed in earthIntroPath.ts), holds for INTRO_HOLD_MS,
+// then CameraController.revealIsland() pushes it straight forward to the
+// homepage's resting shot. The island scene mounts partway through so its
+// models have a head start loading before they're actually in frame -- see
+// the plan for why this replaced a real-loading-progress-driven reveal (it
+// kept racing).
+const ISLAND_MOUNT_DELAY_MS = 0
+const INTRO_HOLD_MS = 5000
 
 export default function Page() {
   const router = useRouter()
@@ -66,6 +78,14 @@ export default function Page() {
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
   const skyTextRef = useRef("");
+
+  // Fixed-timeline Earth intro (see ISLAND_MOUNT_DELAY_MS/INTRO_HOLD_MS
+  // above): islandMounted starts the island scene loading in the
+  // background while the camera is still framing Earth; islandRevealed
+  // flips once CameraController.revealIsland()'s pull-back tween finishes,
+  // un-hiding the rest of the page chrome.
+  const [islandMounted, setIslandMounted] = useState(false);
+  const [islandRevealed, setIslandRevealed] = useState(false);
 
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return
@@ -124,43 +144,54 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    const timeout = setTimeout(() => setIslandMounted(true), ISLAND_MOUNT_DELAY_MS);
+    return () => clearTimeout(timeout);
+  }, []);
 
-  }, )
-
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      cameraControllerRef.current?.revealIsland().then(() => setIslandRevealed(true));
+    }, INTRO_HOLD_MS);
+    return () => clearTimeout(timeout);
+  }, []);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
-      <div className="absolute top-10 right-1/2 z-10">
-        <Flex gap="small" align="flex-end" vertical>
-          <Segmented
-            size="medium"
-            style={{
-              backgroundColor: 'rgba(147, 143, 143, 0.5)',
-            }}
-            defaultValue={time}
-            shape="round"
-            options={[
-              { value: "day", icon: <SunOutlined /> },
-              { value: "evening", icon: <CloudOutlined /> },
-              { value: "night", icon: <MoonOutlined />},
-            ]}
-            onChange={(event) => {
-              setDay(event)
-              setText(event)
-              setTheme(event)
-              if (event === "day") setColor("light")
-              else setColor("dark")
-            }}/>
-        </Flex>
-      </div>
+      {islandRevealed && (
+        <div className="absolute top-10 right-1/2 z-10">
+          <Flex gap="small" align="flex-end" vertical>
+            <Segmented
+              size="medium"
+              style={{
+                backgroundColor: 'rgba(147, 143, 143, 0.5)',
+              }}
+              defaultValue={time}
+              shape="round"
+              options={[
+                { value: "day", icon: <SunOutlined /> },
+                { value: "evening", icon: <CloudOutlined /> },
+                { value: "night", icon: <MoonOutlined />},
+              ]}
+              onChange={(event) => {
+                setDay(event)
+                setText(event)
+                setTheme(event)
+                if (event === "day") setColor("light")
+                else setColor("dark")
+              }}/>
+          </Flex>
+        </div>
+      )}
       <div className={` ${motion ? "invisible" : "visible"} transition-all transition-discrete duration-300 pointer-events-none absolute top-3/5 left-40 z-10 font-sans text-white`}>
         <div className="relative">
           <h1 className={`text-7xl font-bold text-${COLORS[text]} leading-[0.9] tracking-tight`}>
             Erik<br />Edmonds
           </h1>
-          <div className="relative mt-0 grid justify-items-end">
-            <ScrambleTitle text="Data Scientist" />
-          </div>
+          {islandRevealed && (
+            <div className="relative mt-0 grid justify-items-end">
+              <ScrambleTitle text="Data Scientist" />
+            </div>
+          )}
         </div>
       </div>
       <div
@@ -173,44 +204,51 @@ export default function Page() {
       </div>
       <Canvas shadows camera={
         {
-          position: [-4.928243225199323, 2.4125281238269634, 12.519669594882314],
-          rotation: [-0.19036563694483571, -0.36883975963262605, -0.06936299235827743],
+          position: EARTH_CAMERA_POSITION,
+          rotation: ISLAND_CAMERA_ROTATION,
           fov: 45}
         } style={{ width: "100vw", height: "100vh" }}>
         <EffectComposer>
           <Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} />
         </EffectComposer>
-        <Scene />
-        <ActiveComponent />
-        <SpotLight position={[-0.3, 110, 5.5]} angle={0.5} decay={0.9} distance={90} penumbra={0.8} intensity={20} color="white"/>
-        <SpotLight position={[3, 1, -3]} angle={0.5} decay={1} distance={10} penumbra={0.9} intensity={20} color="white"/>
-        <CameraController ref={cameraControllerRef} />
-        <AvatarController ref={avatarControllerRef} />
-        <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+        <EarthIntro lit={!islandRevealed} />
+        {islandMounted && (
+          <Suspense fallback={null}>
+            <Scene />
+            <ActiveComponent />
+            <SpotLight position={[-0.3, 110, 5.5]} angle={0.5} decay={0.9} distance={90} penumbra={0.8} intensity={20} color="white"/>
+            <SpotLight position={[3, 1, -3]} angle={0.5} decay={1} distance={10} penumbra={0.9} intensity={20} color="white"/>
+            <CameraController ref={cameraControllerRef} />
+            <AvatarController ref={avatarControllerRef} />
+            <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+          </Suspense>
+        )}
       </Canvas>
-      <div className={`${motion ? "invisible" : "visible"} transition-all transition-discrete duration-700 fixed right-6 bottom-10 z-20 flex flex-col gap-3`}>
-        <button
-          type="button"
-          aria-label="Pan camera up"
-          onClick={() => {
-            setMotion(true)
-            handleUpClick()
-          }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30"
-        >
-          <UpOutlined />
-        </button>
-        <button
-          type="button"
-          aria-label="Pan camera down"
-          onClick={() => {
-            setMotion(true)
-            handleDownClick()
-          }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30">
-          <DownOutlined />
-        </button>
-      </div>
+      {islandRevealed && (
+        <div className={`${motion ? "invisible" : "visible"} transition-all transition-discrete duration-700 fixed right-6 bottom-10 z-20 flex flex-col gap-3`}>
+          <button
+            type="button"
+            aria-label="Pan camera up"
+            onClick={() => {
+              setMotion(true)
+              handleUpClick()
+            }}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30"
+          >
+            <UpOutlined />
+          </button>
+          <button
+            type="button"
+            aria-label="Pan camera down"
+            onClick={() => {
+              setMotion(true)
+              handleDownClick()
+            }}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30">
+            <DownOutlined />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

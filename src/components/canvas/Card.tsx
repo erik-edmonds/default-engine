@@ -9,8 +9,10 @@ import { suspend } from 'suspend-react'
 extend(geometry)
 const regular = import('@pmndrs/assets/fonts/inter_regular.woff')
 const medium = import('@pmndrs/assets/fonts/inter_medium.woff')
+const GOLDEN_RATIO = 1.61803398875
+const WIDTH = 1
 
-export default function Frame({ id, name, author, bg, width = 1, height = 1.61803398875, children, ...props }) {
+export default function Frame({ id, name, author, bg, width = WIDTH * 1.5, height = GOLDEN_RATIO * 1.5, children, ...props }) {
   const portal = useRef()
   const [, setLocation] = useLocation()
   const [, params] = useRoute('/item/:id')
