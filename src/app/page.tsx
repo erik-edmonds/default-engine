@@ -15,7 +15,7 @@ import { Night } from "@/components/canvas/Night"
 import { Scene } from "@/components/canvas/Scene"
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController"
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController"
-
+import Loading from "@/app/loading"
 import { ScrambleTitle } from "@/components/canvas/ScrambleTitle"
 import { EarthIntro } from "@/components/canvas/EarthIntro"
 import { EARTH_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath"
@@ -46,7 +46,7 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
 // the plan for why this replaced a real-loading-progress-driven reveal (it
 // kept racing).
 const ISLAND_MOUNT_DELAY_MS = 0
-const INTRO_HOLD_MS = 5000
+const INTRO_HOLD_MS = 3000
 
 export default function Page() {
   const router = useRouter()
@@ -224,6 +224,7 @@ export default function Page() {
           </Suspense>
         )}
       </Canvas>
+      <Loading />
       {islandRevealed && (
         <div className={`${motion ? "invisible" : "visible"} transition-all transition-discrete duration-700 fixed right-6 bottom-10 z-20 flex flex-col gap-3`}>
           <button

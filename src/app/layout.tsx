@@ -37,7 +37,7 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
           <div className="absolute z-50 top-5 left-5">
             <Favicon/>
           </div>
-          <Suspense fallback={null}>
+          <Suspense fallback={<Loading/>}>
             {children}
           </Suspense>
         </AppStateProvider>
