@@ -40,6 +40,7 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
           <Suspense fallback={<Loading/>}>
             {children}
           </Suspense>
+          <Loading />
         </AppStateProvider>
       </body>
     </html>

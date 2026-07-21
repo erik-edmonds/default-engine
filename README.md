@@ -11,15 +11,15 @@
     - [ ] Floating in air dragonite avatar
 
 # Splash
-- [ ] Earth, zoom in island scene.
+- [x] Earth, zoom in island scene.
 
 # Homepage 
 - [ ] Add guassian blur in background? 
     - [ ] Focus follows the mouse
 - [ ] transition on change from sun/evening/night
-- [ ] fix music
-- [ ] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
-- [ ] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
+- [x] fix music
+- [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
+- [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
 - [ ] Stylize up/down button
     - [ ] Maybe text boxes?
 - [ ] Add Dots over iteractive items
@@ -28,7 +28,7 @@
     - [ ] On rain from clouds, make screen appear wet as well
     - SEE: https://jordan-breton.com/
 - [x] Create logo
-- [ ] Bloom for sun and moon
+- [x] Bloom for sun and moon
     - [ ] Bloom added but now texture doesn't show
 - [x] fix lighting
     - [x] clouds in sky scene has no lights

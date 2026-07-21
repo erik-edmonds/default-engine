@@ -15,7 +15,11 @@ import { easing } from 'maath'
 // neighboring card peeking into view. 3.6 clears that with a bit of margin
 // so each scroll stop shows exactly one frame, screen-filling and alone.
 export const FRAME_SPACING = 3.6
-export const FRAME_COUNT = 4
+// Total scroll stops, not total Frame/Card components -- section 0 (the
+// top, y = 0) is intentionally cardless, just the swimming avatar, so
+// FRAME_COUNT is one more than the number of <Frame> elements in
+// portfolio/page.tsx.
+export const FRAME_COUNT = 5
 
 // Continuous free-scroll: wheel input accumulates directly into world-space
 // camera Y rather than snapping to the nearest section. SCROLL_SPEED is

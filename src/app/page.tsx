@@ -3,7 +3,7 @@
 import {  useState, useRef, useEffect, Suspense, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Canvas } from "@react-three/fiber"
-import { OrbitControls, ContactShadows, SpotLight } from "@react-three/drei"
+import { OrbitControls, ContactShadows, SpotLight, Preload } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
 import { MoonOutlined, SunOutlined, CloudOutlined, UpOutlined, DownOutlined } from "@ant-design/icons";
 import { Flex, Segmented } from "antd";
@@ -47,6 +47,10 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
 // kept racing).
 const ISLAND_MOUNT_DELAY_MS = 0
 const INTRO_HOLD_MS = 3000
+// Must match .animate-stamp's animation-duration in globals.css -- this is
+// how long "Erik Edmonds" takes to slam onto the screen before the
+// ScrambleTitle beneath it is allowed to start.
+const STAMP_DURATION_MS = 420
 
 export default function Page() {
   const router = useRouter()
@@ -81,11 +85,20 @@ export default function Page() {
 
   // Fixed-timeline Earth intro (see ISLAND_MOUNT_DELAY_MS/INTRO_HOLD_MS
   // above): islandMounted starts the island scene loading in the
-  // background while the camera is still framing Earth; islandRevealed
-  // flips once CameraController.revealIsland()'s pull-back tween finishes,
-  // un-hiding the rest of the page chrome.
+  // background while the camera is still framing Earth; revealStarted
+  // flips the instant the pull-back tween is kicked off (used to drop
+  // EarthIntro's extra lighting right away rather than waiting for the
+  // tween to finish, so the island isn't over-lit for the whole glide);
+  // islandRevealed flips once that tween actually finishes, un-hiding the
+  // rest of the page chrome.
   const [islandMounted, setIslandMounted] = useState(false);
+  const [revealStarted, setRevealStarted] = useState(false);
   const [islandRevealed, setIslandRevealed] = useState(false);
+  // Flips STAMP_DURATION_MS after islandRevealed, once the "Erik Edmonds"
+  // stamp animation has actually finished -- gates the ScrambleTitle below
+  // it so the intro reads as Earth -> Island -> name stamp -> scramble,
+  // rather than the scramble racing the stamp.
+  const [nameStamped, setNameStamped] = useState(false);
 
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return
@@ -150,10 +163,17 @@ export default function Page() {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
+      setRevealStarted(true);
       cameraControllerRef.current?.revealIsland().then(() => setIslandRevealed(true));
     }, INTRO_HOLD_MS);
     return () => clearTimeout(timeout);
   }, []);
+
+  useEffect(() => {
+    if (!islandRevealed) return;
+    const timeout = setTimeout(() => setNameStamped(true), STAMP_DURATION_MS);
+    return () => clearTimeout(timeout);
+  }, [islandRevealed]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
@@ -184,10 +204,12 @@ export default function Page() {
       )}
       <div className={` ${motion ? "invisible" : "visible"} transition-all transition-discrete duration-300 pointer-events-none absolute top-3/5 left-40 z-10 font-sans text-white`}>
         <div className="relative">
-          <h1 className={`text-7xl font-bold text-${COLORS[text]} leading-[0.9] tracking-tight`}>
-            Erik<br />Edmonds
-          </h1>
           {islandRevealed && (
+            <h1 className={`animate-stamp text-7xl font-bold text-${COLORS[text]} leading-[0.9] tracking-tight`}>
+              Erik<br />Edmonds
+            </h1>
+          )}
+          {nameStamped && (
             <div className="relative mt-0 grid justify-items-end">
               <ScrambleTitle text="Data Scientist" />
             </div>
@@ -211,7 +233,7 @@ export default function Page() {
         <EffectComposer>
           <Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} />
         </EffectComposer>
-        <EarthIntro lit={!islandRevealed} />
+        <EarthIntro lit={!revealStarted} />
         {islandMounted && (
           <Suspense fallback={null}>
             <Scene />
@@ -221,6 +243,15 @@ export default function Page() {
             <CameraController ref={cameraControllerRef} />
             <AvatarController ref={avatarControllerRef} />
             <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+            {/* Inside the same Suspense boundary, as the last child, so this
+                only mounts (and runs its one-time gl.compile()) once every
+                sibling above has actually resolved -- pre-warming shaders
+                for the island's real materials, not just whatever existed
+                in the scene at t=0 (previously just Earth). Doing this here
+                instead of as a sibling after the Suspense block is what
+                moves the compile hitch to right now (Earth still fully
+                covering the screen) instead of mid-reveal. */}
+            <Preload all />
           </Suspense>
         )}
       </Canvas>

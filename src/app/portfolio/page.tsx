@@ -14,16 +14,19 @@ export default function Page() {
 				<Canvas flat camera={{ fov: 75, position: [0, 0, 20] }}>
         <color attach="background" args={['#f0f0f0']} />
         <WaterScene />
-        <Frame id="01" name="1" author="Omar Faruq Tawsif" bg="#e4cdac" position={[-1.15, -0 * FRAME_SPACING, 0]}>
+        {/* Section 0 (y = 0, the top of the scroll) is intentionally left
+            empty here -- no Frame/Card, just the swimming avatar rendered
+            by WaterScene itself. See FRAME_COUNT in CameraHelpers.tsx. */}
+        <Frame id="01" name="1" author="Omar Faruq Tawsif" bg="#e4cdac" position={[-1.15, -1 * FRAME_SPACING, 0]}>
           <Gltf src="models/pickles.glb" scale={8} position={[0, -0.7, -2]} />
         </Frame>
-        <Frame id="02" name="2" author="Omar Faruq Tawsif" position={[-1.15, -1 * FRAME_SPACING, 0]}>
+        <Frame id="02" name="2" author="Omar Faruq Tawsif" position={[-1.15, -2 * FRAME_SPACING, 0]}>
           <Gltf src="models/tea.glb" position={[0, -2, -3]}/>
         </Frame>
-        <Frame id="03" name="2" author="Omar Faruq Tawsif" bg="#d1d1ca" position={[-1.15, -2 * FRAME_SPACING, 0]}>
+        <Frame id="03" name="2" author="Omar Faruq Tawsif" bg="#d1d1ca" position={[-1.15, -3 * FRAME_SPACING, 0]}>
           <Gltf src="models/orange.glb" scale={2} position={[0, -0.8, -4]} />
         </Frame>
-        <Frame id="04" name="2" author="Omar Faruq Tawsif" bg="#d1d1ca" position={[-1.15, -3 * FRAME_SPACING, 0]}>
+        <Frame id="04" name="2" author="Omar Faruq Tawsif" bg="#d1d1ca" position={[-1.15, -4 * FRAME_SPACING, 0]}>
           <Gltf src="models/orange.glb" scale={2} position={[0, -0.8, -4]} />
         </Frame>
         <Rig />

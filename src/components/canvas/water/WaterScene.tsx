@@ -12,7 +12,7 @@ import { ScubaObjectModel } from './lib/ScubaObject'
 import { createRoundedBoxPoolGeometry } from './lib/CreateRoundedBoxPoolGeometry'
 import { useWaterInteraction, type WaterInteractionControls } from './useWaterInteraction'
 import { ScubaMesh } from './ScubaMesh'
-import { FRAME_SPACING } from '@/helpers/CameraHelpers'
+import { FRAME_COUNT, FRAME_SPACING } from '@/helpers/CameraHelpers'
 import * as roundedBoxShader from './shaders/roundedBox'
 import * as roundedBoxWaterAboveShader from './shaders/roundedBoxWaterAbove'
 import * as roundedBoxWaterBelowShader from './shaders/roundedBoxWaterBelow'
@@ -34,9 +34,9 @@ const AGITATION_STRENGTH = 0.006
 const CORNER_RADIUS = 0
 const POOL_LENGTH = 3
 // Card.tsx's default height is the golden ratio; Frame 4 (the last one)
-// sits at y = -3 * FRAME_SPACING, so its bottom edge is that position minus
-// half its height. Pool depth reaches exactly to that point (plus
-// WATER_Y_OFFSET below, to compensate for the pool being shifted up).
+// sits at y = -(FRAME_COUNT - 1) * FRAME_SPACING, so its bottom edge is that
+// position minus half its height. Pool depth reaches exactly to that point
+// (plus WATER_Y_OFFSET below, to compensate for the pool being shifted up).
 const CARD_HEIGHT = 1.61803398875
 // Mirrors /portfolio's <Canvas camera={{fov: 75}}> and Rig's fixed camera
 // distance to the z=0 frame plane (CameraHelpers.tsx always positions the
@@ -69,7 +69,7 @@ const WATER_Y_OFFSET = 1.4
 // clamp). The pool mesh/water materials, by contrast, operate in
 // pool-group-local space (see the wrapping <group> below) so *their*
 // effective depth needs WATER_Y_OFFSET added back on top.
-const POOL_FLOOR_DEPTH = 3 * FRAME_SPACING + CARD_HEIGHT / 2
+const POOL_FLOOR_DEPTH = (FRAME_COUNT - 1) * FRAME_SPACING + CARD_HEIGHT / 2
 // A little deeper than strictly necessary to reach Frame 4's bottom edge --
 // only added to the pool's own (visual) depth, not to POOL_FLOOR_DEPTH,
 // which stays tied to the frame gallery for Scuba's world-space physics/AO
