@@ -1,12 +1,16 @@
 import React, { useRef, useEffect } from 'react'
 import { useGLTF, useAnimations } from '@react-three/drei'
 
-export function Merged(props) {
+import { useOceanWaterMaterial } from '@/components/canvas/OceanWater'
+import type { TimeOfDay } from '@/components/canvas/environmentPresets'
+
+export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unknown }) {
   const group = useRef()
   const { nodes, materials } = useGLTF('/models/merged.glb')
   const { animations } = useGLTF('/models/island_motion.glb')
   animations[0].name = "Shark"
   const { actions } = useAnimations(animations, group)
+  const oceanMaterial = useOceanWaterMaterial(day)
 
   useEffect(() => {
     actions["Shark"]?.reset().play()
@@ -82,10 +86,8 @@ export function Merged(props) {
         />
         <mesh
           name="New_Water"
-          castShadow
-          receiveShadow
           geometry={nodes.New_Water.geometry}
-          material={materials['04 - Default']}
+          material={oceanMaterial}
           position={[-0.162, 0.687, 0.064]}
           scale={0.028}
         />
@@ -856,10 +858,8 @@ export function Merged(props) {
               <group name="Plane001_0" position={[-0.461, 0, 0]} scale={8.295}>
                 <mesh
                   name="Object_4"
-                  castShadow
-                  receiveShadow
                   geometry={nodes.Object_4.geometry}
-                  material={materials.Water_Material}
+                  material={oceanMaterial}
                 />
               </group>
               <group

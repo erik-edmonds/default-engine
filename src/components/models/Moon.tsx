@@ -10,8 +10,9 @@ export function Moon({ materialRef, ...props }) {
             moonlight. */}
         <mesh geometry={nodes.Object_4.geometry} rotation={[Math.PI / 2, 0, 0]}>
             {/* materialRef: see Sun.tsx -- Environment.tsx cross-fades this
-                imperatively every frame. */}
-            <meshBasicMaterial ref={materialRef} color="#eef2ff" toneMapped={false} transparent />
+                imperatively every frame. fog={false}: same reasoning as
+                Sun.tsx -- ground fog shouldn't wash out the moon either. */}
+            <meshBasicMaterial ref={materialRef} color="#eef2ff" toneMapped={false} transparent fog={false} />
         </mesh>
     </group>
   )

@@ -13,8 +13,12 @@ export function Sun({ materialRef, ...props }) {
         rotation={[Math.PI / 2, 0, 0]}>
         {/* materialRef: Environment.tsx cross-fades this in/out per time of
             day by mutating opacity imperatively every frame (same pattern
-            as its other tweened values), not via a re-rendered prop. */}
-        <meshBasicMaterial ref={materialRef} color="#ff8c1a" toneMapped={false} transparent />
+            as its other tweened values), not via a re-rendered prop.
+            fog={false}: ground-level atmospheric fog shouldn't reach the
+            sky -- meshBasicMaterial responds to scene fog by default, which
+            was blending the sun toward the fog color at distance and
+            washing it out pale instead of a solid disc. */}
+        <meshBasicMaterial ref={materialRef} color="#ff8c1a" toneMapped={false} transparent fog={false} />
       </mesh>
     </group>
   )

@@ -271,7 +271,7 @@ export default function Page() {
                 across the Earth-intro -> island transition. */}
             <Environment target={day} nameTextRef={nameTextRef} />
             <group visible={entering}>
-              <Scene />
+              <Scene day={day} />
               <AvatarController ref={avatarControllerRef} />
               <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
               {islandRevealed && (

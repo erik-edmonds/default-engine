@@ -11,6 +11,7 @@ import { Sun } from "@/components/models/Sun"
 import { Moon } from "@/components/models/Moon"
 import { Campfire } from "@/components/models/Campfire"
 import { DeadCampfire } from "@/components/models/DeadCampfire"
+import { Aurora } from "./Aurora"
 import { tweenDuration } from "@/helpers/motion"
 
 const TRANSITION_SECONDS = 1.4
@@ -54,11 +55,22 @@ const skyVertexShader = /* glsl */ `
 
 const skyFragmentShader = /* glsl */ `
   uniform vec3 uTop;
-  uniform vec3 uBottom;
+  uniform vec3 uHorizon;
   varying vec3 vPos;
   void main() {
-    float h = clamp(normalize(vPos).y * 0.5 + 0.5, 0.0, 1.0);
-    gl_FragColor = vec4(mix(uBottom, uTop, h), 1.0);
+    // Single monotonic curve, horizon (lightest) to zenith (darkest) -- no
+    // branch at y=0. A mirrored two-branch curve (mix outward from the
+    // same horizon color on both sides) reads as a reflection, and a power
+    // curve with exponent<1 has infinite slope exactly at y=0, which shows
+    // up as a hard seam right where a level camera looks most. smoothstep
+    // is monotonic non-decreasing (so it's always "gradually darker the
+    // higher it gets," never darkening back down) and C1-continuous
+    // everywhere (no seam); the window below is tuned to where the camera
+    // actually looks, so most of the visible sky (not just a thin sliver
+    // right at the horizon) shows real gradient contrast.
+    float y = normalize(vPos).y;
+    float t = smoothstep(-0.2, 0.55, y);
+    gl_FragColor = vec4(mix(uHorizon, uTop, t), 1.0);
   }
 `
 
@@ -115,7 +127,7 @@ export function Environment({
         side: THREE.BackSide,
         uniforms: {
           uTop: { value: new THREE.Color(PRESETS[target].skyTop) },
-          uBottom: { value: new THREE.Color(PRESETS[target].skyBottom) },
+          uHorizon: { value: new THREE.Color(PRESETS[target].skyHorizon) },
         },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,14 +145,15 @@ export function Environment({
   const sunMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
   const moonMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
   const starsGroupRef = useRef<THREE.Group>(null)
+  const auroraMaterialRef = useRef<THREE.ShaderMaterial>(null)
   const litCampfireRef = useRef<THREE.Group>(null)
   const deadCampfireRef = useRef<THREE.Group>(null)
 
-  useFrame(() => {
+  useFrame((state) => {
     const b = blendRef.current
 
     skyMaterial.uniforms.uTop.value.set(b.skyTop)
-    skyMaterial.uniforms.uBottom.value.set(b.skyBottom)
+    skyMaterial.uniforms.uHorizon.value.set(b.skyHorizon)
 
     fog.color.set(b.fogColor)
     fog.near = b.fogNear
@@ -179,6 +192,10 @@ export function Environment({
     if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity
     if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity
     if (starsGroupRef.current) starsGroupRef.current.visible = b.starsOpacity > 0.5
+    if (auroraMaterialRef.current) {
+      auroraMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime
+      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity
+    }
 
     const lit = b.campfireIntensity > CAMPFIRE_LIT_THRESHOLD
     if (litCampfireRef.current) litCampfireRef.current.visible = lit
@@ -223,6 +240,7 @@ export function Environment({
       <group ref={starsGroupRef}>
         <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
       </group>
+      <Aurora materialRef={auroraMaterialRef} />
 
       <pointLight ref={campfireLightRef} position={CAMPFIRE_LIGHT_POSITION} distance={7} decay={2} />
       <group ref={litCampfireRef}>
