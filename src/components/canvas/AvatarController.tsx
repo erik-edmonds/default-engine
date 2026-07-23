@@ -3,6 +3,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState, Suspense } from "react"
 import type { Group } from "three"
 import gsap from "gsap"
+import { tweenDuration } from "@/helpers/motion"
 import { Avatar } from "@/components/models/Avatar"
 import { Dragonite } from "@/components/models/Dragonite"
 import { Scuba } from "@/components/models/Scuba"
@@ -139,9 +140,9 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
         }
         gsap
           .timeline({ onComplete: () => resolve() })
-          .to(group.current.rotation, { y: "+=" + Math.PI, duration: 0.5, ease: "power1.in" })
+          .to(group.current.rotation, { y: "+=" + Math.PI, duration: tweenDuration(0.5), ease: "power1.in" })
           .call(() => setModelKind(target))
-          .to(group.current.rotation, { y: "+=" + Math.PI, duration: 0.5, ease: "power1.out" })
+          .to(group.current.rotation, { y: "+=" + Math.PI, duration: tweenDuration(0.5), ease: "power1.out" })
       }),
     flyUp: () =>
       new Promise<void>((resolve) => {
@@ -151,7 +152,7 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
         }
         gsap.to(group.current.position, {
           y: "+=100",
-          duration: 5,
+          duration: tweenDuration(5),
           ease: "power2.inOut",
           onComplete: () => resolve(),
         })
@@ -175,7 +176,7 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
         }
         gsap.to(group.current.position, {
           x: WALK_TARGET_X,
-          duration: 0.9,
+          duration: tweenDuration(0.9),
           ease: "power1.inOut",
           onComplete: () => resolve(),
         })
@@ -186,11 +187,16 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           resolve()
           return
         }
+        // The descent's timeline-position anchor (when it starts) must scale
+        // in lockstep with the hop's duration (when it finishes) -- both
+        // derive from tweenDuration(0.4) so the two stay synchronized under
+        // reduced motion instead of leaving a dead gap between them.
+        const hopDuration = tweenDuration(0.4)
         gsap
           .timeline({ onComplete: () => resolve() })
-          .to(group.current.position, { x: DIVE_TARGET_X, duration: 1.7, ease: "power1.inOut" }, 0)
-          .to(group.current.position, { y: "+=" + DIVE_HOP_HEIGHT, duration: 0.4, ease: "power1.out" }, 0)
-          .to(group.current.position, { y: "-=" + (DIVE_HOP_HEIGHT + DIVE_DEPTH), duration: 1.3, ease: "power2.in" }, 0.4)
+          .to(group.current.position, { x: DIVE_TARGET_X, duration: tweenDuration(1.7), ease: "power1.inOut" }, 0)
+          .to(group.current.position, { y: "+=" + DIVE_HOP_HEIGHT, duration: hopDuration, ease: "power1.out" }, 0)
+          .to(group.current.position, { y: "-=" + (DIVE_HOP_HEIGHT + DIVE_DEPTH), duration: tweenDuration(1.3), ease: "power2.in" }, hopDuration)
       }),
   }))
 

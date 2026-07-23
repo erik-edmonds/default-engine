@@ -2,13 +2,11 @@
 import { themes } from "@/helpers/Interfaces";
 import { useAppState } from "@/components/layout/StateProvider";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 export function Favicon() {
-  const { theme, setTheme } = useAppState()
-  const router = useRouter()
+  const { theme } = useAppState()
 
   return (
-    <a href="/">
+    <Link href="/" aria-label="Home">
       <svg width={50} height={50} viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
           <circle cx="70" cy="70" r="70" fill={themes[theme]["background"]}/>
           <g fill={themes[theme]["lines"]}>
@@ -23,6 +21,6 @@ export function Favicon() {
               </g>
           </g>
       </svg>
-    </a>
-  ); 
+    </Link>
+  );
 }

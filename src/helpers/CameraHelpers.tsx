@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { CameraControls } from '@react-three/drei'
+import { CameraControls, Helper, PerspectiveCamera } from '@react-three/drei'
 import type CameraControlsImpl from 'camera-controls'
 import { useRoute } from 'wouter'
 import { easing } from 'maath'
@@ -29,6 +29,27 @@ const SCROLL_SPEED = 0.0025
 const SCROLL_SMOOTH_TIME = 0.25
 const SCROLL_MIN = -(FRAME_COUNT - 1) * FRAME_SPACING
 const SCROLL_MAX = 0
+
+export function CameraTracker() {
+    //VERY IMPORTANT! Used for debuggin camera. TODO: Move this to some utils
+    useFrame((state) => {
+    const camera = state.camera
+
+    const { x, y, z } = camera.position
+
+    console.log(`Camera Coordinates -> X: ${x}, Y: ${y}, Z: ${z} Roll: ${camera.rotation.x}, Pitch: ${camera.rotation.y}, Yaw: ${camera.rotation.z}`)
+  })
+
+  return null
+}
+
+export function CameraHelper() {
+    return (
+        <PerspectiveCamera position={[-6, 5.5, 11]} rotation={[-0.5, -0.4, -0.2]} fov={45} near={1} far={10}>
+            <Helper type={THREE.CameraHelper} />
+        </PerspectiveCamera>
+    )
+}
 
 //Move the scene camera helper here.
 export function Rig({ position = new THREE.Vector3(0, 0, 2), focus = new THREE.Vector3(0, 0, 0) }) {

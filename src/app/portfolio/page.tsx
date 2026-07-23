@@ -14,9 +14,6 @@ export default function Page() {
 				<Canvas flat camera={{ fov: 75, position: [0, 0, 20] }}>
         <color attach="background" args={['#f0f0f0']} />
         <WaterScene />
-        {/* Section 0 (y = 0, the top of the scroll) is intentionally left
-            empty here -- no Frame/Card, just the swimming avatar rendered
-            by WaterScene itself. See FRAME_COUNT in CameraHelpers.tsx. */}
         <Frame id="01" name="1" author="Omar Faruq Tawsif" bg="#e4cdac" position={[-1.15, -1 * FRAME_SPACING, 0]}>
           <Gltf src="models/pickles.glb" scale={8} position={[0, -0.7, -2]} />
         </Frame>

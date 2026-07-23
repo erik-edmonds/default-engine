@@ -1,6 +1,6 @@
 import { useGLTF } from '@react-three/drei'
 
-export function Sun(props) {
+export function Sun({ materialRef, ...props }) {
   const { nodes } = useGLTF('/models/sun.glb')
   return (
     <group {...props} dispose={null}>
@@ -11,7 +11,10 @@ export function Sun(props) {
       <mesh
         geometry={nodes.Object_4.geometry}
         rotation={[Math.PI / 2, 0, 0]}>
-        <meshBasicMaterial color="#ff8c1a" toneMapped={false} />
+        {/* materialRef: Environment.tsx cross-fades this in/out per time of
+            day by mutating opacity imperatively every frame (same pattern
+            as its other tweened values), not via a re-rendered prop. */}
+        <meshBasicMaterial ref={materialRef} color="#ff8c1a" toneMapped={false} transparent />
       </mesh>
     </group>
   )

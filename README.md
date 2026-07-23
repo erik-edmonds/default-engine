@@ -30,11 +30,17 @@
 - [x] Create logo
 - [x] Bloom for sun and moon
     - [ ] Bloom added but now texture doesn't show
-- [x] fix lighting
-    - [x] clouds in sky scene has no lights
-    - [x] on night the island looks too bright. It doesn't look like natural lighting
-    - [x] during day there is a strong glare on the lake to the right side
-    - [x] evening is pretty good, but the background needs to be improved
+
+# Fix Lighting
+    - [ ] Add ambient occlusion
+    - [ ] clouds in sky scene has no lights
+    - [ ] on night the island looks too bright. It doesn't look like natural lighting
+    - [ ] during day there is a strong glare on the lake to the right side
+    - [ ] evening is pretty good, but the background needs to be improved
+
+# About 
+- [ ] Add lens flare in morning or evening
+- [ ]
 
 # Portfolio
 - [ ] 4 Cards:
@@ -51,3 +57,10 @@
 # PERFORMANCE!!!
 - [ ] Combine scene models (island, surfboard, ultraball, beach ball, mountain) into one scene
 - [ ] Optimize for mobile
+
+
+# Extras
+- [ ] Moon follows monthly cycle 
+    - [ ] moon appears in different position based on time of month
+    - [ ] Moon different shape based on time of month (full, half, crescent, etc)
+        - This can be acheived with a light that is positioned based on date. Use the Earth in between to give the shadows.

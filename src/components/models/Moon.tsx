@@ -1,6 +1,6 @@
 import { useGLTF } from '@react-three/drei'
 
-export function Moon(props) {
+export function Moon({ materialRef, ...props }) {
   const { nodes } = useGLTF('/models/moon.glb')
   return (
     <group {...props} dispose={null}>
@@ -9,7 +9,9 @@ export function Moon(props) {
             instead of having a dark side facing away from the directional
             moonlight. */}
         <mesh geometry={nodes.Object_4.geometry} rotation={[Math.PI / 2, 0, 0]}>
-            <meshBasicMaterial color="#eef2ff" toneMapped={false} />
+            {/* materialRef: see Sun.tsx -- Environment.tsx cross-fades this
+                imperatively every frame. */}
+            <meshBasicMaterial ref={materialRef} color="#eef2ff" toneMapped={false} transparent />
         </mesh>
     </group>
   )

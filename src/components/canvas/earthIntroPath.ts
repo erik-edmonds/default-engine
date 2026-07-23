@@ -1,37 +1,46 @@
 import * as THREE from "three"
 
-// Single source of truth for the Earth-intro flight path: the intro's
-// starting camera position and Earth's world position are both placed
-// directly behind ISLAND_CAMERA_POSITION along the island camera's own
-// forward vector, at different distances. That makes them collinear by
-// construction, so a straight-line camera move from EARTH_CAMERA_POSITION
-// to ISLAND_CAMERA_POSITION passes through/near Earth partway through and
-// lands exactly on the island's resting shot -- no rotation tween needed
-// at all, since the camera already faces this direction from frame one.
+// Single source of truth for the intro's straight-line camera path: the
+// loading screen's Earth model and the camera's starting (hold) position are
+// both placed directly behind ISLAND_CAMERA_POSITION along the island
+// camera's own forward vector, at different distances. That makes them
+// collinear by construction, so once loading finishes and "Enter" is
+// clicked, a straight-line camera move from INTRO_CAMERA_POSITION to
+// ISLAND_CAMERA_POSITION passes through the Earth partway through and lands
+// exactly on the island's resting shot -- reading as a satellite zooming
+// into a spot on Earth and flying past it, not a separate cut. No rotation
+// tween needed -- the camera already faces this direction from frame one,
+// and never turns.
 
 // The homepage's resting shot (the Canvas's original static camera prop,
 // and CameraController.revealIsland()'s tween target).
-export const ISLAND_CAMERA_POSITION = new THREE.Vector3(-4.928243225199323, 2.4125281238269634, 12.519669594882314)
-export const ISLAND_CAMERA_ROTATION = new THREE.Euler(-0.19036563694483571, -0.36883975963262605, -0.06936299235827743)
+export const ISLAND_CAMERA_POSITION = new THREE.Vector3(-4.607673525253576, 1.7341116509862307, 19.91558734132968)
+export const ISLAND_CAMERA_ROTATION = new THREE.Euler(-0.026670116897649598, -0.19209102169139866, -0.005092805496596532)
 
 const FORWARD = new THREE.Vector3(0, 0, -1).applyEuler(ISLAND_CAMERA_ROTATION)
 
-// Earth's original, comfortable satellite-view framing. Growing Earth to
-// try to out-occlude the island made rendering too expensive (a camera-
-// close, screen-filling Earth took the headless test environment's
-// software-rendered frame time from seconds to minutes) and put the camera
-// uncomfortably close to the surface. Two other fixes were tried and
-// abandoned: scaling the island scene down around the resting camera
-// position left parts of the terrain within/near the near-clipping plane
-// (visibly broken geometry); a separate occluding backdrop placed on the
-// camera's flight path is fundamentally boxed in -- the camera passes
-// through every point on that path during the reveal, so any backdrop
-// sized enough to help either hides Earth at the start, swallows the
-// camera before it reaches rest, or both. See the conversation with the
-// user for where this landed.
-export const EARTH_WORLD_SCALE = 3
-const EARTH_DISTANCE = 40
-const START_DISTANCE = 70
+// World-space scale of the Earth model (see EarthIntro.tsx) -- tuned
+// together with the two distances below so it reads as a comfortable,
+// mostly-frame-filling circle from the intro camera's starting position.
+// The model's raw geometry is a ~1-unit-radius sphere, its own baked node
+// scale is ~3.586 (see EarthIntro.tsx), and the camera sits 7 units from
+// it (INTRO_CAMERA_DISTANCE - EARTH_DISTANCE) with a 45deg FOV -- this
+// keeps the sphere's subtended half-angle safely under the camera's
+// 22.5deg half-FOV instead of overflowing the frame.
+export const EARTH_WORLD_SCALE = 0.46
+const EARTH_DISTANCE = 15
+const INTRO_CAMERA_DISTANCE = 22
 
-export const EARTH_WORLD_POSITION = ISLAND_CAMERA_POSITION.clone().addScaledVector(FORWARD, -EARTH_DISTANCE)
-export const EARTH_CAMERA_POSITION = ISLAND_CAMERA_POSITION.clone().addScaledVector(FORWARD, -START_DISTANCE)
+export const FLAT_EARTH_POSITION = ISLAND_CAMERA_POSITION.clone().addScaledVector(FORWARD, -EARTH_DISTANCE)
+export const INTRO_CAMERA_POSITION = ISLAND_CAMERA_POSITION.clone().addScaledVector(FORWARD, -INTRO_CAMERA_DISTANCE)
+
+// How far through the INTRO_CAMERA_POSITION -> ISLAND_CAMERA_POSITION dolly
+// (as a fraction of total distance travelled, not tween time -- see
+// CameraController.revealIsland, which measures the camera's actual live
+// position rather than the eased tween-time fraction, since those two
+// diverge under a non-linear ease) the camera reaches the Earth's near
+// surface and would start rendering its inside. (EARTH_DISTANCE / INTRO_CAMERA_DISTANCE
+// is where the camera reaches the Earth's *center*; this is nudged earlier
+// by roughly the sphere's own world-space radius so the swap to the island
+// scene happens right as the surface fills the frame, not partway through it.)
+export const EARTH_CROSS_FRACTION = 0.24

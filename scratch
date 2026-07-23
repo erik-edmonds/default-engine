@@ -1,0 +1,290 @@
+Roadmap
+I broke it up into three overall phases based around concepts: Main scene, Sky Scene, Underwater Scene. 
+Each phase can be broken into smaller manageable steps to ensure the path doesn't veer too far from my goal
+
+# PHASE 1
+Problem:
+1. Lighting is too flat (biggest issue)
+
+Everything is evenly lit → looks like a prototype
+
+No strong shadows
+No depth contrast
+No mood shift
+
+👉 This alone is the difference between:
+
+“cool project”
+“award-winning experience”
+
+2. Materials feel placeholder
+Sand, water, rocks = same “plastic” feel
+No roughness variation
+No micro detail
+
+👉 Even stylized scenes need material richness
+
+3. Environment lacks motion
+
+Right now everything feels static
+
+Water too uniform
+Trees not reacting
+
+👉 Award sites feel alive even when idle
+
+4. UI breaks immersion
+Up/down buttons feel default
+Cards feel like overlay, not part of world
+Typography isn’t integrated into 3D space
+
+🚀 How to make it AWWWARD-WORTHY
+Do this immediately:
+
+1. Upgrade lighting to cinematic
+Add:
+Warm key light (sun)
+Cool fill light (sky bounce)
+Strong rim light on avatar
+Effects:
+Soft shadows (PCF or VSM)
+Subtle fog / atmospheric perspective
+Slight color gradient in sky
+Distance fog (slight blue fade)
+Haze between layers
+Light rays (very subtle)
+
+👉 You want:
+
+“Pixar meets WebGL”
+
+Right now:
+
+Feels like mode switching
+Not like time passing
+Missing:
+Smooth transitions between lighting states
+Stronger contrast (especially sunset)
+More directional lighting
+
+👉 It still reads as “three presets” instead of a system
+
+2. Add subtle environmental animation - the sky is too flat (especially daytime)
+
+This is LOW effort, HIGH impact:
+
+Clouds slowly drifting
+Palm trees slightly swaying
+Water shader with:
+small waves
+reflection distortion
+Sun rotating slightly over scroll
+
+Solid blue = no depth
+Clouds don’t integrate with lighting
+
+Make the sky dynamic
+Gradient sky (top darker, horizon lighter)
+Clouds:
+Slight movement
+Color changes with time of day
+Sun glow / moon glow bloom
+
+👉 Sky should be doing 50% of the visual work
+👉 This makes the world feel alive
+
+3. Fix materials (quick wins)
+
+Sand → add:
+gradient (wet near water)
+subtle noise texture
+Rocks → slight color variation
+Water → Fresnel + reflection
+Wood dock → roughness variation
+
+Water feels like a placeholder
+Repetitive pattern
+No reflection of sky/sun/moon
+No interaction with island
+
+Add:
+Darker sand near water (wetness gradient)
+Stronger contact shadows under objects
+Slight AO baked look
+👉 Keep stylized, but not flat
+
+4. Micro-interactions everywhere
+Hover → slight scale + glow
+Click → bounce / squash
+Scroll → parallax layers
+
+👉 Judges LOVE this detail
+
+5. Make scroll feel physical
+
+Right now scroll = navigation
+You want scroll = force applied to world
+
+Examples:
+Scroll down → island slightly tilts
+Camera eases forward (not linear)
+Clouds move past faster as you “ascend”
+
+👉 Add inertia + easing curves
+
+6. Rebuild the UI into the world - UI still breaks immersion
+
+Lighting toggle looks like a dev control
+Up/down buttons still generic
+Text feels “on top” instead of “in world”
+
+Do:
+Ideas:
+Lighting toggle = floating orb near sky
+Scroll indicator = wind current / arrow in environment
+Buttons = carved into wood / glowing stones
+
+Turn lighting toggle into an EXPERIENCE
+Instead of:
+
+click → instant switch
+
+Do:
+
+Smooth time interpolation (1–2 seconds)
+Sun physically moves across sky
+Sky color gradient shifts
+Shadows rotate
+Fire intensity increases at night
+Bonus:
+Add subtle sound transitions
+birds → wind → night ambience
+
+7. Sound design (massive differentiator)
+
+Almost nobody does this well:
+
+Ocean waves ambient
+Wind in sky section
+Underwater muffled sound
+Subtle UI clicks
+
+👉 This alone can elevate you into top-tier
+
+8. Polish checklist (what wins awards)
+No jank (60 FPS minimum)
+Perfect easing curves
+Consistent color grading
+Cohesive transitions between sections
+
+What you need:
+❗ Lighting + motion + polish
+
+# PHASE 2
+
+1. Make underwater section insane (this is your wow moment)
+
+You already mentioned caustics — push it further:
+Instead of:
+flat cards
+
+Do:
+Volumetric light rays
+Floating particles
+Color shift (cyan/blue gradient)
+Slow-motion physics feel
+Portals:
+Each project = mini world inside sphere
+Every portal should:
+React to hover (pulse / distort)
+Slightly attract camera
+Emit particles
+Shader distortion (refraction)
+holographic UI
+objects that are the UI
+
+👉 This becomes your  Experience sections
+
+Transition Phase 1 — Transition to dive
+Avatar transforms into scuba avatar 
+Walks to edge of island
+Jumps into water
+
+Transition Phase 2 — Dive into water
+Break surface:
+splash ring
+screen distortion ripple
+Quick blur + refract effect
+
+Transition Phase 3 — Underwater world
+Sound muffles
+Light rays from surface
+Particles floating
+Slow motion feel
+
+# PHASE 3
+
+1. Avatar feels disconnected
+T-pose = dev state
+Not grounded (no idle animation, no weight)
+
+👉 Since this is you, this is critical.
+
+4. Avatar = centerpiece (this matters most)
+
+Before the big transformations, add:
+
+Idle animation:
+Breathing
+Slight weight shift
+Head tracking cursor
+Then transitions:
+Scroll → anticipation (crouch)
+Jump → squash & stretch
+Dragonite morph → smooth shader/mesh blend
+
+This is your signature moment. It needs to feel like a mini Pixar sequence.
+
+PHASE 1 — Scroll begins (anticipation)
+5
+Camera subtly pushes in
+Avatar:
+looks upward
+shifts weight
+slight crouch
+Wind starts picking up
+Ambient sound builds
+
+👉 You’re telling the user: something is about to happen
+
+PHASE 2 — Lift-off
+Avatar jumps (squash → stretch)
+Ground slightly compresses
+Camera follows upward
+Add:
+Dust/sand particles
+Quick motion blur
+PHASE 3 — Mid-air morph → Dragonite
+4
+Body freezes mid-air
+Glow builds from core
+Mesh morph begins:
+limbs stretch
+wings emerge
+Add:
+energy swirl
+color shift (warm orange)
+
+👉 This is your WOW frame
+
+PHASE 4 — Flight through clouds (scroll-controlled)
+Camera locks behind dragon
+Scroll = forward velocity
+Clouds:
+Parallax layers
+Speed increases with scroll
+Each cloud = section reveal
+
+👉 This is what makes people say:
+
+“Whoa…”

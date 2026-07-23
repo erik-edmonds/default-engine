@@ -18,10 +18,16 @@ export function Speaker(props) {
   // (confirmed via "Maximum update depth exceeded" crashes once the parent
   // scene mounts eagerly). The initializer only runs once on mount, and we
   // never call the setter, so `song` stays referentially stable.
+  // preload: false -- otherwise Howler fetches+decodes the entire 92MB
+  // music.mp3 the instant this component mounts, regardless of whether the
+  // visitor ever clicks the speaker. Note this does NOT lazy-load on
+  // .play() by itself (Howler queues the play but never calls .load() for
+  // you) -- the effect below calls .load() explicitly on first use.
   const [song] = useState(() => new Howl({
     src: ['/sound/music.mp3'],
     volume: 0.5,
-    autoplay: false
+    autoplay: false,
+    preload: false
   }))
 
   useFrame((state) => {
@@ -32,8 +38,16 @@ export function Speaker(props) {
   // changing (from the click handler below), it never calls setSound
   // itself, so it can't re-trigger.
   useEffect(() => {
-    if (sound) song.play()
-    else song.pause()
+    if (sound) {
+      // preload:false means Howler never calls .load() on its own --
+      // trigger it ourselves the first time the visitor turns sound on.
+      // .play() below still queues correctly and fires once loading
+      // finishes (Howler's own behavior for a not-yet-loaded sound).
+      if (song.state() === "unloaded") song.load()
+      song.play()
+    } else {
+      song.pause()
+    }
   }, [sound, song])
 
   return (

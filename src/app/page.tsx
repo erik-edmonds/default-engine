@@ -1,36 +1,24 @@
 "use client"
 
-import {  useState, useRef, useEffect, Suspense, useTransition } from "react"
+import {  useState, useRef, useCallback, useEffect, Suspense, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Canvas } from "@react-three/fiber"
-import { OrbitControls, ContactShadows, SpotLight, Preload } from "@react-three/drei"
+import { ContactShadows, Preload, useProgress } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
-import { MoonOutlined, SunOutlined, CloudOutlined, UpOutlined, DownOutlined } from "@ant-design/icons";
-import { Flex, Segmented } from "antd";
+import gsap from "gsap"
 import { useAppState } from "@/components/layout/StateProvider"
 
-import { Day } from "@/components/canvas/Day"
-import { Evening } from "@/components/canvas/Evening"
-import { Night } from "@/components/canvas/Night"
 import { Scene } from "@/components/canvas/Scene"
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController"
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController"
-import Loading from "@/app/loading"
 import { ScrambleTitle } from "@/components/canvas/ScrambleTitle"
 import { EarthIntro } from "@/components/canvas/EarthIntro"
-import { EARTH_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath"
-
-const VIEWS = {
-  day: Day,
-  evening: Evening,
-  night: Night,
-};
-
-const COLORS = {
-  day: "white",
-  evening: "[#242424]",
-  night: "black"
-};
+import { Environment } from "@/components/canvas/Environment"
+import { TimeOfDayOrb } from "@/components/canvas/TimeOfDayOrb"
+import { NavTotems } from "@/components/canvas/NavTotems"
+import type { TimeOfDay } from "@/components/canvas/environmentPresets"
+import { INTRO_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath"
+import { tweenDuration } from "@/helpers/motion"
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
   { threshold: 75, text: "Digital Nomad", align: "left" },
@@ -38,15 +26,35 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
   { threshold: 375, text: "Let's Connect — Contact Me", align: "center" },
 ];
 
-// Earth-intro sequence: the camera starts framing Earth (positioned along
-// the flight path computed in earthIntroPath.ts), holds for INTRO_HOLD_MS,
-// then CameraController.revealIsland() pushes it straight forward to the
-// homepage's resting shot. The island scene mounts partway through so its
-// models have a head start loading before they're actually in frame -- see
-// the plan for why this replaced a real-loading-progress-driven reveal (it
-// kept racing).
+// Earth-intro sequence: the real low-poly Earth model (public/models/earth.glb),
+// held static and viewed face-on, sits *in* the 3D scene directly on the
+// camera's flight path (see earthIntroPath.ts) -- its own shader (see
+// EarthIntro.tsx) doubles as the loading-progress indicator, materializing
+// bottom-to-top as real useProgress() tracking advances. The island scene
+// mounts and loads behind it the whole time -- already visible (its own
+// group's `visible` prop is tied to `entering`, true from the moment Enter
+// is clicked), just naturally occluded by the opaque Earth sitting in front
+// of it, exactly like a real object blocking the camera's view. Clicking
+// Enter starts a single, uninterrupted camera dolly
+// (CameraController.revealIsland) from wherever the intro left the camera
+// to the homepage's resting shot; the Earth is *never* faded -- it stays
+// fully opaque and grows in frame as the camera approaches, until the
+// camera's live position actually reaches its surface (EARTH_CROSS_FRACTION
+// of the way there), at which point `onEarthCrossed` fires: EarthIntro
+// unmounts (stops occluding the already-visible island behind it) and a
+// quick blue "dive" flash masks that one-frame swap. The camera never
+// pauses or restarts -- one continuous zoom from a far view of the Earth to
+// the island already sitting there, not a cut between two disjoint scenes.
 const ISLAND_MOUNT_DELAY_MS = 0
-const INTRO_HOLD_MS = 3000
+// How long the masking flash takes to ramp up (fast -- a snap, not a fade)
+// and fade back out (slightly slower) right as EarthIntro is swapped for
+// the already-waiting island scene.
+const DIVE_FLASH_IN_SECONDS = 0.09
+const DIVE_FLASH_OUT_SECONDS = 0.3
+// Progress tracks network loads only, not <Preload all/>'s separate
+// shader-compile step -- this buffer keeps that compile hitch safely behind
+// the loading screen instead of leaking into the Enter transition.
+const ENTER_READY_BUFFER_MS = 400
 // Must match .animate-stamp's animation-duration in globals.css -- this is
 // how long "Erik Edmonds" takes to slam onto the screen before the
 // ScrambleTitle beneath it is allowed to start.
@@ -54,8 +62,8 @@ const STAMP_DURATION_MS = 420
 
 export default function Page() {
   const router = useRouter()
-  const {theme, setTheme} = useAppState()
-  const time = () => {
+  const { setTheme } = useAppState()
+  const time = (): TimeOfDay => {
     const now = new Date().getHours();
     if (now <= 17 && now > 6) {
       return "day"
@@ -69,36 +77,60 @@ export default function Page() {
   }
 
   const [, startTransition] = useTransition();
-  const [day, setDay] = useState(time);
-  const [text, setText] = useState(time);
+  const [day, setDay] = useState<TimeOfDay>(time);
   const [motion, setMotion] = useState(false);
-  const [color, setColor] = useState("light");
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
-  const ActiveComponent = VIEWS[day];
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
+  const diveFlashRef = useRef<HTMLDivElement>(null);
+  const nameTextRef = useRef<HTMLHeadingElement>(null);
   const isSequenceRunning = useRef(false);
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
   const skyTextRef = useRef("");
 
-  // Fixed-timeline Earth intro (see ISLAND_MOUNT_DELAY_MS/INTRO_HOLD_MS
-  // above): islandMounted starts the island scene loading in the
-  // background while the camera is still framing Earth; revealStarted
-  // flips the instant the pull-back tween is kicked off (used to drop
-  // EarthIntro's extra lighting right away rather than waiting for the
-  // tween to finish, so the island isn't over-lit for the whole glide);
-  // islandRevealed flips once that tween actually finishes, un-hiding the
-  // rest of the page chrome.
   const [islandMounted, setIslandMounted] = useState(false);
-  const [revealStarted, setRevealStarted] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [readyToEnter, setReadyToEnter] = useState(false);
+  const [entering, setEntering] = useState(false);
+  const [earthCrossed, setEarthCrossed] = useState(false);
   const [islandRevealed, setIslandRevealed] = useState(false);
-  // Flips STAMP_DURATION_MS after islandRevealed, once the "Erik Edmonds"
-  // stamp animation has actually finished -- gates the ScrambleTitle below
-  // it so the intro reads as Earth -> Island -> name stamp -> scramble,
-  // rather than the scramble racing the stamp.
   const [nameStamped, setNameStamped] = useState(false);
+  const progress = useProgress((state) => state.progress);
+
+  // A callback ref, not just useRef: progress (network-load bytes) reaching
+  // 100 does not mean React has actually *committed* the island's Suspense
+  // subtree yet -- that commit is real, heavy CPU work (reconciling the
+  // merged scene's large node tree) independent of network speed, and can
+  // still be in flight after progress hits 100. Gating readyToEnter purely
+  // on a fixed post-100 buffer raced this: Enter could appear (and get
+  // clicked) before cameraControllerRef.current was actually set, silently
+  // no-opping the whole reveal via optional chaining. This flips
+  // cameraReady the instant the ref is actually populated, whenever that
+  // really happens.
+  const setCameraControllerRef = useCallback((instance: CameraControllerHandle | null) => {
+    cameraControllerRef.current = instance;
+    if (instance) setCameraReady(true);
+  }, []);
+
+  const handleEnterClick = () => {
+    if (entering) return;
+    setEntering(true);
+    cameraControllerRef.current?.revealIsland(() => {
+      setEarthCrossed(true);
+      const flash = diveFlashRef.current;
+      if (!flash) return;
+      gsap.timeline()
+        .to(flash, { opacity: 1, duration: tweenDuration(DIVE_FLASH_IN_SECONDS), ease: "power1.in" })
+        .to(flash, { opacity: 0, duration: tweenDuration(DIVE_FLASH_OUT_SECONDS), ease: "power1.out" });
+    }).then(() => setIslandRevealed(true));
+  };
+
+  const handleTimeOfDayChange = (next: TimeOfDay) => {
+    setDay(next)
+    setTheme(next)
+  }
 
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return
@@ -157,17 +189,20 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    const timeout = setTimeout(() => setIslandMounted(true), ISLAND_MOUNT_DELAY_MS);
+    // startTransition: mounting Scene/Environment is a large one-time
+    // commit (8+ models, lights/shadows) that would
+    // otherwise block the main thread in one uninterrupted burst. Marking
+    // this update as a transition lets React interleave the browser's rAF
+    // loop with the mount work instead of blocking it outright.
+    const timeout = setTimeout(() => startTransition(() => setIslandMounted(true)), ISLAND_MOUNT_DELAY_MS);
     return () => clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      setRevealStarted(true);
-      cameraControllerRef.current?.revealIsland().then(() => setIslandRevealed(true));
-    }, INTRO_HOLD_MS);
+    if (progress < 100 || !cameraReady) return;
+    const timeout = setTimeout(() => setReadyToEnter(true), ENTER_READY_BUFFER_MS);
     return () => clearTimeout(timeout);
-  }, []);
+  }, [progress, cameraReady]);
 
   useEffect(() => {
     if (!islandRevealed) return;
@@ -177,35 +212,15 @@ export default function Page() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
-      {islandRevealed && (
-        <div className="absolute top-10 right-1/2 z-10">
-          <Flex gap="small" align="flex-end" vertical>
-            <Segmented
-              size="medium"
-              style={{
-                backgroundColor: 'rgba(147, 143, 143, 0.5)',
-              }}
-              defaultValue={time}
-              shape="round"
-              options={[
-                { value: "day", icon: <SunOutlined /> },
-                { value: "evening", icon: <CloudOutlined /> },
-                { value: "night", icon: <MoonOutlined />},
-              ]}
-              onChange={(event) => {
-                setDay(event)
-                setText(event)
-                setTheme(event)
-                if (event === "day") setColor("light")
-                else setColor("dark")
-              }}/>
-          </Flex>
-        </div>
-      )}
-      <div className={` ${motion ? "invisible" : "visible"} transition-all transition-discrete duration-300 pointer-events-none absolute top-3/5 left-40 z-10 font-sans text-white`}>
+      <div className={` ${motion ? "invisible" : "visible"} transition-all transition-discrete duration-300 pointer-events-none absolute top-3/5 left-40 z-10 font-sans`}>
         <div className="relative">
           {islandRevealed && (
-            <h1 className={`animate-stamp text-7xl font-bold text-${COLORS[text]} leading-[0.9] tracking-tight`}>
+            // Color/glow driven imperatively by Environment.tsx (via
+            // nameTextRef, mutated every frame from the same tweened
+            // time-of-day blend the lights/sky use) instead of a fixed
+            // Tailwind class per discrete state -- ties this text visually
+            // to the lighting system instead of sitting on top of it.
+            <h1 ref={nameTextRef} className="animate-stamp text-7xl font-bold leading-[0.9] tracking-tight">
               Erik<br />Edmonds
             </h1>
           )}
@@ -226,58 +241,75 @@ export default function Page() {
       </div>
       <Canvas shadows camera={
         {
-          position: EARTH_CAMERA_POSITION,
+          position: INTRO_CAMERA_POSITION,
           rotation: ISLAND_CAMERA_ROTATION,
           fov: 45}
         } style={{ width: "100vw", height: "100vh" }}>
         <EffectComposer>
           <Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} />
         </EffectComposer>
-        <EarthIntro lit={!revealStarted} />
+        {/* Without this the canvas has no backdrop at all (white/transparent).
+            Harmless once the island scene mounts too -- Environment's own
+            giant gradient sky sphere visually covers this. */}
+        <color attach="background" args={["#0a0a0a"]} />
+        {/* EarthIntro stays mounted, fully opaque, and growing in frame for
+            the whole approach -- it only unmounts once the camera's live
+            position actually reaches its surface (see revealIsland's
+            onEarthCrossed callback in handleEnterClick), at which point the
+            island scene behind it -- already visible this whole time, see
+            below -- simply stops being occluded. No fade, no cut between
+            two disjoint scenes: the camera dolly never pauses or restarts,
+            so this reads as one continuous zoom into the Earth. */}
+        {!earthCrossed && <EarthIntro />}
         {islandMounted && (
           <Suspense fallback={null}>
-            <Scene />
-            <ActiveComponent />
-            <SpotLight position={[-0.3, 110, 5.5]} angle={0.5} decay={0.9} distance={90} penumbra={0.8} intensity={20} color="white"/>
-            <SpotLight position={[3, 1, -3]} angle={0.5} decay={1} distance={10} penumbra={0.9} intensity={20} color="white"/>
-            <CameraController ref={cameraControllerRef} />
-            <AvatarController ref={avatarControllerRef} />
-            <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
-            {/* Inside the same Suspense boundary, as the last child, so this
-                only mounts (and runs its one-time gl.compile()) once every
-                sibling above has actually resolved -- pre-warming shaders
-                for the island's real materials, not just whatever existed
-                in the scene at t=0 (previously just Earth). Doing this here
-                instead of as a sibling after the Suspense block is what
-                moves the compile hitch to right now (Earth still fully
-                covering the screen) instead of mid-reveal. */}
+            {/* Environment replaces the old Day/Evening/Night hard-swap --
+                a single persistent lighting rig (sky/lights/fog/rim light/
+                sun+moon) that gsap-tweens smoothly between presets instead
+                of unmounting/remounting the whole tree on toggle. Always
+                mounted (not gated on `entering`) so its own state survives
+                across the Earth-intro -> island transition. */}
+            <Environment target={day} nameTextRef={nameTextRef} />
+            <group visible={entering}>
+              <Scene />
+              <AvatarController ref={avatarControllerRef} />
+              <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+              {islandRevealed && (
+                <>
+                  <TimeOfDayOrb current={day} onChange={handleTimeOfDayChange} />
+                  <group visible={!motion}>
+                    <NavTotems
+                      onUp={() => { setMotion(true); handleUpClick() }}
+                      onDown={() => { setMotion(true); handleDownClick() }}
+                    />
+                  </group>
+                </>
+              )}
+            </group>
+            <CameraController ref={setCameraControllerRef} />
             <Preload all />
           </Suspense>
         )}
       </Canvas>
-      <Loading />
-      {islandRevealed && (
-        <div className={`${motion ? "invisible" : "visible"} transition-all transition-discrete duration-700 fixed right-6 bottom-10 z-20 flex flex-col gap-3`}>
+      {/* Masks the one-frame pop of EarthIntro unmounting / the island
+          scene stopping being occluded (see handleEnterClick) -- a quick
+          flash to the Earth's own water color, snapping in fast and
+          fading back out, timed to fire exactly when the camera reaches
+          the Earth's surface. Driven imperatively via gsap (not React
+          state) so it can fire precisely on that callback without a
+          re-render in between. */}
+      <div ref={diveFlashRef} className="pointer-events-none fixed inset-0 z-20 bg-[#006ce7] opacity-0" />
+      {readyToEnter && !islandRevealed && (
+        <div className="absolute inset-0 z-10 flex items-end justify-center pb-32">
           <button
             type="button"
-            aria-label="Pan camera up"
-            onClick={() => {
-              setMotion(true)
-              handleUpClick()
-            }}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30"
+            onClick={handleEnterClick}
+            disabled={entering}
+            className={`rounded-full border border-[#f4ead8] bg-[#d15c0f] px-10 py-3 font-mono text-lg font-bold uppercase tracking-widest text-white shadow-lg transition-opacity duration-500 hover:bg-[#e56b1a] disabled:opacity-50 ${
+              entering ? "opacity-0" : "opacity-100"
+            }`}
           >
-            <UpOutlined />
-          </button>
-          <button
-            type="button"
-            aria-label="Pan camera down"
-            onClick={() => {
-              setMotion(true)
-              handleDownClick()
-            }}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition hover:bg-white/30">
-            <DownOutlined />
+            Enter
           </button>
         </div>
       )}
