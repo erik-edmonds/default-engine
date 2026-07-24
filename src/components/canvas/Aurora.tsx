@@ -65,7 +65,7 @@ const fragmentShader = /* glsl */ `
     // the horizon as an accent instead of stretching toward the zenith and
     // dominating the sky.
     float baseWave = noise(vec2(h * 1.8 + drift, uTime * 0.015)) * 2.0 - 1.0;
-    float base = 0.05 + baseWave * 0.1;
+    float base = 0.275 + baseWave * 0.1;
     float above = elevation - base; // 0 at the base, positive going up
 
     // Sharp cutoff below the base -- nothing shows beneath it.

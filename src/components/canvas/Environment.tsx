@@ -34,8 +34,8 @@ const ARC_RADIUS = 34
 // the camera -- without it the rays read edge-on, like Saturn's rings,
 // instead of radiating around the disc.
 const SUN_ROTATION: [number, number, number] = [Math.PI / 2, 0, Math.PI / 6]
-const CAMPFIRE_POSITION: [number, number, number] = [1.75, -2, 2]
-const CAMPFIRE_LIGHT_POSITION: [number, number, number] = [1.75, -1, 2]
+const CAMPFIRE_POSITION: [number, number, number] = [1.5, -2, 1.5]
+const CAMPFIRE_LIGHT_POSITION: [number, number, number] = [1.5, -1, 1.5]
 // Below this campfire-light intensity the fire reads as "out" -- swap to
 // the log-only model instead of a lit flame with no light contribution.
 // (The flame mesh itself isn't cross-faded -- Campfire/DeadCampfire share

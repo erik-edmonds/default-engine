@@ -30,10 +30,32 @@ export interface CameraControllerHandle {
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
   revealIsland: (onEarthCrossed?: () => void) => Promise<void>
+  flyTo: (position: THREE.Vector3, rotation: THREE.Euler, duration?: number) => Promise<void>
 }
 
 export const CameraController = forwardRef<CameraControllerHandle>((_props, ref) => {
-  const { camera } = useThree()
+  const { camera, controls } = useThree()
+
+  // <OrbitControls makeDefault /> (see page.tsx -- added for debugging)
+  // recomputes the camera's rotation from its own `target` every single
+  // frame via camera.lookAt(target), regardless of what anything else
+  // sets camera.rotation to. With no explicit target that defaults to the
+  // origin, so the moment any tween below sets a custom rotation, it gets
+  // silently forced back toward "look at (0,0,0)" on the very next frame
+  // -- position survives (OrbitControls resyncs its internal spherical
+  // coords from the live position each frame, so it's self-consistent),
+  // but any scripted rotation does not. Keeping OrbitControls' own target
+  // pointed at whatever direction we actually intend the camera to face
+  // -- recomputed continuously while a tween runs -- makes the two
+  // cooperate instead of fight, without having to touch OrbitControls
+  // itself. No-ops harmlessly if `controls` isn't an OrbitControls
+  // instance (or isn't mounted yet).
+  const syncOrbitTarget = (rotation: THREE.Euler, distance = 10) => {
+    const target = (controls as { target?: THREE.Vector3 } | null)?.target
+    if (!target) return
+    const forward = new THREE.Vector3(0, 0, -1).applyEuler(rotation)
+    target.copy(camera.position).addScaledVector(forward, distance)
+  }
 
   useImperativeHandle(ref, () => ({
     // Dolly in toward the avatar, animating position and rotation together.
@@ -73,15 +95,23 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           z: targetRotation.z,
           duration: tweenDuration(2),
           ease: "power2.inOut",
+          onUpdate: () => syncOrbitTarget(camera.rotation),
         })
       }),
     flyUp: () =>
       new Promise<void>((resolve) => {
+        // Position-only -- rotation doesn't change, but the camera is
+        // still moving, so OrbitControls' target has to keep following it
+        // (at the same fixed forward direction) or the forced lookAt
+        // above would visibly reorient the camera toward the origin as it
+        // climbs.
+        const fixedRotation = camera.rotation.clone()
         gsap.to(camera.position, {
           x: "+=1",
           y: "+=100",
           duration: tweenDuration(5),
           ease: "power2.inOut",
+          onUpdate: () => syncOrbitTarget(fixedRotation),
           onComplete: () => resolve(),
         })
       }),
@@ -106,6 +136,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     revealIsland: (onEarthCrossed) =>
       new Promise<void>((resolve) => {
         const startPosition = camera.position.clone()
+        const fixedRotation = camera.rotation.clone()
         const totalDistance = startPosition.distanceTo(ISLAND_CAMERA_POSITION)
         let crossed = false
         gsap.to(camera.position, {
@@ -115,6 +146,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           duration: tweenDuration(2),
           ease: "power2.inOut",
           onUpdate: () => {
+            syncOrbitTarget(fixedRotation)
             if (crossed || !onEarthCrossed) return
             const traveled = startPosition.distanceTo(camera.position)
             if (traveled / totalDistance >= EARTH_CROSS_FRACTION) {
@@ -125,6 +157,30 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           onComplete: () => {
             resolve()
           },
+        })
+      }),
+    // Generic named-viewpoint fly-to for in-world hotspots (see
+    // CameraHotspot.tsx) -- position and rotation tween together, same
+    // power2.inOut shape as the other camera moves above, so an arbitrary
+    // preset viewpoint reads as one continuous move rather than a pan then
+    // a snap-to-rotation.
+    flyTo: (position, rotation, duration = 2.5) =>
+      new Promise<void>((resolve) => {
+        gsap.to(camera.position, {
+          x: position.x,
+          y: position.y,
+          z: position.z,
+          duration: tweenDuration(duration),
+          ease: "power2.inOut",
+        })
+        gsap.to(camera.rotation, {
+          x: rotation.x,
+          y: rotation.y,
+          z: rotation.z,
+          duration: tweenDuration(duration),
+          ease: "power2.inOut",
+          onUpdate: () => syncOrbitTarget(camera.rotation),
+          onComplete: () => resolve(),
         })
       }),
   }))

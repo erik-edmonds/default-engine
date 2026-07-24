@@ -14,9 +14,9 @@ import * as THREE from "three"
 
 // The homepage's resting shot (the Canvas's original static camera prop,
 // and CameraController.revealIsland()'s tween target).
-export const ISLAND_CAMERA_POSITION = new THREE.Vector3(-4.40349282598533, -1.7208003309413846, 14.250611082808495)
-export const ISLAND_CAMERA_ROTATION = new THREE.Euler(0.1201709139516702, -0.2976610203504673, 0.03540015880789559)
- 
+export const ISLAND_CAMERA_POSITION = new THREE.Vector3(-2.899608229974321, -2.359505217824931, 14.562475417802178)
+export const ISLAND_CAMERA_ROTATION = new THREE.Euler(0.18867355979321374, -0.15516379170094072, 0.029500398679355316)
+
 const FORWARD = new THREE.Vector3(0, 0, -1).applyEuler(ISLAND_CAMERA_ROTATION)
 
 // World-space scale of the Earth model (see EarthIntro.tsx) -- tuned

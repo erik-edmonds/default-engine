@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Canvas } from "@react-three/fiber"
 import { ContactShadows, OrbitControls, Preload, useProgress } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
+import * as THREE from "three"
 import gsap from "gsap"
 import { useAppState } from "@/components/layout/StateProvider"
 
@@ -16,6 +17,7 @@ import { EarthIntro } from "@/components/canvas/EarthIntro"
 import { Environment } from "@/components/canvas/Environment"
 import { TimeOfDayOrb } from "@/components/canvas/TimeOfDayOrb"
 import { NavTotems } from "@/components/canvas/NavTotems"
+import { CameraHotspot } from "@/components/canvas/CameraHotspot"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 import { INTRO_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath"
 import { tweenDuration } from "@/helpers/motion"
@@ -59,6 +61,28 @@ const ENTER_READY_BUFFER_MS = 400
 // how long "Erik Edmonds" takes to slam onto the screen before the
 // ScrambleTitle beneath it is allowed to start.
 const STAMP_DURATION_MS = 420
+
+// Where each in-world hotspot marker (CameraHotspot.tsx) sits on a
+// floating island, and the viewpoint the camera flies to when it's
+// clicked -- separate from each other on purpose (the marker itself lives
+// at a spot visible from the resting shot; the flight target is a
+// different vantage point up near the island).
+const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-8, 6, -8]
+const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-9.272831294101561, 15.407324225909505, -5.428682003669432)
+const UPPER_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-0.20748529928110077, -0.2502075137252594, -0.052077416270268545)
+
+// By the tree on the big left landmass (was mistakenly placed on the small
+// moon-side rock spire instead -- moved here, its viewpoint target is
+// unchanged from before).
+const LEFT_TREE_HOTSPOT_POSITION: [number, number, number] = [-10.93, 11.8, -12.89]
+const LEFT_TREE_VIEWPOINT_POSITION = new THREE.Vector3(-4.973450838704888, 4.940798436814231, 1.0949348301915267)
+const LEFT_TREE_VIEWPOINT_ROTATION = new THREE.Euler(-0.18086788683791294, 0.6833181088730893, 0.11494727400569638)
+
+// The small rock spire closest to the moon -- same marker spot as before,
+// now with its own dedicated viewpoint target.
+const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [10.85, 4.8, -17.92]
+const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(10.345796563855915, 6.465825926661394, -13.445344768107525)
+const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-0.3847797810371793, -0.04512399314851155, -0.018265435666310163)
 
 export default function Page() {
   const router = useRouter()
@@ -130,6 +154,18 @@ export default function Page() {
   const handleTimeOfDayChange = (next: TimeOfDay) => {
     setDay(next)
     setTheme(next)
+  }
+
+  const handleUpperIslandHotspotClick = () => {
+    cameraControllerRef.current?.flyTo(UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION)
+  }
+
+  const handleLeftTreeHotspotClick = () => {
+    cameraControllerRef.current?.flyTo(LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION)
+  }
+
+  const handleMoonIslandHotspotClick = () => {
+    cameraControllerRef.current?.flyTo(MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION)
   }
 
   const handleUpClick = async () => {
@@ -283,11 +319,13 @@ export default function Page() {
                       onDown={() => { setMotion(true); handleDownClick() }}
                     />
                   </group>
+                  <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />
+                  <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />
+                  <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />
                 </>
               )}
             </group>
             <CameraController ref={setCameraControllerRef} />
-            <OrbitControls />
             <Preload all />
           </Suspense>
         )}
