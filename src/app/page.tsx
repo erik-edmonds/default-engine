@@ -66,21 +66,27 @@ const STAMP_DURATION_MS = 420
 // floating island, and the viewpoint the camera flies to when it's
 // clicked -- separate from each other on purpose (the marker itself lives
 // at a spot visible from the resting shot; the flight target is a
-// different vantage point up near the island).
-const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-8, 6, -8]
+// different vantage point up near the island). Marker positions found by
+// temporarily wiring an onClick probe onto <Merged> (see Scene.tsx history)
+// that logs the raycast hit's world point, then clicking the landmark in a
+// screenshot -- eyeballing world coordinates from a 2D screenshot isn't
+// reliable enough to land a marker precisely on a specific tree.
+
+// Top of the big left landmass, by the bushy tree to the left of the
+// waterfall. Viewpoint target unchanged -- only the marker moved.
+const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-9.11, 12.97, -13.08]
 const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-9.272831294101561, 15.407324225909505, -5.428682003669432)
 const UPPER_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-0.20748529928110077, -0.2502075137252594, -0.052077416270268545)
 
-// By the tree on the big left landmass (was mistakenly placed on the small
-// moon-side rock spire instead -- moved here, its viewpoint target is
-// unchanged from before).
-const LEFT_TREE_HOTSPOT_POSITION: [number, number, number] = [-10.93, 11.8, -12.89]
+// By the tree on the small, separate lower-left island (just above the
+// "Erik Edmonds" text in the resting shot) -- was mistakenly on the big
+// landmass instead. Viewpoint target unchanged.
+const LEFT_TREE_HOTSPOT_POSITION: [number, number, number] = [-14.69, 3.47, -12.94]
 const LEFT_TREE_VIEWPOINT_POSITION = new THREE.Vector3(-4.973450838704888, 4.940798436814231, 1.0949348301915267)
 const LEFT_TREE_VIEWPOINT_ROTATION = new THREE.Euler(-0.18086788683791294, 0.6833181088730893, 0.11494727400569638)
 
-// The small rock spire closest to the moon -- same marker spot as before,
-// now with its own dedicated viewpoint target.
-const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [10.85, 4.8, -17.92]
+// The small rock spire closest to the moon -- nudged closer to its tree.
+const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [11.0, 5.57, -19.72]
 const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(10.345796563855915, 6.465825926661394, -13.445344768107525)
 const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-0.3847797810371793, -0.04512399314851155, -0.018265435666310163)
 
