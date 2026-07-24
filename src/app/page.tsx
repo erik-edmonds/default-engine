@@ -3,7 +3,7 @@
 import {  useState, useRef, useCallback, useEffect, Suspense, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Canvas } from "@react-three/fiber"
-import { ContactShadows, Preload, useProgress } from "@react-three/drei"
+import { ContactShadows, OrbitControls, Preload, useProgress } from "@react-three/drei"
 import { Bloom, EffectComposer } from "@react-three/postprocessing"
 import gsap from "gsap"
 import { useAppState } from "@/components/layout/StateProvider"
@@ -287,6 +287,7 @@ export default function Page() {
               )}
             </group>
             <CameraController ref={setCameraControllerRef} />
+            <OrbitControls />
             <Preload all />
           </Suspense>
         )}

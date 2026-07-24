@@ -43,7 +43,15 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec3 dir = normalize(vPos);
     float elevation = dir.y;
-    float azimuth = atan(dir.x, dir.z);
+    // A horizontal coordinate for the noise field. atan2(x,z) (the "real"
+    // azimuth angle) has a branch-cut discontinuity at +-180 degrees --
+    // for a forward-facing sky effect that never needs to wrap a full
+    // circle, that seam has no reason to exist and, depending on camera
+    // rotation, can land right in the middle of the visible view (showing
+    // up as an unnatural break/"disjoint spot" in the band). dir.x is
+    // continuous everywhere and tracks left-right screen position for any
+    // forward-looking camera, so use that instead.
+    float h = dir.x;
 
     // The whole pattern flows sideways over time -- real aurora visibly
     // "dances" rather than sitting static, and this is what sells that.
@@ -52,11 +60,11 @@ const fragmentShader = /* glsl */ `
     // A real aurora curtain has a fairly crisp *lower* edge (its base) and
     // streams upward in rays that thin out and fade the higher they go --
     // not the other way around. One continuous wavy base line sweeps
-    // gently across the sky (low azimuth frequency -- a single flowing
-    // arc, not disconnected wiggles), positioned low and kept short so it
-    // sits near the horizon as an accent instead of stretching toward the
-    // zenith and dominating the sky.
-    float baseWave = noise(vec2(azimuth * 0.5 + drift, uTime * 0.015)) * 2.0 - 1.0;
+    // gently across the sky (low frequency -- a single flowing arc, not
+    // disconnected wiggles), positioned low and kept short so it sits near
+    // the horizon as an accent instead of stretching toward the zenith and
+    // dominating the sky.
+    float baseWave = noise(vec2(h * 1.8 + drift, uTime * 0.015)) * 2.0 - 1.0;
     float base = 0.05 + baseWave * 0.1;
     float above = elevation - base; // 0 at the base, positive going up
 
@@ -65,14 +73,14 @@ const fragmentShader = /* glsl */ `
 
     // Rays thin out going up from the base -- short length keeps the
     // whole effect compact rather than filling the sky.
-    float rayLenNoise = noise(vec2(azimuth * 7.0 + drift * 1.4, 3.0));
+    float rayLenNoise = noise(vec2(h * 20.0 + drift * 1.4, 3.0));
     float rayLength = mix(0.05, 0.16, rayLenNoise);
     float rayFade = exp(-max(above, 0.0) / rayLength);
 
     float shape = baseCutoff * rayFade;
 
     // Fine vertical texture within the rays themselves.
-    float rayTexture = noise(vec2(azimuth * 30.0 + drift * 2.0, elevation * 4.0 + uTime * 0.15));
+    float rayTexture = noise(vec2(h * 90.0 + drift * 2.0, elevation * 4.0 + uTime * 0.15));
     rayTexture = 0.6 + 0.5 * rayTexture;
 
     float intensity = clamp(shape * rayTexture, 0.0, 1.0) * uOpacity;
@@ -80,7 +88,7 @@ const fragmentShader = /* glsl */ `
     // Magenta/pink bleeding through near the brightest core, same as real
     // aurora's mixed oxygen/nitrogen emission colors, via a slow
     // independent noise so it doesn't uniformly tint the whole ribbon.
-    float magentaMix = smoothstep(0.55, 0.95, shape) * noise(vec2(azimuth * 2.2 + drift * 0.7, 9.0));
+    float magentaMix = smoothstep(0.55, 0.95, shape) * noise(vec2(h * 6.0 + drift * 0.7, 9.0));
     vec3 color = mix(uColorA, uColorC, clamp(magentaMix, 0.0, 0.6));
 
     gl_FragColor = vec4(color * intensity * 1.05, intensity * 0.85);
