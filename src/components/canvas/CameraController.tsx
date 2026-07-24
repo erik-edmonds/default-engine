@@ -5,7 +5,6 @@ import * as THREE from "three"
 import { useThree } from "@react-three/fiber"
 import gsap from "gsap"
 
-import { ISLAND_CAMERA_POSITION, EARTH_CROSS_FRACTION } from "./earthIntroPath"
 import { tweenDuration } from "@/helpers/motion"
 
 // Without this, a stalled frame rate (heavy scene load, background tab, low-end
@@ -29,7 +28,6 @@ export interface CameraControllerHandle {
   flyUp: () => Promise<void>
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
-  revealIsland: (onEarthCrossed?: () => void) => Promise<void>
   flyTo: (position: THREE.Vector3, rotation: THREE.Euler, duration?: number) => Promise<void>
 }
 
@@ -120,67 +118,44 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // left/right motion and turns read clearly against a steady frame.
     beginSkyJourney: () => {},
     setSkyOffset: () => {},
-    // Straight-line push forward from wherever the Earth intro left the
-    // camera to the homepage's resting shot. Position-only, deliberately —
-    // the camera already faces this direction from frame one (see
-    // earthIntroPath.ts), so a pure dolly forward is what makes this read
-    // as a satellite zooming straight in rather than swooping/turning. One
-    // continuous tween the whole way -- the Earth is never faded out; it's
-    // still fully opaque and filling the frame right up until the moment
-    // the camera's live position (not the eased tween-time fraction, which
-    // diverges from it under a non-linear ease) crosses EARTH_CROSS_FRACTION
-    // of the total distance, at which point `onEarthCrossed` fires exactly
-    // once so the caller can swap in the island scene and mask the swap
-    // with a quick flash -- one continuous zoom "through" the Earth into
-    // the island, not two scenes cutting between each other.
-    revealIsland: (onEarthCrossed) =>
-      new Promise<void>((resolve) => {
-        const startPosition = camera.position.clone()
-        const fixedRotation = camera.rotation.clone()
-        const totalDistance = startPosition.distanceTo(ISLAND_CAMERA_POSITION)
-        let crossed = false
-        gsap.to(camera.position, {
-          x: ISLAND_CAMERA_POSITION.x,
-          y: ISLAND_CAMERA_POSITION.y,
-          z: ISLAND_CAMERA_POSITION.z,
-          duration: tweenDuration(2),
-          ease: "power2.inOut",
-          onUpdate: () => {
-            syncOrbitTarget(fixedRotation)
-            if (crossed || !onEarthCrossed) return
-            const traveled = startPosition.distanceTo(camera.position)
-            if (traveled / totalDistance >= EARTH_CROSS_FRACTION) {
-              crossed = true
-              onEarthCrossed()
-            }
-          },
-          onComplete: () => {
-            resolve()
-          },
-        })
-      }),
     // Generic named-viewpoint fly-to for in-world hotspots (see
-    // CameraHotspot.tsx) -- position and rotation tween together, same
-    // power2.inOut shape as the other camera moves above, so an arbitrary
-    // preset viewpoint reads as one continuous move rather than a pan then
-    // a snap-to-rotation.
-    flyTo: (position, rotation, duration = 2.5) =>
+    // CameraHotspot.tsx). Position and rotation used to tween together,
+    // simultaneously, over the same window -- but since they're two
+    // independent interpolations, the camera could easily be positioned
+    // somewhere mid-flight while *already* rotated most of the way toward
+    // the destination's orientation, so it spent a chunk of the transition
+    // pointed at nothing coherent (blank sky, empty space) instead of
+    // anything meaningful. Splitting into two sequential phases -- pan to
+    // the destination first (rotation held fixed at the starting
+    // orientation), then rotate in place once arrived -- keeps every frame
+    // legible: the whole pan reads as one steady, coherent camera move,
+    // and the reorientation only happens once, standing still, at the end.
+    flyTo: (position, rotation, duration = 2.5 * 8) =>
       new Promise<void>((resolve) => {
-        gsap.to(camera.position, {
+        const startRotation = camera.rotation.clone()
+        const total = tweenDuration(duration)
+        // Panning covers the "travel," so it gets the bigger share; the
+        // in-place reorientation is comparatively quick, just settling the
+        // final framing.
+        const panDuration = total * 0.6
+        const rotateDuration = total * 0.4
+
+        const timeline = gsap.timeline({ onComplete: () => resolve() })
+        timeline.to(camera.position, {
           x: position.x,
           y: position.y,
           z: position.z,
-          duration: tweenDuration(duration),
+          duration: panDuration,
           ease: "power2.inOut",
+          onUpdate: () => syncOrbitTarget(startRotation),
         })
-        gsap.to(camera.rotation, {
+        timeline.to(camera.rotation, {
           x: rotation.x,
           y: rotation.y,
           z: rotation.z,
-          duration: tweenDuration(duration),
+          duration: rotateDuration,
           ease: "power2.inOut",
           onUpdate: () => syncOrbitTarget(camera.rotation),
-          onComplete: () => resolve(),
         })
       }),
   }))

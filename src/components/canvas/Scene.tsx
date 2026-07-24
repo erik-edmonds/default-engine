@@ -14,7 +14,7 @@ export function Scene({ day }: { day: TimeOfDay }) {
     return (
         <>
             <Bvh firstHitOnly>
-                <group position={[11, 8, -10]}>
+                <group position={[20, 15, -20]}>
                     <Clouds data={data} range={5} />
                 </group>
                 <Clouds data={surface} range={15} />

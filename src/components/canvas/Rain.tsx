@@ -13,9 +13,9 @@ export function Rain({ count = 2000 }) {
     const drops = [];
     for (let i = 0; i < count; i++) {
       drops.push({
-        x: (Math.random() - 0.5) * 40,
-        y: Math.random() * 30,
-        z: (Math.random() - 0.5) * 40,
+        x: (Math.random() - 0.5) * 100,
+        y: (Math.random() - 0.5) * 30,
+        z: (Math.random() - 0.5) * 60,
         speed: 0.2 + Math.random() * 0.3,
       });
     }
@@ -27,9 +27,7 @@ export function Rain({ count = 2000 }) {
       drop.y -= drop.speed;
       
       // Reset drop
-      if (drop.y < -10) {
-        drop.y = 20;
-      }
+      
 
       // Update the dummy object and apply it to the instanced mesh
       dummy.position.set(drop.x, drop.y, drop.z);
