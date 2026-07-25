@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Poppins } from "next/font/google";
 import "./globals.css";
 import { Favicon } from "@/components/layout/Icon";
 import { AppStateProvider } from "@/components/layout/StateProvider";
@@ -14,6 +14,14 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// The homepage's name/title card (page.tsx) -- a heavy geometric sans,
+// matching the reference site's hero text look.
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin"],
+  weight: ["700", "800"],
 });
 
 const SITE_DESCRIPTION =
@@ -46,7 +54,7 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <AppStateProvider>
           <div className="absolute z-50 top-5 left-5">

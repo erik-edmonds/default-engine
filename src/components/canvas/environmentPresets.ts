@@ -44,7 +44,6 @@ export interface EnvironmentBlend {
   auroraOpacity: number
   rimColor: string
   rimIntensity: number
-  nameTextColor: string
 }
 
 export type TimeOfDay = "day" | "evening" | "night"
@@ -88,7 +87,6 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     auroraOpacity: 0,
     rimColor: "#bcdfff",
     rimIntensity: 0.9,
-    nameTextColor: "#ffffff",
   },
   evening: {
     skyTop: "#1c2f52",
@@ -127,7 +125,6 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     auroraOpacity: 0,
     rimColor: "#ff8a4c",
     rimIntensity: 1.7,
-    nameTextColor: "#242424",
   },
   night: {
     skyTop: "#03060f",
@@ -164,7 +161,6 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     auroraOpacity: 1,
     rimColor: "#4d7fff",
     rimIntensity: 1.6,
-    nameTextColor: "#000000",
   },
 }
 

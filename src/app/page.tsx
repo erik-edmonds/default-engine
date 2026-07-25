@@ -3,13 +3,12 @@
 import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
-import { ContactShadows, Preload, useProgress } from "@react-three/drei";
+import { ContactShadows, OrbitControls, Preload, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { useAppState } from "@/components/layout/StateProvider";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
-import { ScrambleTitle } from "@/components/canvas/ScrambleTitle";
 import { Environment } from "@/components/canvas/Environment";
 import { TimeOfDayOrb } from "@/components/canvas/TimeOfDayOrb";
 import { NavTotems } from "@/components/canvas/NavTotems";
@@ -26,7 +25,8 @@ const STAMP_DURATION_MS = 420;
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
   { threshold: 75, text: "Digital Nomad", align: "left" },
   { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" },
-  { threshold: 375, text: "Let's Connect — Contact Me", align: "center" },
+  { threshold: 375, text: "Certified Scuba Diver", align: "left" },
+  { threshold: 525, text: "Let's Connect — Contact Me", align: "center" },
 ];
 
 function getTimeOfDay(): TimeOfDay {
@@ -79,7 +79,6 @@ export default function Page() {
   const click = useAtomValue(raining)
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
-  const nameTextRef = useRef<HTMLHeadingElement>(null);
   const isSequenceRunning = useRef(false);
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
@@ -100,10 +99,19 @@ export default function Page() {
   }, [sceneReady]);
 
   useEffect(() => {
-    const SKY_JOURNEY_DISTANCE = 450;
-    const SCROLL_SENSITIVITY = 0.4 / 6;
+    const SKY_JOURNEY_DISTANCE = 600; // was 450 -- room for the new "Certified Scuba Diver" caption
+    const SCROLL_SENSITIVITY = 0.4 / 6; // back to the original rate -- halving it read as far too slow
 
     const handleWheel = (event: WheelEvent) => {
+      // This page has no scrollable content anywhere -- scrolling only ever
+      // drives the sky journey. Without this, the browser's native page
+      // scroll fires right alongside our own handling of the same wheel
+      // event: nothing here visibly moves (nothing on the page overflows),
+      // but trackpads still report a elastic "rubber-band" overscroll for a
+      // scroll the page never actually performs, which reads as the whole
+      // page bouncing. Requires the listener below to be non-passive, or
+      // preventDefault is a silent no-op.
+      event.preventDefault();
       if (!isInSkyJourney.current) return;
       skyOffset.current = Math.min(Math.max(skyOffset.current + event.deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE);
       cameraControllerRef.current?.setSkyOffset(skyOffset.current);
@@ -118,7 +126,7 @@ export default function Page() {
       }
     };
 
-    window.addEventListener("wheel", handleWheel, { passive: true });
+    window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
   }, []);
 
@@ -160,10 +168,10 @@ export default function Page() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      <div className={`pointer-events-none absolute left-40 top-3/5 z-10 font-sans transition-all duration-300 ${motion ? "invisible" : "visible"}`}>
+      <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
         <div className="relative">
-          {sceneReady && <h1 ref={nameTextRef} className="animate-stamp text-7xl font-bold leading-[0.9] tracking-tight">Erik<br />Edmonds</h1>}
-          {nameStamped && <div className="relative mt-0 grid justify-items-end"><ScrambleTitle text="Data Scientist" /></div>}
+          {sceneReady && <h1 className="animate-stamp font-display text-5xl font-bold uppercase tracking-tight text-white">Erik Edmonds</h1>}
+          {nameStamped && <p className="font-display text-xl font-normal text-white">Data Scientist</p>}
         </div>
       </div>
       <div
@@ -176,7 +184,7 @@ export default function Page() {
         <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
         <color attach="background" args={["#0a0a0a"]} />
         {islandMounted && <Suspense fallback={null}>
-          <Environment target={day} nameTextRef={nameTextRef} />
+          <Environment target={day} />
           <group>
             <Scene day={day} />
             <AvatarController ref={avatarControllerRef} />

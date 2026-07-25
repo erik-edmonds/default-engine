@@ -91,10 +91,8 @@ function nextAngle(current: number, targetBase: number) {
 
 export function Environment({
   target,
-  nameTextRef,
 }: {
   target: TimeOfDay
-  nameTextRef?: React.RefObject<HTMLElement | null>
 }) {
   // The single continuously-tweened source of truth. A ref (not state) --
   // this is read imperatively every frame in useFrame below, same pattern
@@ -200,11 +198,6 @@ export function Environment({
     const lit = b.campfireIntensity > CAMPFIRE_LIT_THRESHOLD
     if (litCampfireRef.current) litCampfireRef.current.visible = lit
     if (deadCampfireRef.current) deadCampfireRef.current.visible = !lit
-
-    if (nameTextRef?.current) {
-      nameTextRef.current.style.color = b.nameTextColor
-      nameTextRef.current.style.textShadow = `0 0 24px ${b.rimColor}`
-    }
   })
 
   return (

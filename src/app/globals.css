@@ -10,6 +10,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-poppins);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,6 +18,15 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+/* Every page here is a single full-viewport scene -- nothing is meant to
+   scroll natively (the sky journey reads the wheel itself instead). Without
+   this, a trackpad's elastic overscroll can still bounce the whole page on
+   wheel input even when nothing on it actually overflows. */
+html,
+body {
+  overscroll-behavior: none;
 }
 
 body {
@@ -32,7 +42,7 @@ body {
 /* "Erik Edmonds" slamming onto the screen like a rubber stamp: drops in
    oversized and blurred from above, overshoots slightly on impact, then
    settles. Duration must match STAMP_DURATION_MS in page.tsx, which gates
-   when the ScrambleTitle beneath it is allowed to start. */
+   when the "Data Scientist" tagline beneath it is allowed to appear. */
 @keyframes stamp-impact {
   0% {
     opacity: 0;

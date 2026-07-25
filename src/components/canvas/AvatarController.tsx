@@ -1,9 +1,11 @@
 "use client"
 
-import { forwardRef, useImperativeHandle, useRef, useState, Suspense } from "react"
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState, Suspense } from "react"
 import type { Group } from "three"
 import gsap from "gsap"
-import { tweenDuration } from "@/helpers/motion"
+import { useFrame } from "@react-three/fiber"
+import { easing } from "maath"
+import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { Avatar } from "@/components/models/Avatar"
 import { Dragonite } from "@/components/models/Dragonite"
 import { Scuba } from "@/components/models/Scuba"
@@ -13,9 +15,10 @@ const BASE_ROTATION: [number, number, number] = [0, 0, 0]
 
 const KEYFRAMES: { at: number; x: number; rotY: number }[] = [
   { at: 0, x: BASE_POSITION[0], rotY: 0 },
-  { at: 150, x: 1, rotY: Math.PI / 4 }, 
-  { at: 300, x: -2.07, rotY: Math.PI / 2 }, 
-  { at: 450, x: 4, rotY: Math.PI }, 
+  { at: 150, x: 1, rotY: Math.PI / 4 },
+  { at: 375, x: -2.07, rotY: Math.PI / 2 }, // hold-start -- coincides with the "Certified Scuba Diver" caption's own threshold
+  { at: 525, x: -2.07, rotY: Math.PI / 2 }, // hold-end -- coincides with "Let's Connect"'s threshold
+  { at: 600, x: 4, rotY: Math.PI },
 ]
 
 function smoothstep(t: number) {
@@ -25,6 +28,11 @@ function smoothstep(t: number) {
 function catmullRomTangents(values: number[], times: number[]) {
   return values.map((v, i) => {
     if (i === 0 || i === values.length - 1) return 0
+    // A keyframe sharing its value with a neighbor marks a deliberate
+    // hold -- zero its tangent instead of the usual wide-neighbor
+    // Catmull-Rom slope, or the hold "leaks" motion from its OTHER
+    // neighbor and produces a visible dip/wobble mid-hold.
+    if (values[i - 1] === v || values[i + 1] === v) return 0
     return (values[i + 1] - values[i - 1]) / (times[i + 1] - times[i - 1])
   })
 }
@@ -70,8 +78,8 @@ function getChoreographedPose(offset: number) {
 const Z_STOPS: { at: number; z: number }[] = [
   { at: 0, z: BASE_POSITION[2] },
   { at: 150, z: BASE_POSITION[2] - 1.5 },
-  { at: 225, z: BASE_POSITION[2] - 1.5 },
-  { at: 450, z: BASE_POSITION[2] + 1 },
+  { at: 525, z: BASE_POSITION[2] - 1.5 },
+  { at: 600, z: BASE_POSITION[2] + 1 },
 ]
 
 function getSkyZ(offset: number) {
@@ -89,8 +97,8 @@ function getSkyZ(offset: number) {
 
 const Y_STOPS: { at: number; yOffset: number }[] = [
   { at: 0, yOffset: 0 },
-  { at: 300, yOffset: 0 },
-  { at: 450, yOffset: 3 },
+  { at: 525, yOffset: 0 },
+  { at: 600, yOffset: 3 },
 ]
 
 function getSkyY(offset: number) {
@@ -126,10 +134,27 @@ const DIVE_TARGET_X = -7.5
 const DIVE_HOP_HEIGHT = 1
 const DIVE_DEPTH = 6
 
+// How long the displayed sky-journey offset takes to catch up to the
+// scrolled-to target (same technique, and the same 0.25s, as
+// CameraHelpers.tsx's Rig) -- this is what makes scrolling feel weighted
+// instead of a raw 1:1 input mapping, and lets motion keep easing for a
+// moment after the wheel stops instead of stopping dead.
+const SKY_SCROLL_SMOOTH_TIME = 0.25
+// A small ambient sway layered on top of the choreographed Y position so
+// the avatar reads as alive (gently hovering) rather than frozen during the
+// held pose, without being noticeable against the larger directed motion
+// elsewhere in the journey.
+const SKY_IDLE_BOB_AMPLITUDE = 0.06
+const SKY_IDLE_BOB_SPEED = 0.7
+
 export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref) => {
   const group = useRef<Group>(null)
   const [modelKind, setModelKind] = useState<ModelKind>("base")
   const skyBaseY = useRef(0)
+  const targetSkyOffset = useRef(0)
+  const displaySkyOffset = useRef(0)
+  const isSkyJourneyActive = useRef(false)
+  const skyBobSeed = useMemo(() => Math.random() * Math.PI * 2, [])
 
   useImperativeHandle(ref, () => ({
     spinAndTransform: (target: ModelKind) =>
@@ -159,14 +184,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
       }),
     beginSkyJourney: () => {
       if (group.current) skyBaseY.current = group.current.position.y
+      isSkyJourneyActive.current = true
     },
     setSkyOffset: (offset: number) => {
-      if (!group.current) return
-      const pose = getChoreographedPose(offset)
-      group.current.position.x = pose.x
-      group.current.position.y = skyBaseY.current + getSkyY(offset)
-      group.current.position.z = getSkyZ(offset)
-      group.current.rotation.y = pose.rotY
+      targetSkyOffset.current = offset
     },
     moveToIslandEdge: () =>
       new Promise<void>((resolve) => {
@@ -199,6 +220,35 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           .to(group.current.position, { y: "-=" + (DIVE_HOP_HEIGHT + DIVE_DEPTH), duration: tweenDuration(1.3), ease: "power2.in" }, hopDuration)
       }),
   }))
+
+  // Drives the sky-journey pose every frame instead of setSkyOffset applying
+  // it instantly -- damping the offset itself (same technique, and the same
+  // smooth time, as CameraHelpers.tsx's Rig) is what makes scrolling feel
+  // weighted rather than a raw 1:1 input mapping. Gated on
+  // isSkyJourneyActive so this doesn't fight the GSAP tweens above
+  // (spinAndTransform/flyUp/etc.) before the journey has even started -- a
+  // one-way latch is safe here because "up" and "down" are mutually
+  // exclusive for the rest of a page session (page.tsx hides, and thereby
+  // disables raycasting on, both totems the moment either fires).
+  useFrame((state, delta) => {
+    if (!isSkyJourneyActive.current || !group.current) return
+
+    const reduced = prefersReducedMotion()
+    if (reduced) {
+      displaySkyOffset.current = targetSkyOffset.current
+    } else {
+      easing.damp(displaySkyOffset, "current", targetSkyOffset.current, SKY_SCROLL_SMOOTH_TIME, delta)
+    }
+
+    const offset = displaySkyOffset.current
+    const pose = getChoreographedPose(offset)
+    const idleBob = reduced ? 0 : Math.sin(state.clock.elapsedTime * SKY_IDLE_BOB_SPEED + skyBobSeed) * SKY_IDLE_BOB_AMPLITUDE
+
+    group.current.position.x = pose.x
+    group.current.position.y = skyBaseY.current + getSkyY(offset) + idleBob
+    group.current.position.z = getSkyZ(offset)
+    group.current.rotation.y = pose.rotY
+  })
 
   return (
     <group ref={group} position={BASE_POSITION} rotation={BASE_ROTATION}>
