@@ -14104,7 +14104,7 @@
                   },
                   {
                     name: "textureRainBg",
-                    src: "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
+                    src: s,
                   },
                 ]).then(function (t) {
                   var e;
@@ -14142,9 +14142,6 @@
                       alphaSubtract: 3,
                       minRefraction: 128,
                     })),
-                    (window.__rainRenderer = g),
-                    (window.__rainFgCanvas = d),
-                    (window.__rainFgCtx = p),
                     document.addEventListener("mousemove", function (t) {});
                 });
               },
@@ -14232,7 +14229,7 @@
                         (this.gl = new n.default(
                           this.canvas,
                           {
-                            alpha: !0,
+                            alpha: !1,
                           },
                           "#define GLSLIFY 1\nprecision mediump float;\n\nattribute vec2 a_position;\nattribute vec2 a_texCoord;\n\nuniform vec2 u_resolution;\n\nvarying vec2 v_texCoord;\nvarying vec2 v_resolution;\n\nvoid main() {\n   // convert the rectangle from pixels to 0.0 to 1.0\n   vec2 zeroToOne = a_position / u_resolution;\n\n   // convert from 0->1 to 0->2\n   vec2 zeroToTwo = zeroToOne * 2.0;\n\n   // convert from 0->2 to -1->+1 (clipspace)\n   vec2 clipSpace = zeroToTwo - 1.0;\n\n   gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);\n\n   // pass the texCoord to the fragment shader\n   // The GPU will interpolate this value between points.\n   v_texCoord = a_texCoord;\n   v_resolution = u_resolution;\n}\n",
                           "#define GLSLIFY 1\nprecision mediump float;\n\n// our texture\nuniform sampler2D u_waterMap;\nuniform sampler2D u_textureShine;\nuniform sampler2D u_textureFg;\nuniform sampler2D u_textureBg;\n\n// the texCoords passed in from the vertex shader.\nvarying vec2 v_texCoord;\nvarying vec2 v_resolution;\nuniform vec2 u_parallax;\nuniform float u_textureRatio;\nuniform int u_renderShine;\nuniform int u_renderShadow;\nuniform float u_minRefraction;\nuniform float u_refractionDelta;\nuniform float u_brightness;\nuniform float u_alphaMultiply;\nuniform float u_alphaSubtract;\n\nvec4 blend(vec4 bg,vec4 fg){\n  vec3 bgm=bg.rgb*bg.a;\n  vec3 fgm=fg.rgb*fg.a;\n  float ia=1.-fg.a;\n  float a=(fg.a + bg.a * ia);\n  vec3 rgb;\n  if(a!=0.){\n    rgb=(fgm + bgm * ia) / a;\n  }else{\n    rgb=vec3(0.,0.,0.);\n  }\n  return vec4(rgb,a);\n}\nvec2 scaledTexCoord(){\n  float ratio=v_resolution.x/v_resolution.y;\n  vec2 scale=vec2(1.,1.);\n  vec2 offset=vec2(0.,0.);\n  float ratioDelta=ratio-u_textureRatio;\n  if(ratioDelta>=0.){\n    scale.y=(1.+ratioDelta);\n    offset.y=ratioDelta/2.;\n  }else{\n    scale.x=(1.-ratioDelta);\n    offset.x=-ratioDelta/2.;\n  }\n  return (v_texCoord+offset)/scale;\n}\nvec2 pixel(){\n  return vec2(1.,1.)/v_resolution;\n}\nvec2 parallax(float v){\n  return u_parallax*pixel()*v;\n}\nvec4 offset(float x, float y){\n  vec2 scale=vec2( (v_resolution.x+40.)/v_resolution.x, (v_resolution.y+40.)/v_resolution.y);\n  vec2 scaledTexCoord=v_texCoord/scale;\n  vec2 scaleOffset=vec2((1.-(1./scale.x))/2.,(1.-(1./scale.y))/2.);\n  return texture2D(u_waterMap, (scaledTexCoord+scaleOffset)+(pixel()*vec2(x,y))+parallax(20.));\n}\n\nvoid main() {\n\n  vec4 center = offset(0.,0.);\n\n  float d=center.b;\n  float x=center.g;\n  float y=center.r;\n\n  float a=clamp(center.a*u_alphaMultiply-u_alphaSubtract, 0.,1.);\n  vec2 refraction=(vec2(x,y)-0.5)*2.;\n  vec2 texturePos=scaledTexCoord() +( pixel()*refraction*(u_minRefraction+(d*u_refractionDelta)))+parallax(-15.);\n  vec4 tex=texture2D(u_textureFg,texturePos);\n\n  if(u_renderShine==1){\n    float maxShine=490.;\n    float minShine=maxShine*0.18;\n    vec4 shine=texture2D(u_textureShine,vec2(0.5,0.5) + ((1./512.)*refraction)*-(minShine+((maxShine-minShine)*d)));\n    tex=blend(tex,shine);\n  }\n\n  vec4 bg=texture2D(u_textureBg,scaledTexCoord()+parallax(5.));\n\n  // vec4 fg=vec4(tex.rgb*1.04,a);\n  vec4 fg=vec4(tex.rgb*u_brightness,a);\n\n  if(u_renderShadow==1){\n    float borderAlpha = offset(0.,0.-(d*6.)).a;\n    borderAlpha=borderAlpha*u_alphaMultiply-(u_alphaSubtract+0.5);\n    // //\n    borderAlpha=clamp(borderAlpha,0.,1.);\n    borderAlpha*=0.2;\n    vec4 border=vec4(0.,0.,0.,borderAlpha);\n    fg=blend(border,fg);\n  }\n  // vec4 fg=vec4(blend(blend(tex,shine),border).rgb,a);\n  //vec4 fg=vec4(blend(tex,border).rgb,a);\n  //vec4 fg=vec4(tex.rgb,a);\n\n  // gl_FragColor = blend(bg,blend(shadow,fg));\n  gl_FragColor = blend(bg,fg);\n  // gl_FragColor = vec4(center.rgb,1);\n\n  // gl_FragColor=vec4(0,0,center.b,1);\n}\n"

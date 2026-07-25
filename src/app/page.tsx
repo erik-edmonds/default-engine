@@ -131,7 +131,7 @@ export default function Page() {
           {nameStamped && <div className="relative mt-0 grid justify-items-end"><ScrambleTitle text="Data Scientist" /></div>}
         </div>
       </div>
-      <Canvas shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} style={{ width: "100vw", height: "100vh" }}>
+      <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
         <EffectComposer><Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} /></EffectComposer>
         <color attach="background" args={["#0a0a0a"]} />
         {islandMounted && <Suspense fallback={null}>

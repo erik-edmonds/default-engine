@@ -2,7 +2,6 @@ import * as THREE from 'three'
 import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Instances, Instance, useGLTF } from '@react-three/drei'
-import { Rain } from "@/components/canvas/Rain"
 import { useSetAtom } from 'jotai'
 import { raining } from '@/components/layout/StateProvider'
 
@@ -27,7 +26,6 @@ export function Clouds({ data, range }) {
           <Cloud key={i} {...props} clicked={setClicked}/>
         ))}
       </Instances>
-      {clicked && <Rain count={2000} />}
     </>
   )
 }
