@@ -119,23 +119,21 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     beginSkyJourney: () => {},
     setSkyOffset: () => {},
     // Generic named-viewpoint fly-to for in-world hotspots (see
-    // CameraHotspot.tsx). Earlier versions tried this two ways: fully
-    // simultaneous (position and rotation tweening together from the very
-    // start) read as chaotic, since the camera could be positioned mid-flight
-    // while already rotated most of the way to the destination's orientation
-    // -- pointed at nothing coherent for a chunk of the transition. Fully
-    // sequential (pan to completion, *then* rotate in place) fixed that but
-    // reads as two disconnected moves stitched together -- the camera visibly
-    // stops before it turns. Real point-to-point camera moves (see
-    // sources/goal.mov) do neither: they travel essentially straight while
-    // still far from the target, then ease into the reorientation as they
-    // close in, arriving already facing the right way. That's what a single
-    // shared timeline with mismatched eases produces: position moves across
-    // the *entire* duration, while rotation is driven by an ease-in curve
-    // that stays close to 0 while position is still easing through the
-    // middle of the pan, then sweeps to 1 as position closes in -- so both
-    // finish together, but the turn is concentrated in the back half of the
-    // move instead of starting immediately or waiting for a full stop.
+    // CameraHotspot.tsx). Earlier versions tried this three ways: fully
+    // simultaneous (position and rotation tweening together for the entire
+    // duration) read as chaotic, since the camera could be positioned
+    // mid-flight while already rotated most of the way to the destination's
+    // orientation -- pointed at nothing coherent for a chunk of the
+    // transition. Fully sequential (pan to completion, *then* rotate in
+    // place) fixed that but reads as two disconnected moves stitched
+    // together -- the camera visibly stops before it turns. Overlapping them
+    // with the turn stretched across the *entire* duration on an ease-in
+    // curve got closer -- straight at first, turning by the end -- but an
+    // ease-in curve is only smoothed on one side: it's accelerating hardest
+    // right as the tween ends, so the turn stops dead instead of settling.
+    // The turn below is confined to the back fraction of the timeline and
+    // eased in *and* out, same as the pan, so it spins up smoothly and bleeds
+    // off smoothly too, finishing exactly as the pan does.
     flyTo: (position, rotation, duration = 2.5) =>
       new Promise<void>((resolve) => {
         const total = tweenDuration(duration)
@@ -154,6 +152,20 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
         const endQuaternion = new THREE.Quaternion().setFromEuler(rotation)
         const rotateProgress = { t: 0 }
 
+        // Stretching the turn across the *entire* duration with an ease-in
+        // curve (previous version) is only smoothed on one side: velocity
+        // ramps up gently but is at its steepest the instant the tween ends,
+        // i.e. it's still accelerating when it suddenly stops -- a hard
+        // snap, not a settle. Confining the turn to the back fraction of the
+        // timeline and easing it in *and* out (power2.inOut, same curve as
+        // the pan) fixes that: the camera stays exactly on its starting
+        // heading through the first stretch of travel, then the turn spins
+        // up smoothly, and just as smoothly bleeds off its speed again,
+        // landing exactly on rotateProgress=1 the same instant the pan ends.
+        const turnFraction = 0.75
+        const turnStart = total * (1 - turnFraction)
+        const turnDuration = total * turnFraction
+
         const timeline = gsap.timeline({ onComplete: () => resolve() })
         timeline.to(
           camera.position,
@@ -171,19 +183,14 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           rotateProgress,
           {
             t: 1,
-            duration: total,
-            // power3.in: near-zero slope at t=0, so the camera stays pointed
-            // the way it started while it's still far from the destination,
-            // then curves into the turn -- reaching t=1 exactly as the pan
-            // above also completes, so the reorientation finishes right as
-            // the camera arrives instead of before or after.
-            ease: "power3.in",
+            duration: turnDuration,
+            ease: "power2.inOut",
             onUpdate: () => {
               camera.quaternion.slerpQuaternions(startQuaternion, endQuaternion, rotateProgress.t)
               syncOrbitTarget(camera.rotation)
             },
           },
-          0,
+          turnStart,
         )
       }),
   }))
