@@ -16,7 +16,8 @@
 # Homepage 
 - [ ] Add guassian blur in background? 
     - [ ] Focus follows the mouse
-- [ ] transition on change from sun/evening/night
+- [x] transition on change from sun/evening/night
+    - [ ] transition finished, but need an object to interact with to make it change.
 - [x] fix music
 - [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
@@ -24,8 +25,9 @@
     - [ ] Maybe text boxes?
 - [ ] Add Dots over iteractive items
     - [ ] On hover, have the outer ring pulse
-    - [ ] Add multiple dots on island and sky scene that the camera can move to?
-    - [ ] On rain from clouds, make screen appear wet as well
+    - [x] Add multiple dots on island and sky scene that the camera can move to?
+    - [x] On rain from clouds, make screen appear wet as well
+        - [ ] Need to improve this some though, it shows up, but it's not transparent like rain.
     - SEE: https://jordan-breton.com/
 - [x] Create logo
 - [x] Bloom for sun and moon

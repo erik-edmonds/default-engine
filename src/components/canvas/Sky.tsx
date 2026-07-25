@@ -3,15 +3,19 @@ import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Instances, Instance, useGLTF } from '@react-three/drei'
 import { Rain } from "@/components/canvas/Rain"
+import { useSetAtom } from 'jotai'
+import { raining } from '@/components/layout/StateProvider'
 
 export function Clouds({ data, range }) {
   const { nodes, materials } = useGLTF('/models/cloud.glb')
   const [clicked, setClicked] = useState(false)
+  const setClick = useSetAtom(raining)
 
   useEffect(() => {
     if (clicked) {
       const timer = setTimeout(() => {
         setClicked(false)
+        setClick(() => false)
       }, 4000) 
     }
   }, [clicked])
@@ -28,9 +32,11 @@ export function Clouds({ data, range }) {
   )
 }
 
-function Cloud({ random, clicked, color = new THREE.Color(), ...props }) {
+function Cloud({ random, atom, clicked, color = new THREE.Color(), ...props }) {
   const ref = useRef()
   const [hovered, setHover] = useState(false)
+  const setClick = useSetAtom(raining)
+
   useFrame((state) => {
     const t = state.clock.getElapsedTime() + random * 10000
     ref.current.position.y = Math.sin(t / 1.5) / 2
@@ -43,7 +49,10 @@ function Cloud({ random, clicked, color = new THREE.Color(), ...props }) {
         ref={ref} 
         onPointerOver={(e) => (e.stopPropagation(), setHover(true))} 
         onPointerOut={(e) => setHover(false)}  
-        onClick={() => clicked(true)}/>
+        onClick={() => {
+          setClick(() => true)
+          clicked(true)}
+          }/>
     </group>
   )
 }

@@ -119,44 +119,72 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     beginSkyJourney: () => {},
     setSkyOffset: () => {},
     // Generic named-viewpoint fly-to for in-world hotspots (see
-    // CameraHotspot.tsx). Position and rotation used to tween together,
-    // simultaneously, over the same window -- but since they're two
-    // independent interpolations, the camera could easily be positioned
-    // somewhere mid-flight while *already* rotated most of the way toward
-    // the destination's orientation, so it spent a chunk of the transition
-    // pointed at nothing coherent (blank sky, empty space) instead of
-    // anything meaningful. Splitting into two sequential phases -- pan to
-    // the destination first (rotation held fixed at the starting
-    // orientation), then rotate in place once arrived -- keeps every frame
-    // legible: the whole pan reads as one steady, coherent camera move,
-    // and the reorientation only happens once, standing still, at the end.
-    flyTo: (position, rotation, duration = 2.5 * 8) =>
+    // CameraHotspot.tsx). Earlier versions tried this two ways: fully
+    // simultaneous (position and rotation tweening together from the very
+    // start) read as chaotic, since the camera could be positioned mid-flight
+    // while already rotated most of the way to the destination's orientation
+    // -- pointed at nothing coherent for a chunk of the transition. Fully
+    // sequential (pan to completion, *then* rotate in place) fixed that but
+    // reads as two disconnected moves stitched together -- the camera visibly
+    // stops before it turns. Real point-to-point camera moves (see
+    // sources/goal.mov) do neither: they travel essentially straight while
+    // still far from the target, then ease into the reorientation as they
+    // close in, arriving already facing the right way. That's what a single
+    // shared timeline with mismatched eases produces: position moves across
+    // the *entire* duration, while rotation is driven by an ease-in curve
+    // that stays close to 0 while position is still easing through the
+    // middle of the pan, then sweeps to 1 as position closes in -- so both
+    // finish together, but the turn is concentrated in the back half of the
+    // move instead of starting immediately or waiting for a full stop.
+    flyTo: (position, rotation, duration = 2.5) =>
       new Promise<void>((resolve) => {
-        const startRotation = camera.rotation.clone()
         const total = tweenDuration(duration)
-        // Panning covers the "travel," so it gets the bigger share; the
-        // in-place reorientation is comparatively quick, just settling the
-        // final framing.
-        const panDuration = total * 0.6
-        const rotateDuration = total * 0.4
+
+        // Tweening rotation.x/y/z as three independent numbers doesn't trace
+        // a natural turn -- each Euler axis eases on its own separate path,
+        // and recomposing them mid-flight can swing the camera through
+        // orientations nowhere near either endpoint. Slerping between the
+        // start/end quaternions instead rotates along the single shortest
+        // arc between the two orientations, which is what reads as one
+        // continuous, natural turn. camera.rotation (the Euler most of this
+        // file reads) is kept in sync automatically -- Object3D wires
+        // quaternion changes back to rotation via an internal onChange
+        // callback.
+        const startQuaternion = camera.quaternion.clone()
+        const endQuaternion = new THREE.Quaternion().setFromEuler(rotation)
+        const rotateProgress = { t: 0 }
 
         const timeline = gsap.timeline({ onComplete: () => resolve() })
-        timeline.to(camera.position, {
-          x: position.x,
-          y: position.y,
-          z: position.z,
-          duration: panDuration,
-          ease: "power2.inOut",
-          onUpdate: () => syncOrbitTarget(startRotation),
-        })
-        timeline.to(camera.rotation, {
-          x: rotation.x,
-          y: rotation.y,
-          z: rotation.z,
-          duration: rotateDuration,
-          ease: "power2.inOut",
-          onUpdate: () => syncOrbitTarget(camera.rotation),
-        })
+        timeline.to(
+          camera.position,
+          {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            duration: total,
+            ease: "power2.inOut",
+            onUpdate: () => syncOrbitTarget(camera.rotation),
+          },
+          0,
+        )
+        timeline.to(
+          rotateProgress,
+          {
+            t: 1,
+            duration: total,
+            // power3.in: near-zero slope at t=0, so the camera stays pointed
+            // the way it started while it's still far from the destination,
+            // then curves into the turn -- reaching t=1 exactly as the pan
+            // above also completes, so the reorientation finishes right as
+            // the camera arrives instead of before or after.
+            ease: "power3.in",
+            onUpdate: () => {
+              camera.quaternion.slerpQuaternions(startQuaternion, endQuaternion, rotateProgress.t)
+              syncOrbitTarget(camera.rotation)
+            },
+          },
+          0,
+        )
       }),
   }))
 

@@ -57,13 +57,18 @@ export function CameraHotspot({
           <circleGeometry args={[0.5, 40]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
-        <mesh raycast={() => null}>
+        {/* depthTest disabled + a high renderOrder makes these draw over
+            everything else in the scene regardless of what geometry sits
+            between them and the camera -- markers are waypoints, not
+            physical objects, so they shouldn't be able to hide behind a
+            rock or island the way a real object would. */}
+        <mesh raycast={() => null} renderOrder={999}>
           <ringGeometry args={[0.34, 0.46, 40]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
         </mesh>
-        <mesh raycast={() => null}>
+        <mesh raycast={() => null} renderOrder={999}>
           <circleGeometry args={[0.16, 40]} />
-          <meshBasicMaterial color="#ffffff" toneMapped={false} side={THREE.DoubleSide} depthWrite={false} />
+          <meshBasicMaterial color="#ffffff" transparent toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
         </mesh>
       </Billboard>
     </group>

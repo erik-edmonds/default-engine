@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState } from 'react';
 import { AppState } from '@/helpers/Interfaces';
-
+import { atom } from 'jotai'
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
 const time = () => {
@@ -34,3 +34,5 @@ export function useAppState() {
   if (!context) throw new Error('useAppState must be used within AppStateProvider');
   return context;
 }
+
+export const raining = atom(false)
