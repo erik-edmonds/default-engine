@@ -23,6 +23,12 @@ import { raining } from "@/components/layout/StateProvider";
 
 const STAMP_DURATION_MS = 420;
 
+const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
+  { threshold: 75, text: "Digital Nomad", align: "left" },
+  { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" },
+  { threshold: 375, text: "Let's Connect — Contact Me", align: "center" },
+];
+
 function getTimeOfDay(): TimeOfDay {
   const hour = new Date().getHours();
   if (hour > 6 && hour <= 17) return "day";
@@ -62,6 +68,8 @@ export default function Page() {
   const [motion, setMotion] = useState(false);
   const [islandMounted, setIslandMounted] = useState(false);
   const [nameStamped, setNameStamped] = useState(false);
+  const [skyText, setSkyText] = useState("");
+  const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
   // Which hotspot the camera is currently at -- that one marker hides (no
   // point floating a ring right where you're already standing); every
   // other one shows, including ones already visited, so each spot doubles
@@ -73,6 +81,9 @@ export default function Page() {
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
   const nameTextRef = useRef<HTMLHeadingElement>(null);
   const isSequenceRunning = useRef(false);
+  const isInSkyJourney = useRef(false);
+  const skyOffset = useRef(0);
+  const skyTextRef = useRef("");
   const progress = useProgress((state) => state.progress);
   const sceneReady = progress >= 100;
 
@@ -87,6 +98,29 @@ export default function Page() {
     const timer = setTimeout(() => setNameStamped(true), STAMP_DURATION_MS);
     return () => clearTimeout(timer);
   }, [sceneReady]);
+
+  useEffect(() => {
+    const SKY_JOURNEY_DISTANCE = 450;
+    const SCROLL_SENSITIVITY = 0.4 / 6;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!isInSkyJourney.current) return;
+      skyOffset.current = Math.min(Math.max(skyOffset.current + event.deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE);
+      cameraControllerRef.current?.setSkyOffset(skyOffset.current);
+      avatarControllerRef.current?.setSkyOffset(skyOffset.current);
+
+      const activeCue = [...SKY_TEXT_CUES].reverse().find((cue) => skyOffset.current >= cue.threshold);
+      const nextText = activeCue?.text ?? "";
+      if (nextText !== skyTextRef.current) {
+        skyTextRef.current = nextText;
+        setSkyText(nextText);
+        setSkyTextAlign(activeCue?.align ?? "center");
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, []);
 
   const handleTimeOfDayChange = (next: TimeOfDay) => {
     setDay(next);
@@ -110,6 +144,7 @@ export default function Page() {
     await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
     cameraControllerRef.current?.beginSkyJourney();
     avatarControllerRef.current?.beginSkyJourney();
+    isInSkyJourney.current = true;
     isSequenceRunning.current = false;
   };
 
@@ -131,8 +166,14 @@ export default function Page() {
           {nameStamped && <div className="relative mt-0 grid justify-items-end"><ScrambleTitle text="Data Scientist" /></div>}
         </div>
       </div>
+      <div
+        className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
+        style={{ opacity: skyText ? 1 : 0 }}
+      >
+        <span className="max-w-xl">{skyText}</span>
+      </div>
       <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
-        <EffectComposer><Bloom mipmapBlur luminanceThreshold={1} levels={2} intensity={1} /></EffectComposer>
+        <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
         <color attach="background" args={["#0a0a0a"]} />
         {islandMounted && <Suspense fallback={null}>
           <Environment target={day} nameTextRef={nameTextRef} />

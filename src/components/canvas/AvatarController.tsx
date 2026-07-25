@@ -9,7 +9,7 @@ import { Dragonite } from "@/components/models/Dragonite"
 import { Scuba } from "@/components/models/Scuba"
 
 const BASE_POSITION: [number, number, number] = [-1.3, -0.65, 1]
-const BASE_ROTATION: [number, number, number] = [0, -Math.PI/10, 0]
+const BASE_ROTATION: [number, number, number] = [0, 0, 0]
 
 const KEYFRAMES: { at: number; x: number; rotY: number }[] = [
   { at: 0, x: BASE_POSITION[0], rotY: 0 },
