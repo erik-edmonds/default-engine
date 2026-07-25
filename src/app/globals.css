@@ -11,6 +11,9 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-poppins);
+  --font-arima: var(--font-arima);
+  --font-raleway: var(--font-raleway);
+  --font-nunito: var(--font-nunito);
 }
 
 @media (prefers-color-scheme: dark) {

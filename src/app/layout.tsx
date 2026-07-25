@@ -1,10 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Poppins } from "next/font/google";
+import { Geist, Geist_Mono, Poppins, Arima, Raleway, Nunito } from "next/font/google";
 import "./globals.css";
 import { Favicon } from "@/components/layout/Icon";
 import { AppStateProvider } from "@/components/layout/StateProvider";
 import { Suspense } from "react";
 import Loading from "@/app/loading";
+
+const nunito = Nunito({
+  subsets: ['latin'],
+  display: 'swap', 
+  variable: '--font-nunito',
+}); 
+const arima = Arima({
+  subsets: ['latin'],
+  weight: ['300', '400', '700'], 
+  variable: '--font-arima',
+});
+
+const raleway = Raleway({
+  subsets: ['latin'],
+  weight: ['300', '400', '700'], 
+  variable: '--font-raleway',
+});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -54,7 +71,7 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} h-full antialiased`}>
+      className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} ${arima.variable} ${raleway.variable} ${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <AppStateProvider>
           <div className="absolute z-50 top-5 left-5">

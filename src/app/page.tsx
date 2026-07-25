@@ -170,8 +170,8 @@ export default function Page() {
     <div className="relative h-screen w-screen overflow-hidden">
       <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
         <div className="relative">
-          {sceneReady && <h1 className="animate-stamp font-display text-5xl font-bold uppercase tracking-tight text-white">Erik Edmonds</h1>}
-          {nameStamped && <p className="font-display text-xl font-normal text-white">Data Scientist</p>}
+          {sceneReady && <h1 className="animate-stamp font-nunito text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
+          {nameStamped && <p className="font-nunito text-3xl font-normal text-white">Data Scientist</p>}
         </div>
       </div>
       <div
