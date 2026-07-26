@@ -46,9 +46,56 @@ export interface EnvironmentBlend {
   rimIntensity: number
 }
 
-export type TimeOfDay = "day" | "evening" | "night"
+export type TimeOfDay = "dawn" | "day" | "evening" | "night"
 
 export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
+  dawn: {
+    // Cool lavender-blue zenith easing into a warm, hazy pink/peach
+    // horizon -- the sun is barely up (see sunAngle below), so the sky's
+    // own gradient carries most of "sunrise," unlike day's more uniform
+    // blue.
+    skyTop: "#4a6fa5",
+    skyHorizon: "#ffc9a8",
+    ambientColor: "#f0d3d9",
+    // Between night's 0.6 and day's 0.28 -- the low sun is still soft/hazy
+    // rather than fully overhead, but the sky is already doing most of the
+    // fill work, same as day.
+    ambientIntensity: 0.34,
+    hemiSky: "#ffd9c2",
+    hemiGround: "#3a2a2a",
+    hemiIntensity: 0.34,
+    dirColor: "#ffcba4",
+    dirIntensity: 2.1,
+    // Low and grazing like evening's key light, but from the opposite
+    // horizontal side -- sunrise, not sunset.
+    dirX: 22,
+    dirY: 18,
+    dirZ: -12,
+    fogColor: "#f5d5c8",
+    fogNear: 24,
+    fogFar: 95,
+    campfireColor: "#ff7a30",
+    // Still lit (above CAMPFIRE_LIT_THRESHOLD in Environment.tsx) but low --
+    // embers carrying over from night, on their way out by full day.
+    campfireIntensity: 1,
+    sunOpacity: 0.8,
+    // Just above the horizon crossing (~13.6deg, where ARC_CENTER_Y +
+    // ARC_RADIUS*sin(angle) = 0 -- see Environment.tsx) -- the sun has
+    // barely risen, well below day's higher 35deg.
+    sunAngle: 10,
+    sunZ: -20,
+    // Moon has already set by dawn -- same hard-0 convention evening uses
+    // for "not yet risen."
+    moonOpacity: 0,
+    // Continues sweeping forward from night's 39deg, on its way toward
+    // day's 340deg (see nextAngle in Environment.tsx).
+    moonAngle: 300,
+    moonZ: -20,
+    starsOpacity: 0,
+    auroraOpacity: 0,
+    rimColor: "#ffcf9e",
+    rimIntensity: 1.2,
+  },
   day: {
     // A single monotonic gradient, horizon (skyHorizon, lightest) to
     // zenith (skyTop, darkest) -- see Environment.tsx's sky shader.
@@ -164,5 +211,18 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
   },
 }
 
-// Cycle order for the in-world time-of-day orb (TimeOfDayOrb.tsx).
-export const TIME_OF_DAY_ORDER: TimeOfDay[] = ["day", "evening", "night"]
+// Shared by every time-of-day-dependent transition (Environment.tsx's
+// lighting/sky blend, OceanWater.ts's water color, and the Dial control's
+// own needle animation in page.tsx) so a phase change reads as one
+// coordinated moment instead of several independently-timed animations.
+// Both are the same "easeInOutCubic" curve in their respective systems --
+// gsap's "power2.inOut" (used for every tween keyed off TRANSITION_SECONDS)
+// is exactly that curve (gsap's "power" naming is 1-indexed below quad:
+// power1=quad, power2=cubic, power3=quart, etc.), and this cubic-bezier is
+// the standard CSS approximation of the same shape. Slow start, committed
+// middle, soft settle -- reads as physical rather than a linear crossfade.
+export const TRANSITION_SECONDS = 3
+export const TRANSITION_EASE_CSS = "cubic-bezier(0.65, 0, 0.35, 1)"
+
+// Cycle order for the time-of-day control (Dial.tsx).
+export const TIME_OF_DAY_ORDER: TimeOfDay[] = ["dawn", "day", "evening", "night"]

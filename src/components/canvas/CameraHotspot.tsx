@@ -63,7 +63,7 @@ export function CameraHotspot({
             physical objects, so they shouldn't be able to hide behind a
             rock or island the way a real object would. */}
         <mesh raycast={() => null} renderOrder={999}>
-          <ringGeometry args={[0.41, 0.46, 40]} />
+          <ringGeometry args={[0.43, 0.44, 40]} />
           <meshBasicMaterial color="#ffffff" transparent opacity={0.85} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
         </mesh>
         <mesh raycast={() => null} renderOrder={999}>

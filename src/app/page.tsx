@@ -10,16 +10,17 @@ import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
-import { TimeOfDayOrb } from "@/components/canvas/TimeOfDayOrb";
 import { NavTotems } from "@/components/canvas/NavTotems";
-import type { TimeOfDay } from "@/components/canvas/environmentPresets";
+import { TRANSITION_SECONDS, TRANSITION_EASE_CSS, type TimeOfDay } from "@/components/canvas/environmentPresets";
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
 import * as THREE from "three";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtomValue, useSetAtom } from "jotai";
 import { raining, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
-
+import Dial from "@/components/canvas/Dial"; 
+import { useScrollTravel, NavigationOverlay, NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
+import { Anchor } from "@/helpers/Interfaces";
 const STAMP_DURATION_MS = 420;
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
@@ -31,16 +32,12 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
 
 function getTimeOfDay(): TimeOfDay {
   const hour = new Date().getHours();
+  if (hour > 4 && hour <= 6) return "dawn";
   if (hour > 6 && hour <= 17) return "day";
   if (hour > 14 && hour <= 18) return "evening";
   return "night";
 }
 
-// Where each in-world hotspot marker sits, and the viewpoint the camera
-// flies to when it's clicked. Marker positions were found by raycasting a
-// probe against the scene mesh (click a landmark, read the world-space hit
-// point from the console) -- eyeballing coordinates from a screenshot
-// isn't precise enough to land a marker on a specific tree.
 const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-9.11, 12.97, -13.08];
 const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-12.138549003045972, 15.973606020841718, -28.466165069815958);
 const UPPER_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.836699146874793, -0.5418705211428874, -2.980689379532905);
@@ -53,9 +50,13 @@ const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [11.0, 5.57, -19.
 const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(15.098318983889161, 6.795693566831701, -23.697681471253638);
 const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394);
 
-// "Return to start" -- its viewpoint target is exactly the resting camera
-// position/rotation, so the marker sits near the avatar's own setup
-// instead of on a distant island.
+const ANCHORS: Anchor[] = [
+  { id: "home", label: "Home",  position: [-1.3, -0.65, 1],   scroll: 0.00 },
+  { id: "models",   label: "Models",    position: [-14.69, 3.47, -12.94], scroll: 0.33 },
+  { id: "donate",  label: "Donate",   position: [11.0, 5.57, -19.72],  scroll: 0.66 },
+  { id: "contact", label: "Contact",  position: [-9.11, 12.97, -13.08], scroll: 1.00 }
+  ];
+
 const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
 const HOME_VIEWPOINT_POSITION = ISLAND_CAMERA_POSITION;
 const HOME_VIEWPOINT_ROTATION = ISLAND_CAMERA_ROTATION;
@@ -88,6 +89,7 @@ export default function Page() {
   const skyTextRef = useRef("");
   const progress = useProgress((state) => state.progress);
   const sceneReady = progress >= 100;
+  const travelTo = useScrollTravel(1200);
 
   useEffect(() => {
     router.prefetch("/portfolio");
@@ -101,20 +103,13 @@ export default function Page() {
     return () => clearTimeout(timer);
   }, [sceneReady]);
 
-  // Latches on the *first* time rain is ever triggered, then stays true --
-  // this is what lets RainScene mount once and never unmount again (see its
-  // own file for why: the vendor rain library has no way to stop its
-  // self-scheduling render loop, so remounting it leaks a WebGL context).
-  // Keeping this latch here (rather than mounting RainScene unconditionally)
-  // preserves the original lazy-load intent -- visitors who never click a
-  // cloud never fetch the 693KB vendor script at all.
   useEffect(() => {
     if (isRaining) setRainTriggered(true);
   }, [isRaining]);
 
   useEffect(() => {
-    const SKY_JOURNEY_DISTANCE = 600; // was 450 -- room for the new "Certified Scuba Diver" caption
-    const SCROLL_SENSITIVITY = 0.4 / 6; // back to the original rate -- halving it read as far too slow
+    const SKY_JOURNEY_DISTANCE = 600; 
+    const SCROLL_SENSITIVITY = 0.4 / 6; 
 
     const handleWheel = (event: WheelEvent) => {
       // This page has no scrollable content anywhere -- scrolling only ever
@@ -144,12 +139,8 @@ export default function Page() {
     return () => window.removeEventListener("wheel", handleWheel);
   }, []);
 
-  // goHomeRequest starts at 0 and is only ever incremented (see
-  // StateProvider.tsx), so this only fires on a real request from the
-  // corner home icon, never spuriously on mount.
   useEffect(() => {
     if (goHomeRequestValue > 0) handleGoHome();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goHomeRequestValue]);
 
   const handleTimeOfDayChange = (next: TimeOfDay) => {
@@ -227,28 +218,32 @@ export default function Page() {
       >
         <span className="max-w-xl">{skyText}</span>
       </div>
-      <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
-        <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
-        <color attach="background" args={["#0a0a0a"]} />
-        {islandMounted && <Suspense fallback={null}>
-          <Environment target={day} />
-          <group>
-            <Scene day={day} />
-            <AvatarController ref={avatarControllerRef} />
-            <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
-            {sceneReady && <>
-              <TimeOfDayOrb current={day} onChange={handleTimeOfDayChange} />
-              <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
-              {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
-              {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
-              {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
-              {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
-            </>}
-          </group>
-          <CameraController ref={cameraControllerRef} />
-          <Preload all />
-        </Suspense>}
-      </Canvas>
+      <div className="absolute right-10 top-10 z-10">
+        <Dial defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} easing={TRANSITION_EASE_CSS} />
+      </div>
+
+      
+        <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
+          <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
+          <color attach="background" args={["#0a0a0a"]} />
+          {islandMounted && <Suspense fallback={null}>
+            <Environment target={day} />
+            <group>
+              <Scene day={day} />
+              <AvatarController ref={avatarControllerRef} />
+              <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+              {sceneReady && <> 
+                <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
+                {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
+                {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
+                {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
+                {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
+              </>}
+            </group>
+            <CameraController ref={cameraControllerRef} />
+            <Preload all />
+          </Suspense>}
+        </Canvas>
       {rainTriggered && <RainScene />}
     </div>
   );

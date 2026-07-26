@@ -1,16 +1,12 @@
 "use client"
 
-import { useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
+import gsap from "gsap"
 
-import { PRESETS, type TimeOfDay } from "./environmentPresets"
-
-// Same imperative-ease-toward-target technique as EarthIntro.tsx's progress
-// bar -- cheaper than a second gsap timeline and can't drift out of sync
-// with anything, since it just continuously chases whatever the current
-// preset is every frame.
-const EASE_RATE_PER_SECOND = 3
+import { PRESETS, TRANSITION_SECONDS, type TimeOfDay } from "./environmentPresets"
+import { tweenDuration } from "@/helpers/motion"
 
 // Calm tropical lagoon, not open ocean -- fixed, not tweened per time of
 // day. The sky-reflection tint (below) already carries the day/night mood
@@ -158,28 +154,66 @@ export function useOceanWaterMaterial(day: TimeOfDay) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Scratch objects reused every frame -- avoid allocating a Color/Vector3
-  // per uniform per frame on this hot path.
-  const scratchColor = useRef(new THREE.Color())
+  // Same gsap-tweened-blend technique as Environment.tsx, applied to just
+  // the fields this shader needs -- a plain mutable object eased with
+  // power2.inOut (= easeInOutCubic: slow start, committed middle, soft
+  // settle), read imperatively every frame. Replaces a previous per-frame
+  // exponential chase (alpha = 1 - exp(-rate*delta)) toward the raw preset:
+  // that approach jumps to full speed the instant the target changes and
+  // only decelerates from there, with no slow start at all -- it reads as
+  // an abrupt, almost-linear snap into motion rather than a physical
+  // transition. Colors are hex strings (gsap interpolates them natively).
+  const blendRef = useRef({
+    skyTop: PRESETS[day].skyTop,
+    skyHorizon: PRESETS[day].skyHorizon,
+    dirColor: PRESETS[day].dirColor,
+    fogColor: PRESETS[day].fogColor,
+    dirX: PRESETS[day].dirX,
+    dirY: PRESETS[day].dirY,
+    dirZ: PRESETS[day].dirZ,
+    fogNear: PRESETS[day].fogNear,
+    fogFar: PRESETS[day].fogFar,
+  })
+  const currentTarget = useRef<TimeOfDay>(day)
+
+  useEffect(() => {
+    if (day === currentTarget.current) return
+    currentTarget.current = day
+    const preset = PRESETS[day]
+    gsap.to(blendRef.current, {
+      skyTop: preset.skyTop,
+      skyHorizon: preset.skyHorizon,
+      dirColor: preset.dirColor,
+      fogColor: preset.fogColor,
+      dirX: preset.dirX,
+      dirY: preset.dirY,
+      dirZ: preset.dirZ,
+      fogNear: preset.fogNear,
+      fogFar: preset.fogFar,
+      duration: tweenDuration(TRANSITION_SECONDS),
+      ease: "power2.inOut",
+    })
+  }, [day])
+
+  // Scratch object reused every frame -- avoid allocating a Vector3 per
+  // frame on this hot path.
   const scratchDir = useRef(new THREE.Vector3())
 
-  useFrame((state, delta) => {
-    const preset = PRESETS[day]
+  useFrame((state) => {
+    const b = blendRef.current
     const u = material.uniforms
     u.uTime.value = state.clock.elapsedTime
 
-    const alpha = 1 - Math.exp(-EASE_RATE_PER_SECOND * delta)
+    u.uSkyZenith.value.set(b.skyTop)
+    u.uSkyHorizon.value.set(b.skyHorizon)
+    u.uSunColor.value.set(b.dirColor)
+    u.uFogColor.value.set(b.fogColor)
 
-    u.uSkyZenith.value.lerp(scratchColor.current.set(preset.skyTop), alpha)
-    u.uSkyHorizon.value.lerp(scratchColor.current.set(preset.skyHorizon), alpha)
-    u.uSunColor.value.lerp(scratchColor.current.set(preset.dirColor), alpha)
-    u.uFogColor.value.lerp(scratchColor.current.set(preset.fogColor), alpha)
+    scratchDir.current.set(b.dirX, b.dirY, b.dirZ).normalize()
+    u.uSunDirection.value.copy(scratchDir.current)
 
-    scratchDir.current.set(preset.dirX, preset.dirY, preset.dirZ).normalize()
-    u.uSunDirection.value.lerp(scratchDir.current, alpha)
-
-    u.uFogNear.value += (preset.fogNear - u.uFogNear.value) * alpha
-    u.uFogFar.value += (preset.fogFar - u.uFogFar.value) * alpha
+    u.uFogNear.value = b.fogNear
+    u.uFogFar.value = b.fogFar
   })
 
   return material

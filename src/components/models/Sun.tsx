@@ -10,7 +10,7 @@ export function Sun({ materialRef, ...props }) {
           instead of reading as a uniformly bright sun disc. */}
       <mesh
         geometry={nodes.Object_4.geometry}
-        rotation={[Math.PI / 2, 0, 0]}>
+        rotation={[Math.PI / 1.8, Math.PI / 20, 0]}>
         {/* materialRef: Environment.tsx cross-fades this in/out per time of
             day by mutating opacity imperatively every frame (same pattern
             as its other tweened values), not via a re-rendered prop.

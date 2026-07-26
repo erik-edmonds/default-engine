@@ -11,20 +11,22 @@
     - [ ] Floating in air dragonite avatar
 
 # Splash
-- [x] Earth, zoom in island scene.
+- [ ] Logo, that fills with color on percentage loaded
 
 # Homepage 
 - [ ] Add guassian blur in background? 
     - [ ] Focus follows the mouse
 - [x] transition on change from sun/evening/night
-    - [ ] transition finished, but need an object to interact with to make it change.
+    - [x] transition finished, but need an object to interact with to make it change.
+        - [ ] Object added, needs to be stylized, feels a bit boring.
 - [x] fix music
 - [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
 - [ ] Stylize up/down button
     - [ ] Maybe text boxes?
-- [ ] Add Dots over iteractive items
-    - [ ] On hover, have the outer ring pulse
+- [x] Add Dots over iteractive items
+    - [x] On hover, have the outer ring pulse
+    - [ ] On hover, change color?
     - [x] Add multiple dots on island and sky scene that the camera can move to?
     - [x] On rain from clouds, make screen appear wet as well
         - [ ] Need to improve this some though, it shows up, but it's not transparent like rain.
@@ -57,7 +59,7 @@
             - [ ] 
 
 # PERFORMANCE!!!
-- [ ] Combine scene models (island, surfboard, ultraball, beach ball, mountain) into one scene
+- [x] Combine scene models (island, surfboard, ultraball, beach ball, mountain) into one scene
 - [ ] Optimize for mobile
 
 
@@ -66,3 +68,8 @@
     - [ ] moon appears in different position based on time of month
     - [ ] Moon different shape based on time of month (full, half, crescent, etc)
         - This can be acheived with a light that is positioned based on date. Use the Earth in between to give the shadows.
+- [ ] Accesibility
+- [ ] Languages
+    - [ ] Spanish
+    - [ ] German
+    - [ ] French

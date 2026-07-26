@@ -7,7 +7,10 @@ import { atom } from 'jotai'
 const AppStateContext = createContext<AppState | undefined>(undefined);
 const time = () => {
     const now = new Date().getHours();
-    if (now <= 17 && now > 6) {
+    if (now > 4 && now <= 6) {
+      return "dawn"
+    }
+    else if (now <= 17 && now > 6) {
       return "day"
     }
     else if(now <= 18 && now > 14) {

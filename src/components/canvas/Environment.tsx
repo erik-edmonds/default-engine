@@ -6,7 +6,8 @@ import { useFrame } from "@react-three/fiber"
 import { Stars } from "@react-three/drei"
 import gsap from "gsap"
 
-import { PRESETS, type TimeOfDay, type EnvironmentBlend } from "./environmentPresets"
+import { PRESETS, TRANSITION_SECONDS, type TimeOfDay, type EnvironmentBlend } from "./environmentPresets"
+import { ISLAND_CAMERA_POSITION } from "@/components/canvas/earthIntroPath"
 import { Sun } from "@/components/models/Sun"
 import { Moon } from "@/components/models/Moon"
 import { Campfire } from "@/components/models/Campfire"
@@ -14,11 +15,6 @@ import { DeadCampfire } from "@/components/models/DeadCampfire"
 import { Aurora } from "./Aurora"
 import { tweenDuration } from "@/helpers/motion"
 
-const TRANSITION_SECONDS = 1.4
-// Fixed (not tweened) rim-light position -- aimed generally at the
-// avatar's resting spot from behind/opposite the key light, so it reads as
-// a consistent backlit edge regardless of time of day; only its color and
-// intensity change per preset.
 const RIM_LIGHT_POSITION: [number, number, number] = [-2, 7, -9]
 // Sun and moon both move along this same shared arc (a circle in the X-Y
 // plane) -- see environmentPresets.ts's sunAngle/moonAngle. Center/radius
@@ -28,12 +24,22 @@ const RIM_LIGHT_POSITION: [number, number, number] = [-2, 7, -9]
 const ARC_CENTER_X = -2
 const ARC_CENTER_Y = -8
 const ARC_RADIUS = 34
-// Sun.tsx's own mesh is rotated [PI/2, 0, 0] internally; this outer
-// rotation is the compensating twist (originally applied directly on
-// Day.tsx's <Sun> instance) that orients its ray-burst geometry to face
-// the camera -- without it the rays read edge-on, like Saturn's rings,
-// instead of radiating around the disc.
-const SUN_ROTATION: [number, number, number] = [Math.PI / 2, 0, Math.PI / 6]
+// Sun.tsx/Moon.tsx's own meshes are each rotated [PI/2, 0, 0] internally,
+// which doesn't line up with lookAt()'s -Z-faces-target convention (see the
+// sunGroupRef/moonGroupRef lookAt calls below) -- applied directly, the
+// disc reads edge-on ("Saturn's rings") instead of face-on. These are the
+// additional fixed local twists (applied on a wrapper *inside* the
+// lookAt-oriented group, composing after it) that correct for that.
+// Solved numerically rather than derived by hand: computed so that, at
+// each model's original reference angle (day's sunAngle=35, night's
+// moonAngle=39 -- the angle each used to be tuned to look right at with a
+// fixed rotation), lookAt(home camera) * this twist reproduces that same
+// known-good orientation exactly. Because only this twist is fixed and the
+// aim-at-camera part now tracks the target every frame, unlike the old
+// fixed rotation this stays correct at every *other* angle along the arc
+// too, not just the one it was tuned for.
+const SUN_FACE_CORRECTION: [number, number, number] = [1.2717276582045292, 0, -0.17026315366537004]
+const MOON_FACE_CORRECTION: [number, number, number] = [1.2273400901573113, 0, -0.6689379884559306]
 const CAMPFIRE_POSITION: [number, number, number] = [1.5, -2, 1.5]
 const CAMPFIRE_LIGHT_POSITION: [number, number, number] = [1.5, -1, 1.5]
 // Below this campfire-light intensity the fire reads as "out" -- swap to
@@ -113,6 +119,10 @@ export function Environment({
       sunAngle: nextAngle(blendRef.current.sunAngle, PRESETS[target].sunAngle),
       moonAngle: nextAngle(blendRef.current.moonAngle, PRESETS[target].moonAngle),
       duration: tweenDuration(TRANSITION_SECONDS),
+      // gsap's power2 = cubic (power1 is quad, power3 is quart, etc.), so
+      // this is exactly "easeInOutCubic" -- slow start, committed middle,
+      // soft settle. See TRANSITION_SECONDS/TRANSITION_EASE_CSS in
+      // environmentPresets.ts for the CSS-side equivalent.
       ease: "power2.inOut",
     })
   }, [target])
@@ -182,10 +192,20 @@ export function Environment({
     if (sunGroupRef.current) {
       const rad = (b.sunAngle * Math.PI) / 180
       sunGroupRef.current.position.set(ARC_CENTER_X + ARC_RADIUS * Math.cos(rad), ARC_CENTER_Y + ARC_RADIUS * Math.sin(rad), b.sunZ)
+      // Sun/moon geometry is a flat disc, not a sphere -- with a rotation
+      // fixed in world space, moving the disc along the arc constantly
+      // changes the angle between its fixed face-normal and the camera,
+      // so the flat shape (and especially the sun's spiky rays) reads as
+      // skewing/rotating as it travels, only looking right at the one
+      // point the fixed rotation happened to be tuned for. Re-aiming it at
+      // the (fixed) home camera position every frame instead keeps it
+      // face-on from that vantage point for the whole arc.
+      sunGroupRef.current.lookAt(ISLAND_CAMERA_POSITION)
     }
     if (moonGroupRef.current) {
       const rad = (b.moonAngle * Math.PI) / 180
       moonGroupRef.current.position.set(ARC_CENTER_X + ARC_RADIUS * Math.cos(rad), ARC_CENTER_Y + ARC_RADIUS * Math.sin(rad), b.moonZ)
+      moonGroupRef.current.lookAt(ISLAND_CAMERA_POSITION)
     }
     if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity
     if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity
@@ -224,11 +244,15 @@ export function Environment({
           time of day instead of reading flat. */}
       <directionalLight ref={rimRef} position={RIM_LIGHT_POSITION} />
 
-      <group ref={sunGroupRef} scale={4} rotation={SUN_ROTATION}>
-        <Sun materialRef={sunMaterialRef} />
+      <group ref={sunGroupRef} scale={4}>
+        <group rotation={SUN_FACE_CORRECTION}>
+          <Sun materialRef={sunMaterialRef} />
+        </group>
       </group>
       <group ref={moonGroupRef} scale={0.15}>
-        <Moon materialRef={moonMaterialRef} />
+        <group rotation={MOON_FACE_CORRECTION}>
+          <Moon materialRef={moonMaterialRef} />
+        </group>
       </group>
       <group ref={starsGroupRef}>
         <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
