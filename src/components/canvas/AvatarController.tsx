@@ -121,6 +121,7 @@ export interface AvatarControllerHandle {
   flyUp: () => Promise<void>
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
+  returnHome: () => Promise<void>
   moveToIslandEdge: () => Promise<void>
   diveUnderwater: () => Promise<void>
 }
@@ -189,6 +190,41 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     setSkyOffset: (offset: number) => {
       targetSkyOffset.current = offset
     },
+    // Reverses beginSkyJourney: stops the per-frame sky-journey latch first
+    // so it can't fight this tween, then glides position and rotation back
+    // to the resting pose together (safe to run concurrently -- unlike
+    // spinAndTransform, this never touches rotation.y independently of this
+    // same tween). Deliberately does NOT also revert the model to "base"
+    // here: spinAndTransform drives rotation.y itself via relative +=
+    // tweens, so it needs rotation.y to already be at a known baseline
+    // before it runs -- the caller runs it sequentially, after this
+    // resolves, not concurrently with it.
+    returnHome: () =>
+      new Promise<void>((resolve) => {
+        isSkyJourneyActive.current = false
+        targetSkyOffset.current = 0
+        displaySkyOffset.current = 0
+        if (!group.current) {
+          resolve()
+          return
+        }
+        const duration = tweenDuration(2.5)
+        gsap.to(group.current.position, {
+          x: BASE_POSITION[0],
+          y: BASE_POSITION[1],
+          z: BASE_POSITION[2],
+          duration,
+          ease: "power2.inOut",
+          onComplete: () => resolve(),
+        })
+        gsap.to(group.current.rotation, {
+          x: BASE_ROTATION[0],
+          y: BASE_ROTATION[1],
+          z: BASE_ROTATION[2],
+          duration,
+          ease: "power2.inOut",
+        })
+      }),
     moveToIslandEdge: () =>
       new Promise<void>((resolve) => {
         if (!group.current) {
@@ -226,10 +262,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   // smooth time, as CameraHelpers.tsx's Rig) is what makes scrolling feel
   // weighted rather than a raw 1:1 input mapping. Gated on
   // isSkyJourneyActive so this doesn't fight the GSAP tweens above
-  // (spinAndTransform/flyUp/etc.) before the journey has even started -- a
-  // one-way latch is safe here because "up" and "down" are mutually
-  // exclusive for the rest of a page session (page.tsx hides, and thereby
-  // disables raycasting on, both totems the moment either fires).
+  // (spinAndTransform/flyUp/etc.) before the journey has even started, or
+  // returnHome's tween once the journey ends -- returnHome flips this back
+  // to false as its first step, specifically so it can safely take over
+  // position/rotation without this loop overwriting them.
   useFrame((state, delta) => {
     if (!isSkyJourneyActive.current || !group.current) return
 

@@ -23,7 +23,6 @@ export function Scene({ day }: { day: TimeOfDay }) {
             </Bvh>
             <Speaker scale={65} position={[-2.5, -1.5, 1]} rotation={[-Math.PI/9, 0, Math.PI/15]} />
             <Merged day={day} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
-            <CameraTracker />
         </>
     )
 }

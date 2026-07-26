@@ -17,8 +17,8 @@ import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/can
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
 import * as THREE from "three";
 import RainScene from "@/components/canvas/RainScene";
-import { useAtomValue } from "jotai";
-import { raining } from "@/components/layout/StateProvider";
+import { useAtomValue, useSetAtom } from "jotai";
+import { raining, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
 
 const STAMP_DURATION_MS = 420;
 
@@ -76,7 +76,10 @@ export default function Page() {
   // as a jumping-off point to the rest. Starts at "home" since the camera
   // begins at the resting position, which is exactly home's own target.
   const [activeHotspot, setActiveHotspot] = useState("home");
-  const click = useAtomValue(raining)
+  const isRaining = useAtomValue(raining);
+  const [rainTriggered, setRainTriggered] = useState(false);
+  const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
+  const goHomeRequestValue = useAtomValue(goHomeRequest);
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
   const isSequenceRunning = useRef(false);
@@ -97,6 +100,17 @@ export default function Page() {
     const timer = setTimeout(() => setNameStamped(true), STAMP_DURATION_MS);
     return () => clearTimeout(timer);
   }, [sceneReady]);
+
+  // Latches on the *first* time rain is ever triggered, then stays true --
+  // this is what lets RainScene mount once and never unmount again (see its
+  // own file for why: the vendor rain library has no way to stop its
+  // self-scheduling render loop, so remounting it leaks a WebGL context).
+  // Keeping this latch here (rather than mounting RainScene unconditionally)
+  // preserves the original lazy-load intent -- visitors who never click a
+  // cloud never fetch the 693KB vendor script at all.
+  useEffect(() => {
+    if (isRaining) setRainTriggered(true);
+  }, [isRaining]);
 
   useEffect(() => {
     const SKY_JOURNEY_DISTANCE = 600; // was 450 -- room for the new "Certified Scuba Diver" caption
@@ -130,6 +144,14 @@ export default function Page() {
     return () => window.removeEventListener("wheel", handleWheel);
   }, []);
 
+  // goHomeRequest starts at 0 and is only ever incremented (see
+  // StateProvider.tsx), so this only fires on a real request from the
+  // corner home icon, never spuriously on mount.
+  useEffect(() => {
+    if (goHomeRequestValue > 0) handleGoHome();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goHomeRequestValue]);
+
   const handleTimeOfDayChange = (next: TimeOfDay) => {
     setDay(next);
     setTheme(next);
@@ -153,6 +175,7 @@ export default function Page() {
     cameraControllerRef.current?.beginSkyJourney();
     avatarControllerRef.current?.beginSkyJourney();
     isInSkyJourney.current = true;
+    setInSkyJourneyAtom(true);
     isSequenceRunning.current = false;
   };
 
@@ -164,6 +187,30 @@ export default function Page() {
     await avatarControllerRef.current?.diveUnderwater();
     isSequenceRunning.current = false;
     startTransition(() => router.push("/portfolio"));
+  };
+
+  // Mirrors handleUpClick in reverse -- but flies home *then* reveals the
+  // human form, rather than revealing the costume *then* flying, so the
+  // model-swap lands on arrival instead of mid-flight. isInSkyJourney/skyText
+  // flip immediately since they gate input (stray scroll/a stale caption
+  // would otherwise persist through the return flight); motion stays true
+  // (totems/name-tagline hidden) until everything has actually settled,
+  // mirroring how it already stays true for the whole outbound trip.
+  const handleGoHome = async () => {
+    if (isSequenceRunning.current || !isInSkyJourney.current) return;
+    isSequenceRunning.current = true;
+    isInSkyJourney.current = false;
+    setInSkyJourneyAtom(false);
+    skyTextRef.current = "";
+    setSkyText("");
+    await Promise.all([
+      cameraControllerRef.current?.flyTo(HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION),
+      avatarControllerRef.current?.returnHome(),
+    ]);
+    await avatarControllerRef.current?.spinAndTransform("base");
+    skyOffset.current = 0;
+    setMotion(false);
+    isSequenceRunning.current = false;
   };
 
   return (
@@ -202,7 +249,7 @@ export default function Page() {
           <Preload all />
         </Suspense>}
       </Canvas>
-      {click && <RainScene /> }
+      {rainTriggered && <RainScene />}
     </div>
   );
 }

@@ -36,3 +36,5 @@ export function useAppState() {
 }
 
 export const raining = atom(false)
+export const inSkyJourney = atom(false)
+export const goHomeRequest = atom(0) // incrementing counter -- bumped to request a return-home

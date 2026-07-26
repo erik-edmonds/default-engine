@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { useAtomValue } from "jotai";
+import { raining } from "@/components/layout/StateProvider";
 
 export default function RainScene() {
+  const isRaining = useAtomValue(raining);
+
   useEffect(() => {
     if (document.querySelector("script[data-original-raindrop]")) return;
 
@@ -11,9 +15,15 @@ export default function RainScene() {
     script.async = false;
     script.dataset.originalRaindrop = "true";
     document.body.appendChild(script);
+    // No cleanup: this now mounts once for the page's whole lifetime (see
+    // page.tsx), and raindrop.js's rAF loops have no dispose method to call
+    // even if we wanted to tear it down. The guard above still matters --
+    // React Strict Mode double-invokes effects on first mount in dev, and
+    // without it that alone would load the 693KB bundle twice.
   }, []);
 
   useEffect(() => {
+    if (!isRaining) return;
     // raindrop.js only draws its foreground (what each droplet refracts)
     // once, at load, from a static photo baked into the bundle -- droplets
     // show real detail, but always the same frozen, unrelated scene, never
@@ -38,12 +48,12 @@ export default function RainScene() {
     }, 120);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isRaining]);
 
   return (
     <canvas
       id="bg-canvas"
-      className="pointer-events-none fixed inset-0 z-20 h-full w-full"
+      className={`pointer-events-none fixed inset-0 z-20 h-full w-full ${isRaining ? "visible" : "invisible"}`}
       width="1920"
       height="993"
       aria-label="Animated raindrops on glass"

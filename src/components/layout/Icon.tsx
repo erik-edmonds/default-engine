@@ -1,12 +1,24 @@
 "use client"
 import { themes } from "@/helpers/Interfaces";
-import { useAppState } from "@/components/layout/StateProvider";
+import { useAppState, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
+import { useAtomValue, useSetAtom } from "jotai";
 import Link from "next/link";
 export function Favicon() {
   const { theme } = useAppState()
+  const journeyActive = useAtomValue(inSkyJourney)
+  const requestGoHome = useSetAtom(goHomeRequest)
 
   return (
-    <Link href="/" aria-label="Home">
+    <Link
+      href="/"
+      aria-label="Home"
+      onClick={(e) => {
+        if (journeyActive) {
+          e.preventDefault()
+          requestGoHome((n) => n + 1)
+        }
+      }}
+    >
       <svg width={50} height={50} viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
           <circle cx="70" cy="70" r="70" fill={themes[theme]["background"]}/>
           <g fill={themes[theme]["lines"]}>
