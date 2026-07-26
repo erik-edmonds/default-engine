@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, OrbitControls, Preload, useProgress } from "@react-three/drei";
-import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, N8AO } from "@react-three/postprocessing";
 import { useAppState } from "@/components/layout/StateProvider";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
@@ -233,14 +233,17 @@ export default function Page() {
         <SectionRail items={SECTIONS} value={0} onChange={(i) => travelTo(ANCHORS[i].scroll)}  showDetail={false} />
       </div>
       <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
-        <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
+        <EffectComposer>
+          <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality="medium" />
+          <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
+        </EffectComposer>
         <color attach="background" args={["#0a0a0a"]} />
         {islandMounted && <Suspense fallback={null}>
           <Environment target={day} />
           <group>
             <Scene day={day} />
             <AvatarController ref={avatarControllerRef} />
-            <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+            <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
             {sceneReady && <> 
               <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
               {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
@@ -250,6 +253,7 @@ export default function Page() {
             </>}
           </group>
           <CameraController ref={cameraControllerRef} />
+          <OrbitControls />
           <Preload all />
         </Suspense>}
       </Canvas>

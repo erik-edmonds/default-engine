@@ -1,5 +1,10 @@
 # TODO:
 
+# Small Tweaks needed
+- [ ] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
+- [ ] Rain hits screen on cloud click, but ends abruptly. Needs to slowly stop.
+- [ ] Aurora Borealis needs to transition out first, so there's no overlap with the dawn skyscene
+
 # ANIMATIONS!!!
 - [ ]Models are all rigged, but no animations are created ..
 - [ ] Animations to create
@@ -19,6 +24,9 @@
 - [x] transition on change from sun/evening/night
     - [x] transition finished, but need an object to interact with to make it change.
         - [ ] Object added, needs to be stylized, feels a bit boring.
+- [ ] Dot nav added, but needs to be stylized
+    - [ ] Needs background removed
+    - [ ] Functionality needed
 - [x] fix music
 - [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences

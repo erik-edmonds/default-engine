@@ -1,8 +1,13 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
+import * as THREE from 'three'
 import { useGLTF, useAnimations } from '@react-three/drei'
 
 import { useOceanWaterMaterial } from '@/components/canvas/OceanWater'
 import type { TimeOfDay } from '@/components/canvas/environmentPresets'
+import { paintSandWetness, paintRockVariation } from '@/components/canvas/vertexColorNoise'
+import { createWoodRoughnessTexture } from '@/components/canvas/proceduralTextures'
+
+const ROCK_NODES = ['Object_46', 'Object_48', 'Object_50', 'Object_52', 'Object_54', 'Object_56', 'Object_44', 'Object_79', 'Object_77'] as const
 
 export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unknown }) {
   const group = useRef()
@@ -15,6 +20,37 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
   useEffect(() => {
     actions["Shark"]?.reset().play()
   }, [])
+
+  useEffect(() => {
+    paintSandWetness(nodes.Island.geometry)
+    ROCK_NODES.forEach((n, i) => paintRockVariation(nodes[n].geometry, i * 11.3))
+  }, [nodes])
+
+  const sandMaterial = useMemo(() => {
+    const m = (materials['01 - Default'] as THREE.MeshStandardMaterial).clone()
+    m.vertexColors = true
+    return m
+  }, [materials])
+
+  const rockMaterial = useMemo(() => {
+    const m = (materials.Rock as THREE.MeshStandardMaterial).clone()
+    m.vertexColors = true
+    return m
+  }, [materials])
+
+  const dockDeckMaterial = useMemo(() => {
+    const m = (materials['02 - Default'] as THREE.MeshStandardMaterial).clone()
+    m.roughness = 1.0
+    m.roughnessMap = createWoodRoughnessTexture()
+    return m
+  }, [materials])
+
+  const dockPostMaterial = useMemo(() => {
+    const m = (materials['08 - Default'] as THREE.MeshStandardMaterial).clone()
+    m.roughness = 1.0
+    m.roughnessMap = createWoodRoughnessTexture()
+    return m
+  }, [materials])
 
   return (
     <group ref={group} {...props} dispose={null}>
@@ -63,7 +99,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
           castShadow
           receiveShadow
           geometry={nodes.Island.geometry}
-          material={materials['01 - Default']}
+          material={sandMaterial}
           scale={0.025}
         />
         <mesh
@@ -101,434 +137,434 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             castShadow
             receiveShadow
             geometry={nodes.Mesh003.geometry}
-            material={materials['02 - Default']}
+            material={dockDeckMaterial}
           />
           <mesh
             name="Mesh003_1"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_1.geometry}
-            material={materials['02 - Default']}
+            material={dockDeckMaterial}
           />
           <mesh
             name="Mesh003_2"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_2.geometry}
-            material={materials['02 - Default']}
+            material={dockDeckMaterial}
           />
           <mesh
             name="Mesh003_3"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_3.geometry}
-            material={materials['02 - Default']}
+            material={dockDeckMaterial}
           />
           <mesh
             name="Mesh003_4"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_4.geometry}
-            material={materials['02 - Default']}
+            material={dockDeckMaterial}
           />
           <mesh
             name="Mesh003_5"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_5.geometry}
-            material={materials['02 - Default']}
+            material={dockDeckMaterial}
           />
           <mesh
             name="Mesh003_6"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_6.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_7"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_7.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_8"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_8.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_9"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_9.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_10"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_10.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_11"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_11.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_12"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_12.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_13"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_13.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_14"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_14.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_15"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_15.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_16"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_16.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_17"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_17.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_18"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_18.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_19"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_19.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_20"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_20.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_21"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_21.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_22"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_22.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_23"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_23.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_24"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_24.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_25"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_25.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_26"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_26.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_27"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_27.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_28"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_28.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_29"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_29.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_30"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_30.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_31"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_31.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_32"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_32.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_33"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_33.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_34"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_34.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_35"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_35.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_36"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_36.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_37"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_37.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_38"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_38.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_39"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_39.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_40"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_40.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_41"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_41.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_42"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_42.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_43"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_43.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_44"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_44.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_45"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_45.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_46"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_46.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_47"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_47.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_48"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_48.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_49"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_49.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_50"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_50.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_51"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_51.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_52"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_52.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_53"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_53.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_54"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_54.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_55"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_55.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_56"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_56.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_57"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_57.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_58"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_58.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_59"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_59.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_60"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_60.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
           <mesh
             name="Mesh003_61"
             castShadow
             receiveShadow
             geometry={nodes.Mesh003_61.geometry}
-            material={materials['08 - Default']}
+            material={dockPostMaterial}
           />
         </group>
         <mesh
@@ -992,7 +1028,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_46.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group
@@ -1005,7 +1041,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_48.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group
@@ -1018,7 +1054,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_50.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                   position={[2.688, -3.062, 1.655]}
                 />
               </group>
@@ -1032,7 +1068,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_52.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group
@@ -1045,7 +1081,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_54.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group
@@ -1058,7 +1094,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_56.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group
@@ -1071,7 +1107,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_44.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group
@@ -1084,7 +1120,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_79.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                   position={[-15.564, -4.832, 47.639]}
                 />
               </group>
@@ -1098,7 +1134,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
                   castShadow
                   receiveShadow
                   geometry={nodes.Object_77.geometry}
-                  material={materials.Rock}
+                  material={rockMaterial}
                 />
               </group>
               <group

@@ -57,6 +57,7 @@ const fragmentShader = /* glsl */ `
   uniform vec3 uSkyHorizon;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
+  uniform float uMoonOpacity;
   uniform vec3 uFogColor;
   uniform float uFogNear;
   uniform float uFogFar;
@@ -68,6 +69,23 @@ const fragmentShader = /* glsl */ `
   uniform float uTime;
 
   varying vec3 vWorldPos;
+
+  // Same hash/noise as Aurora.tsx -- GLSL has no cross-file includes here,
+  // so each shader that wants it keeps its own local copy, same as this
+  // file already does for its wave constants.
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
 
   // Same swell as the vertex shader, plus one finer ripple term -- computed
   // per-fragment (not per-vertex) so fine reflection distortion reads
@@ -94,6 +112,13 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec2 slope = waveSlope(vWorldPos.xz);
     vec3 normal = normalize(vec3(-slope.x, 1.0, -slope.y));
+
+    // Noise-based ripple on top of the sine-sum swell -- the fixed-direction
+    // sine terms alone repeat in an obviously regular lattice; this breaks
+    // that up without touching the underlying wave motion.
+    float ripple = noise(vWorldPos.xz * 2.3 + uTime * 0.12) - 0.5;
+    normal = normalize(normal + vec3(ripple * 0.06, 0.0, ripple * 0.06));
+
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
 
     // Fake reflection: no render-target/second camera pass -- reflect the
@@ -115,9 +140,28 @@ const fragmentShader = /* glsl */ `
 
     vec3 color = mix(waterColor, skyColor, fresnel);
 
-    // Sparkle off wave facets facing the sun.
+    // Sparkle off wave facets facing the sun -- modulated by the same
+    // ripple noise so it twinkles instead of sitting on the sine terms'
+    // fixed lattice.
     vec3 halfDir = normalize(uSunDirection + viewDir);
-    color += uSunColor * pow(max(dot(normal, halfDir), 0.0), 140.0) * 0.8;
+    float sparkleNoise = 0.7 + 0.6 * noise(vWorldPos.xz * 4.0 - uTime * 0.3);
+    color += uSunColor * pow(max(dot(normal, halfDir), 0.0), 140.0) * 0.8 * sparkleNoise;
+
+    // Broader, softer moon shimmer -- there's only one directional light in
+    // the whole rig (see Environment.tsx), so uSunColor/uSunDirection are
+    // already moon-colored and moon-directed whenever the moon (not the
+    // sun) is the one actually up; uMoonOpacity (mirrors the same field
+    // driving the moon disc's own opacity) gates this so it only shows up
+    // at night, distinct from the tighter solar sparkle above.
+    color += uSunColor * pow(max(dot(normal, halfDir), 0.0), 24.0) * 0.35 * uMoonOpacity;
+
+    // Shore foam -- "interaction with the island": a soft bright band right
+    // at the sand/water boundary, reusing the shore-distance field already
+    // computed above.
+    float foamBand = 1.0 - smoothstep(0.0, 1.2, abs(distFromShore - uShoreRadius));
+    float foamNoise = noise(vWorldPos.xz * 0.8 + uTime * 0.15);
+    foamBand *= 0.6 + 0.4 * foamNoise;
+    color = mix(color, vec3(1.0), foamBand * 0.5);
 
     // Hand-rolled fog -- a custom ShaderMaterial doesn't get Three's
     // automatic fog for free the way MeshBasicMaterial does.
@@ -141,6 +185,7 @@ export function useOceanWaterMaterial(day: TimeOfDay) {
         uSkyHorizon: { value: new THREE.Color(preset.skyHorizon) },
         uSunDirection: { value: new THREE.Vector3(preset.dirX, preset.dirY, preset.dirZ).normalize() },
         uSunColor: { value: new THREE.Color(preset.dirColor) },
+        uMoonOpacity: { value: preset.moonOpacity },
         uFogColor: { value: new THREE.Color(preset.fogColor) },
         uFogNear: { value: preset.fogNear },
         uFogFar: { value: preset.fogFar },
@@ -173,6 +218,7 @@ export function useOceanWaterMaterial(day: TimeOfDay) {
     dirZ: PRESETS[day].dirZ,
     fogNear: PRESETS[day].fogNear,
     fogFar: PRESETS[day].fogFar,
+    moonOpacity: PRESETS[day].moonOpacity,
   })
   const currentTarget = useRef<TimeOfDay>(day)
 
@@ -190,6 +236,7 @@ export function useOceanWaterMaterial(day: TimeOfDay) {
       dirZ: preset.dirZ,
       fogNear: preset.fogNear,
       fogFar: preset.fogFar,
+      moonOpacity: preset.moonOpacity,
       duration: tweenDuration(TRANSITION_SECONDS),
       ease: "power2.inOut",
     })
@@ -207,6 +254,7 @@ export function useOceanWaterMaterial(day: TimeOfDay) {
     u.uSkyZenith.value.set(b.skyTop)
     u.uSkyHorizon.value.set(b.skyHorizon)
     u.uSunColor.value.set(b.dirColor)
+    u.uMoonOpacity.value = b.moonOpacity
     u.uFogColor.value.set(b.fogColor)
 
     scratchDir.current.set(b.dirX, b.dirY, b.dirZ).normalize()
