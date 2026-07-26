@@ -30,6 +30,26 @@ export interface NavContext {
   setActive: (i: number) => void;
 }
 
+export interface RailItem {
+  id?: string;
+  /** Shown on hover and while active. */
+  label: string;
+  /** Copy for the detail panel. */
+  description: string;
+}
+
+export interface SectionRailProps {
+  items: RailItem[];
+  /** Controlled index. Omit to let the rail own its state. */
+  value?: number;
+  defaultValue?: number;
+  onChange?: (index: number, item: RailItem) => void;
+  /** Hide the right-hand detail panel and render the rail alone. */
+  showDetail?: boolean;
+  /** Vertical gap between dots, px. */
+  gap?: number;
+}
+
 export interface DialProps {
   /** Controlled phase. Omit to let the dial own its state. */
   phase?: Phase;

@@ -20,7 +20,8 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { raining, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
 import Dial from "@/components/canvas/Dial"; 
 import { useScrollTravel, NavigationOverlay, NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
-import { Anchor } from "@/helpers/Interfaces";
+import SectionRail, { SectionRailLegend } from "@/components/layout/SectionRail";
+import { Anchor, RailItem } from "@/helpers/Interfaces";
 const STAMP_DURATION_MS = 420;
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
@@ -50,11 +51,18 @@ const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [11.0, 5.57, -19.
 const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(15.098318983889161, 6.795693566831701, -23.697681471253638);
 const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394);
 
+const SECTIONS: RailItem[] = [
+  { id: "home", label: "Home", description: "Home anchor. Camera eases in over ~1.2s." },
+  { id: "models",   label: "Models", description: "Dot fills as the camera arrives, not on click." },
+  { id: "donate",  label: "Donate", description: "Rail fills behind the active dot." },
+  { id: "contact", label: "Contact", description: "Label stays pinned while active." }
+];
+
 const ANCHORS: Anchor[] = [
-  { id: "home", label: "Home",  position: [-1.3, -0.65, 1],   scroll: 0.00 },
-  { id: "models",   label: "Models",    position: [-14.69, 3.47, -12.94], scroll: 0.33 },
-  { id: "donate",  label: "Donate",   position: [11.0, 5.57, -19.72],  scroll: 0.66 },
-  { id: "contact", label: "Contact",  position: [-9.11, 12.97, -13.08], scroll: 1.00 }
+  { id: "home", label: "Home", position: [-1.3, -0.65, 1],   scroll: 0.00 },
+  { id: "models",   label: "Models", position: [-14.69, 3.47, -12.94], scroll: 0.33 },
+  { id: "donate",  label: "Donate", position: [11.0, 5.57, -19.72],  scroll: 0.66 },
+  { id: "contact", label: "Contact", position: [-9.11, 12.97, -13.08], scroll: 1.00 }
   ];
 
 const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
@@ -221,29 +229,30 @@ export default function Page() {
       <div className="absolute right-10 top-10 z-10">
         <Dial defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} easing={TRANSITION_EASE_CSS} />
       </div>
-
-      
-        <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
-          <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
-          <color attach="background" args={["#0a0a0a"]} />
-          {islandMounted && <Suspense fallback={null}>
-            <Environment target={day} />
-            <group>
-              <Scene day={day} />
-              <AvatarController ref={avatarControllerRef} />
-              <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
-              {sceneReady && <> 
-                <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
-                {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
-                {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
-                {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
-                {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
-              </>}
-            </group>
-            <CameraController ref={cameraControllerRef} />
-            <Preload all />
-          </Suspense>}
-        </Canvas>
+      <div className="absolute right-10 bottom-10 z-10">
+        <SectionRail items={SECTIONS} value={0} onChange={(i) => travelTo(ANCHORS[i].scroll)}  showDetail={false} />
+      </div>
+      <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
+        <EffectComposer><Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /></EffectComposer>
+        <color attach="background" args={["#0a0a0a"]} />
+        {islandMounted && <Suspense fallback={null}>
+          <Environment target={day} />
+          <group>
+            <Scene day={day} />
+            <AvatarController ref={avatarControllerRef} />
+            <ContactShadows opacity={0.25} color="black" position={[0, -10, 0]} scale={50} blur={2.5} far={40} resolution={256} />
+            {sceneReady && <> 
+              <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
+              {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
+              {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
+              {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
+              {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
+            </>}
+          </group>
+          <CameraController ref={cameraControllerRef} />
+          <Preload all />
+        </Suspense>}
+      </Canvas>
       {rainTriggered && <RainScene />}
     </div>
   );
