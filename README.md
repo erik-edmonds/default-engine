@@ -24,8 +24,10 @@
 - [x] transition on change from sun/evening/night
     - [x] transition finished, but need an object to interact with to make it change.
         - [ ] Object added, needs to be stylized, feels a bit boring.
-- [ ] Dot nav added, but needs to be stylized
-    - [ ] Needs background removed
+            - [ ] A cube that rotates, each face is a setting 
+- [ ] Dot nav added
+    - [x] Needs background removed
+    - [ ] Needs to be stylized
     - [ ] Functionality needed
 - [x] fix music
 - [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff

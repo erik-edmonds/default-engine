@@ -21,7 +21,16 @@ const RIM_LIGHT_POSITION: [number, number, number] = [-2, 7, -9]
 // were fit so each preset's angle lands close to where the sun/moon used
 // to sit as fixed positions, while any point in between traces a curved
 // path instead of cutting straight through 3D space.
-const ARC_CENTER_X = -2
+// ARC_CENTER_X shifted from -2 to 6 -- raising day/night's angle (see
+// sunAngle/moonAngle in environmentPresets.ts) to fix "too low in the
+// sky" moved the sun/moon higher (Y = center + radius*sin(angle)) but,
+// as a direct side effect of moving along a shared circular arc, also
+// pulled them noticeably toward screen-left (X = center + radius*cos
+// (angle), and cos falls as angle rises) -- confirmed against reference
+// screenshots showing both sun and moon sitting up near the top-right
+// corner, not center-top. This shift compensates on the X axis for both
+// bodies at once without touching the angle (height) that was just fixed.
+const ARC_CENTER_X = 6
 const ARC_CENTER_Y = -8
 const ARC_RADIUS = 34
 // Sun.tsx/Moon.tsx's own meshes are each rotated [PI/2, 0, 0] internally,
@@ -238,6 +247,13 @@ export function Environment({
         shadow-camera-right={60}
         shadow-camera-top={60}
         shadow-camera-bottom={-60}
+        // Extra blur on top of Canvas's soft shadow map (see page.tsx,
+        // shadows="soft") -- a crisp, hard-edged shadow reads as if it's
+        // falling on a rigid floor; this is most obvious on the water
+        // shadow-catcher (OceanWater.ts/MergedScene.tsx), which otherwise
+        // has a perfectly sharp silhouette sitting on top of an animated,
+        // rippling surface with no visual connection between the two.
+        shadow-radius={6}
       />
       {/* The new rim/back light: fixed position, only color+intensity
           tweened, giving the avatar a consistent backlit edge across every

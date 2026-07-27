@@ -21,6 +21,40 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
     actions["Shark"]?.reset().play()
   }, [])
 
+  // The shark's circular swim path comes from animating Circle001's
+  // rotation (retargeted from island_motion.glb -- see the comment on the
+  // Armature group below); the orbit's actual RADIUS is set by the rest
+  // offset of Circle001's own child bone -- Circle001 spins it around
+  // itself like an orbit arm.
+  //
+  // merged.glb has *two* nodes named "Shark": the real orbit-arm bone at
+  // Armature > Circle001 > Shark (offset ~146 units pre-scale), and an
+  // unrelated, static, zero-offset node at Armature > Shark (the mesh
+  // group holding the skinnedMeshes below). gltfjsx dedupes colliding
+  // names when it builds the flat `nodes` map, so the bone -- not the
+  // group -- ends up keyed as `nodes.Shark_1`; a plain `nodes.Shark`
+  // resolves to the static group instead. Mutating that did nothing
+  // (confirmed: the shark's on-screen orbit was identical from
+  // SHARK_ORBIT_SCALE=1 down to 0.05), which is why earlier attempts to
+  // pull the orbit in never actually worked.
+  //
+  // Measured live (world-space, via the actual mounted scene graph, not
+  // hand-chained transforms): with the correct bone now being moved, the
+  // un-scaled orbit sweeps island-center distance ~17.4-20.3 world units
+  // -- outside the water mesh's own measured ~15.2-unit radius, so still
+  // needs pulling in, just from the right starting point this time. 0.55
+  // brings that down to a range comfortably inside the water and outside
+  // the ~7-unit island footprint. Y is left untouched.
+  useEffect(() => {
+    const bone = nodes.Shark_1 as unknown as THREE.Bone | undefined
+    if (bone && !bone.userData.orbitScaled) {
+      const SHARK_ORBIT_SCALE = 0.55
+      bone.position.x *= SHARK_ORBIT_SCALE
+      bone.position.z *= SHARK_ORBIT_SCALE
+      bone.userData.orbitScaled = true
+    }
+  }, [nodes])
+
   useEffect(() => {
     paintSandWetness(nodes.Island.geometry)
     ROCK_NODES.forEach((n, i) => paintRockVariation(nodes[n].geometry, i * 11.3))
@@ -127,6 +161,20 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
           position={[-0.162, 0.687, 0.064]}
           scale={0.028}
         />
+        {/* oceanMaterial is a fully custom, unlit ShaderMaterial (see
+            OceanWater.ts) -- it never samples Three's shadow maps, so the
+            water above never showed any shadow cast onto it. Rather than
+            hand-rolling shadow-map GLSL into that custom shader (real risk
+            of getting the light-space matrices/PCF sampling subtly wrong),
+            this is a second, coincident mesh using Three's own stock
+            ShadowMaterial: fully transparent everywhere *except* where a
+            real shadow map says a fragment is occluded, where it darkens by
+            `opacity`. polygonOffset pushes it behind the water mesh's own
+            depth just enough to avoid z-fighting between two literally
+            coincident surfaces, with no visible position change. */}
+        <mesh geometry={nodes.New_Water.geometry} position={[-0.162, 0.687, 0.064]} scale={0.028} receiveShadow>
+          <shadowMaterial transparent opacity={0.35} polygonOffset polygonOffsetFactor={-1} />
+        </mesh>
         <group
           name="Dock"
           position={[-1.824, 0.876, 0.415]}

@@ -1,5 +1,6 @@
 "use client";
 
+import * as THREE from "three";
 import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
@@ -11,17 +12,19 @@ import { CameraController, type CameraControllerHandle } from "@/components/canv
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { NavTotems } from "@/components/canvas/NavTotems";
-import { TRANSITION_SECONDS, TRANSITION_EASE_CSS, type TimeOfDay } from "@/components/canvas/environmentPresets";
+import { TRANSITION_SECONDS, type TimeOfDay } from "@/components/canvas/environmentPresets";
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
-import * as THREE from "three";
+import { LensFlare } from "@react-three/postprocessing";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtomValue, useSetAtom } from "jotai";
 import { raining, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
-import Dial from "@/components/canvas/Dial"; 
-import { useScrollTravel, NavigationOverlay, NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
-import SectionRail, { SectionRailLegend } from "@/components/layout/SectionRail";
-import { Anchor, RailItem } from "@/helpers/Interfaces";
+import PhaseCube from "@/components/canvas/PhaseCube";
+import { NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
+import Rail from "@/components/layout/Rail";
+import { Anchor } from "@/helpers/Interfaces";
+
+
 const STAMP_DURATION_MS = 420;
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
@@ -51,11 +54,11 @@ const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [11.0, 5.57, -19.
 const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(15.098318983889161, 6.795693566831701, -23.697681471253638);
 const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394);
 
-const SECTIONS: RailItem[] = [
-  { id: "home", label: "Home", description: "Home anchor. Camera eases in over ~1.2s." },
-  { id: "models",   label: "Models", description: "Dot fills as the camera arrives, not on click." },
-  { id: "donate",  label: "Donate", description: "Rail fills behind the active dot." },
-  { id: "contact", label: "Contact", description: "Label stays pinned while active." }
+const SECTIONS = [
+  { id: "home",    label: "Home",    scroll: 0.00 },
+  { id: "work",    label: "Work",    scroll: 0.33 },
+  { id: "about",   label: "About",   scroll: 0.66 },
+  { id: "contact", label: "Contact", scroll: 1.00 },
 ];
 
 const ANCHORS: Anchor[] = [
@@ -79,6 +82,7 @@ export default function Page() {
   const [nameStamped, setNameStamped] = useState(false);
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
+  const [active, setActive] = useState(0);
   // Which hotspot the camera is currently at -- that one marker hides (no
   // point floating a ring right where you're already standing); every
   // other one shows, including ones already visited, so each spot doubles
@@ -97,7 +101,6 @@ export default function Page() {
   const skyTextRef = useRef("");
   const progress = useProgress((state) => state.progress);
   const sceneReady = progress >= 100;
-  const travelTo = useScrollTravel(1200);
 
   useEffect(() => {
     router.prefetch("/portfolio");
@@ -165,6 +168,22 @@ export default function Page() {
   const handleMoonIslandHotspotClick = () => flyToHotspot("moon-island", MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION);
   const handleHomeHotspotClick = () => flyToHotspot("home", HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION);
 
+  // ANCHORS/SECTIONS (used by Rail + NavigationProjector) are, in order,
+  // the same 4 points of interest the hotspot markers already fly to --
+  // "models"/"donate"/"contact" share their positions 1:1 with
+  // LEFT_TREE_/MOON_ISLAND_/UPPER_ISLAND_HOTSPOT_POSITION, and "home"
+  // with AVATAR_POSITION. Clicking a Rail item reuses those same,
+  // already-working fly handlers rather than useScrollTravel's
+  // window.scrollTo -- this page sets overflow-hidden on its root and has
+  // no scrollable height at all (see the wheel handler above), so
+  // travelTo() has nothing to actually scroll and was a silent no-op.
+  const RAIL_FLY_HANDLERS = [
+    handleHomeHotspotClick,
+    handleLeftTreeHotspotClick,
+    handleMoonIslandHotspotClick,
+    handleUpperIslandHotspotClick,
+  ];
+
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
@@ -213,6 +232,7 @@ export default function Page() {
   };
 
   return (
+    <NavigationProvider>
     <div className="relative h-screen w-screen overflow-hidden">
       <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
         <div className="relative">
@@ -226,13 +246,21 @@ export default function Page() {
       >
         <span className="max-w-xl">{skyText}</span>
       </div>
-      <div className="absolute right-10 top-10 z-10">
-        <Dial defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} easing={TRANSITION_EASE_CSS} />
+      <div className="absolute right-5 top-5 z-10">
+        <PhaseCube defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} />
       </div>
-      <div className="absolute right-10 bottom-10 z-10">
-        <SectionRail items={SECTIONS} value={0} onChange={(i) => travelTo(ANCHORS[i].scroll)}  showDetail={false} />
-      </div>
-      <Canvas id="three-scene-canvas" shadows camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
+      {/* No wrapping positioning div here (unlike the other overlays above) --
+          Rail is deliberately self-contained and sets its own
+          position:fixed internally (see Rail.tsx). A wrapper using a CSS
+          transform (e.g. the -translate-y-1/2 the other overlays use)
+          would create a new containing block for that fixed nav, trapping
+          it inside the wrapper's own (zero-width, since fixed children
+          don't contribute to parent auto-sizing) box instead of the real
+          viewport -- confirmed via a live DOM measurement, this pushed the
+          whole rail off-screen (computed left ~1620px on a 1600px-wide
+          viewport) even though it was rendering correctly. */}
+      <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" />
+      <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
         <EffectComposer>
           <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality="medium" />
           <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
@@ -253,11 +281,12 @@ export default function Page() {
             </>}
           </group>
           <CameraController ref={cameraControllerRef} />
-          <OrbitControls />
+          <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
           <Preload all />
         </Suspense>}
       </Canvas>
       {rainTriggered && <RainScene />}
     </div>
+    </NavigationProvider>
   );
 }

@@ -125,7 +125,12 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     campfireColor: "#ff7a30",
     campfireIntensity: 0,
     sunOpacity: 1,
-    sunAngle: 35,
+    // 35 read as too low; 62 (a later attempt) read as too high AND, as a
+    // side effect of moving along the shared arc, too far left (see
+    // ARC_CENTER_X in Environment.tsx, shifted right to compensate for
+    // this same angle). 54 is the settled middle: clearly higher than the
+    // original 35, short of 62's overhead extreme.
+    sunAngle: 54,
     sunZ: -20,
     moonOpacity: 0,
     moonAngle: 340,
@@ -202,7 +207,11 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     sunAngle: 195,
     sunZ: -20,
     moonOpacity: 1,
-    moonAngle: 39,
+    // 39 (the original) read as too low; 62 (a later attempt) read as too
+    // high and, as a side effect of moving along the shared arc, too far
+    // left (see ARC_CENTER_X in Environment.tsx). 54 matches day's
+    // sunAngle -- settled middle, both bodies sit at the same height.
+    moonAngle: 54,
     moonZ: -20,
     starsOpacity: 1,
     auroraOpacity: 1,

@@ -42,10 +42,15 @@ export function NavigationProjector({
   occlusionTest = true,
   /** Run the occlusion raycast every N frames. */
   occlusionInterval = 6,
+  /** Fires whenever the nearest anchor changes -- for consumers outside the
+   *  <DotNavProvider> tree (e.g. a differently-styled rail) that want the
+   *  live camera-proximity index without going through <NavigationOverlay>. */
+  onActiveChange,
 }: {
   anchors: Anchor[];
   occlusionTest?: boolean;
   occlusionInterval?: number;
+  onActiveChange?: (index: number) => void;
 }) {
   const { nodes, active, setActive } = useDotNav();
   const camera = useThree((s) => s.camera);
@@ -99,7 +104,10 @@ export function NavigationProjector({
       el.dataset.occluded = occluded.current[i] ? "true" : "false";
     }
 
-    if (bestIndex !== active) setActive(bestIndex);
+    if (bestIndex !== active) {
+      setActive(bestIndex);
+      onActiveChange?.(bestIndex);
+    }
   });
 
   return null;

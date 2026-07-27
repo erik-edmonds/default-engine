@@ -53,13 +53,21 @@ export function paintSandWetness(geometry: THREE.BufferGeometry) {
     v.fromBufferAttribute(pos, i)
     maxDist = Math.max(maxDist, Math.hypot(v.x, v.z))
   }
-  const WET_BAND = maxDist * 0.14
+  // Widened and darkened considerably from the first pass -- at the
+  // original band width/tint this read as barely-there once lit (a subtle
+  // multiplier easily washed out by the scene's own lighting), not as a
+  // clearly "wet, darker sand" band the way the ask wanted.
+  const WET_BAND = maxDist * 0.22
   const DRY = new THREE.Color(1, 1, 1)
-  const WET_TINT = new THREE.Color(0.45, 0.5, 0.62)
+  const WET_TINT = new THREE.Color(0.22, 0.26, 0.34)
   paintVertexNoise(geometry, (local) => {
     const dist = Math.hypot(local.x, local.z)
-    const wetT = THREE.MathUtils.smoothstep(dist, maxDist - WET_BAND, maxDist)
-    const grain = 0.9 + 0.2 * noise2D(local.x * 0.35, local.z * 0.35)
+    // Compressed into the outer 60% of the band so it commits to fully wet
+    // well before the actual shoreline instead of only approaching full
+    // darkness right at the very edge -- reads as a clear band, not a
+    // barely-perceptible gradient.
+    const wetT = THREE.MathUtils.smoothstep(dist, maxDist - WET_BAND, maxDist - WET_BAND * 0.4)
+    const grain = 0.85 + 0.3 * noise2D(local.x * 0.35, local.z * 0.35)
     return DRY.clone().lerp(WET_TINT, wetT).multiplyScalar(grain)
   })
 }
