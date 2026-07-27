@@ -159,9 +159,20 @@ export default function Page() {
     setTheme(next);
   };
 
-  const flyToHotspot = (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
+  // setActiveHotspot(id) is what hides a marker (see the `activeHotspot
+  // !== "..."` checks below) -- setting it for the *destination* right
+  // away, before the flight even starts, was fine (that marker should
+  // disappear as you head toward it). But since this is the same flag
+  // that reveals the marker you're *leaving* (it's simply "whichever
+  // marker isn't this one, show"), setting it early also revealed the
+  // departure marker instantly, the moment the camera started moving --
+  // while still standing right next to it. Awaiting flyTo first means
+  // both markers stay exactly as they were until the camera has actually
+  // arrived, so the departure marker only reappears once it's genuinely
+  // been left behind.
+  const flyToHotspot = async (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
+    await cameraControllerRef.current?.flyTo(position, rotation);
     setActiveHotspot(id);
-    cameraControllerRef.current?.flyTo(position, rotation);
   };
   const handleUpperIslandHotspotClick = () => flyToHotspot("upper", UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION);
   const handleLeftTreeHotspotClick = () => flyToHotspot("left-tree", LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION);

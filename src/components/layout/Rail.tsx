@@ -22,19 +22,18 @@ export type Phase = "night" | "dawn" | "day" | "evening";
 export const DURATION_MS = 1200;
 const EASE_CSS = "cubic-bezier(0.4, 0, 0.2, 1)";
 
-/** Night is the only dark sky, so it's the only phase with light ink. */
 export const INK: Record<Phase, string> = {
-  night: "#EDE4CF",
-  dawn: "#b5510f",
-  day: "#22303F",
-  evening: "#b5510f",
+  night: "#FFFFFF",
+  dawn: "#000000",
+  day: "#b5510f",
+  evening: "#FFFFFF",
 };
 
 export const INK_DIM: Record<Phase, string> = {
-  night: "rgba(237, 228, 207, 0.45)",
-  dawn: "rgba(181, 81, 15, 0.45)",
-  day: "rgba(34, 48, 63, 0.42)",
-  evening: "rgba(181, 81, 15, 0.45)",
+  night: "rgba(255, 255, 255, 0.45)",
+  dawn: "rgba(0, 0, 0, 0.45)",
+  day: "rgba(181, 81, 15, 0.42)",
+  evening: "rgba(255, 255, 255, 0.45)",
 };
 
 /* ---------------- geometry ----------------

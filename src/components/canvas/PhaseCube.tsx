@@ -94,19 +94,47 @@ function buildFaceTextures(): Record<TimeOfDay, THREE.CanvasTexture> {
   return textures
 }
 
-// Box face order is [+x, -x, +y, -y, +z, -z]. The 4 side faces carry one
-// phase glyph each, in TIME_OF_DAY_ORDER around the Y axis; the two caps
-// (+y/-y, never front-facing at this fixed near-level framing) just reuse
-// the "day" face so the material array stays fully populated.
+// Box face order is [+x, -x, +y, -y, +z, -z]. This mini-scene's camera
+// sits on +Z looking toward the origin (no rotation set, so R3F's default
+// lookAt applies), so the face actually visible at any given rotation.y=θ
+// is whichever local face's normal currently points toward world +Z.
+// Working that out for a plain Y-axis rotation (local axis -> world
+// direction at angle θ): local +Z -> world +Z at θ=0, local -X -> world +Z
+// at θ=90deg, local -Z -> world +Z at θ=180deg, local +X -> world +Z at
+// θ=270deg. So the front-facing index sequence as rotation accumulates by
+// +90deg per click is [4, 1, 5, 0] (+Z, -X, -Z, +X) -- that's the order
+// TIME_OF_DAY_ORDER's 4 phases need to land in, not the material array's
+// own index order. Getting this wrong (an earlier version just used
+// TIME_OF_DAY_ORDER's own order as the array order) meant every click
+// advanced the *scene* correctly but showed an unrelated face, drifting
+// further out of sync with each click. The two caps (+y/-y, never
+// front-facing at this fixed near-level framing) just reuse "dawn".
 function buildFaceMaterials(textures: Record<TimeOfDay, THREE.CanvasTexture>) {
-  const [dawn, day, evening, night] = TIME_OF_DAY_ORDER.map((p) => textures[p])
-  const mat = (map: THREE.CanvasTexture) => new THREE.MeshBasicMaterial({ map })
-  return [mat(day), mat(evening), mat(dawn), mat(dawn), mat(dawn), mat(night)]
+  const mat = (phase: TimeOfDay) => new THREE.MeshBasicMaterial({ map: textures[phase] })
+  return [
+    mat("night"), // +x -- front-facing at θ=270deg (3 clicks from dawn)
+    mat("day"), // -x -- front-facing at θ=90deg (1 click from dawn)
+    mat("dawn"), // +y cap
+    mat("dawn"), // -y cap
+    mat("dawn"), // +z -- front-facing at θ=0
+    mat("evening"), // -z -- front-facing at θ=180deg (2 clicks from dawn)
+  ]
 }
 
-function CubeMesh({ meshRef }: { meshRef: React.RefObject<THREE.Mesh | null> }) {
+function CubeMesh({ meshRef, initialIndex }: { meshRef: React.RefObject<THREE.Mesh | null>; initialIndex: number }) {
   const [textures] = useState(buildFaceTextures)
   const materials = useMemo(() => buildFaceMaterials(textures), [textures])
+
+  // Without this, the mesh always starts at rotation.y=0 (showing
+  // whatever phase landed on the +z face -- "dawn" -- regardless of which
+  // phase the scene/aria-label actually started on). Runs once, inside
+  // the R3F tree so meshRef.current is guaranteed set by the time it
+  // fires (a parent-side effect can't guarantee that across the
+  // Canvas's separate reconciler root).
+  useEffect(() => {
+    if (meshRef.current) meshRef.current.rotation.y = initialIndex * (Math.PI / 2)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => () => {
     for (const t of Object.values(textures)) t.dispose()
@@ -157,6 +185,10 @@ export default function PhaseCube({
   const index = ((steps % 4) + 4) % 4
   const current = TIME_OF_DAY_ORDER[index]
   const next = TIME_OF_DAY_ORDER[(index + 1) % 4]
+  // Frozen at mount -- CubeMesh's own initial-rotation effect only ever
+  // reads the first render's value anyway (empty deps), this just makes
+  // that explicit rather than relying on the closure.
+  const initialIndexRef = useRef(index)
 
   const ms = prefersReducedMotion() ? 0 : tweenDuration(durationMs / 1000) * 1000
 
@@ -199,7 +231,7 @@ export default function PhaseCube({
         camera={{ position: [0, 0, 2.1], fov: 35 }}
         style={{ width: "100%", height: "100%", pointerEvents: "none" }}
       >
-        <CubeMesh meshRef={meshRef} />
+        <CubeMesh meshRef={meshRef} initialIndex={initialIndexRef.current} />
       </Canvas>
     </button>
   )
