@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Poppins, Arima, Raleway, Nunito } from "next/font/google";
 import "./globals.css";
 import { Favicon } from "@/components/layout/Icon";
-import { AppStateProvider } from "@/components/layout/StateProvider";
+import { AppStateProvider } from "@/helpers/StateProvider";
 import { Suspense } from "react";
 import Loading from "@/app/loading";
 

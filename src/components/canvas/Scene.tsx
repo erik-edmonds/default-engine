@@ -2,13 +2,11 @@ import { Bvh } from "@react-three/drei"
 
 import { Clouds } from "@/components/canvas/Sky"
 import { Speaker } from "@/components/models/Speaker"
-import { Desk } from "@/components/models/Desk"
 import { Merged } from "@/components/models/MergedScene"
-import { Sign } from "@/components/models/Sign"
+import { Tree } from "@/components/models/Tree"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 
-import { CameraTracker } from "@/helpers/CameraHelpers"
-import { data, surface } from "@/helpers/store"
+import { data, surface } from "@/config/store"
 
 export function Scene({ day }: { day: TimeOfDay }) {
     return (

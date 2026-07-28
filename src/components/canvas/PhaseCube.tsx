@@ -16,8 +16,8 @@ import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 const ICON_COLOR: Record<TimeOfDay, string> = {
   night: "#B5D4F4",
   dawn: "#F0997B",
-  day: "#EF9F27",
-  evening: "#D85A30",
+  day: "#ff8c18",
+  evening: "#eb6f17",
 }
 const FACE_BG = "#132038"
 
@@ -48,28 +48,28 @@ function paintGlyph(ctx: CanvasRenderingContext2D, phase: TimeOfDay) {
   }
 
   if (phase === "day") {
-    ctx.beginPath(); ctx.arc(12, 12, 6.5, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(12, 12, 4.5, 0, Math.PI * 2); ctx.fill()
     ctx.lineWidth = 1.8
     ctx.lineCap = "round"
     for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI) / 4
       ctx.beginPath()
-      ctx.moveTo(12 + Math.cos(a) * 9.5, 12 + Math.sin(a) * 9.5)
-      ctx.lineTo(12 + Math.cos(a) * 11.5, 12 + Math.sin(a) * 11.5)
+      ctx.moveTo(12 + Math.cos(a) * 6.5, 12 + Math.sin(a) * 6.5)
+      ctx.lineTo(12 + Math.cos(a) * 8, 12 + Math.sin(a) * 8)
       ctx.stroke()
     }
     return
   }
 
   // evening
-  ctx.beginPath(); ctx.arc(12, 13, 6, 0, Math.PI * 2); ctx.fill()
+  ctx.beginPath(); ctx.arc(12, 13, 5, 0, Math.PI * 2); ctx.fill()
   ctx.lineWidth = 1.8
   ctx.lineCap = "round"
   for (let i = 0; i < 5; i++) {
     const a = Math.PI + (i * Math.PI) / 4
     ctx.beginPath()
-    ctx.moveTo(12 + Math.cos(a) * 8.5, 13 + Math.sin(a) * 8.5)
-    ctx.lineTo(12 + Math.cos(a) * 10.5, 13 + Math.sin(a) * 10.5)
+    ctx.moveTo(12 + Math.cos(a) * 7.5, 13 + Math.sin(a) * 7.5)
+    ctx.lineTo(12 + Math.cos(a) * 9, 13 + Math.sin(a) * 9)
     ctx.stroke()
   }
   ctx.globalAlpha = 0.5

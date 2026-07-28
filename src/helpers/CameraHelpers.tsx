@@ -43,6 +43,18 @@ export function CameraTracker() {
   return null
 }
 
+export function Mouse() {
+  const { camera, pointer } = useThree()
+  const target = new THREE.Vector3()
+
+  useFrame(() => {
+    target.set(pointer.x * 5, pointer.y * 5, 0)
+    camera.lookAt(target)
+  })
+
+  return null
+}
+
 export function CameraHelper() {
     return (
         <PerspectiveCamera position={[-6, 5.5, 11]} rotation={[-0.5, -0.4, -0.2]} fov={45} near={1} far={10}>

@@ -3,7 +3,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Instances, Instance, useGLTF } from '@react-three/drei'
 import { useSetAtom } from 'jotai'
-import { raining } from '@/components/layout/StateProvider'
+import { raining } from '@/helpers/StateProvider'
 
 export function Clouds({ data, range }) {
   const { nodes, materials } = useGLTF('/models/cloud.glb')

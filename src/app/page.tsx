@@ -1,30 +1,32 @@
 "use client";
 
 import * as THREE from "three";
+import dynamic from "next/dynamic";
 import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
-import { ContactShadows, OrbitControls, Preload, useProgress } from "@react-three/drei";
+import { ContactShadows, Preload, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO } from "@react-three/postprocessing";
-import { useAppState } from "@/components/layout/StateProvider";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest } from "@/helpers/StateProvider";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { NavTotems } from "@/components/canvas/NavTotems";
 import { TRANSITION_SECONDS, type TimeOfDay } from "@/components/canvas/environmentPresets";
-import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/components/canvas/earthIntroPath";
+import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
-import { LensFlare } from "@react-three/postprocessing";
 import RainScene from "@/components/canvas/RainScene";
-import { useAtomValue, useSetAtom } from "jotai";
-import { raining, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
 import { NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
 import Rail from "@/components/layout/Rail";
+import { Mouse } from "@/helpers/CameraHelpers";
 import { Anchor } from "@/helpers/Interfaces";
 
-
+const OrbitCube = dynamic(() => import("@/components/layout/HUD").then((mod) => mod.ViewCube), {
+  ssr: false,
+});
 const STAMP_DURATION_MS = 420;
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
@@ -83,14 +85,11 @@ export default function Page() {
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
   const [active, setActive] = useState(0);
-  // Which hotspot the camera is currently at -- that one marker hides (no
-  // point floating a ring right where you're already standing); every
-  // other one shows, including ones already visited, so each spot doubles
-  // as a jumping-off point to the rest. Starts at "home" since the camera
-  // begins at the resting position, which is exactly home's own target.
   const [activeHotspot, setActiveHotspot] = useState("home");
-  const isRaining = useAtomValue(raining);
   const [rainTriggered, setRainTriggered] = useState(false);
+  const isRaining = useAtomValue(raining);
+  const rotate = useAtomValue(clicked);
+  const [dragged, setDragged] = useAtom(pointer);
   const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
   const goHomeRequestValue = useAtomValue(goHomeRequest);
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
@@ -251,32 +250,26 @@ export default function Page() {
           {nameStamped && <p className="font-nunito text-3xl font-normal text-white">Data Scientist</p>}
         </div>
       </div>
-      <div
-        className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
-        style={{ opacity: skyText ? 1 : 0 }}
-      >
+      <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
+        style={{ opacity: skyText ? 1 : 0 }}>
         <span className="max-w-xl">{skyText}</span>
       </div>
       <div className="absolute right-5 top-5 z-10">
         <PhaseCube defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} />
       </div>
-      {/* No wrapping positioning div here (unlike the other overlays above) --
-          Rail is deliberately self-contained and sets its own
-          position:fixed internally (see Rail.tsx). A wrapper using a CSS
-          transform (e.g. the -translate-y-1/2 the other overlays use)
-          would create a new containing block for that fixed nav, trapping
-          it inside the wrapper's own (zero-width, since fixed children
-          don't contribute to parent auto-sizing) box instead of the real
-          viewport -- confirmed via a live DOM measurement, this pushed the
-          whole rail off-screen (computed left ~1620px on a 1600px-wide
-          viewport) even though it was rendering correctly. */}
       <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" />
-      <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }} gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
+      <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
+        onPointerDown={() => {
+          setDragged(true)
+        }}
+        onPointerUp={() => setDragged(false)}
+        gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
         <EffectComposer>
           <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality="medium" />
           <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
         </EffectComposer>
         <color attach="background" args={["#0a0a0a"]} />
+        <OrbitCube />
         {islandMounted && <Suspense fallback={null}>
           <Environment target={day} />
           <group>
@@ -291,6 +284,7 @@ export default function Page() {
               {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
             </>}
           </group>
+          {dragged && rotate && <Mouse />}
           <CameraController ref={cameraControllerRef} />
           <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
           <Preload all />

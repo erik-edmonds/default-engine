@@ -6,13 +6,13 @@ import { useRoute, useLocation } from 'wouter'
 import { easing, geometry } from 'maath'
 import { suspend } from 'suspend-react'
 
-extend(geometry)
+extend({ RoundedPlaneGeometry: geometry.RoundedPlaneGeometry })
 const regular = import('@pmndrs/assets/fonts/inter_regular.woff')
 const medium = import('@pmndrs/assets/fonts/inter_medium.woff')
 const GOLDEN_RATIO = 1.61803398875
 const WIDTH = 1
 
-export default function Frame({ id, name, author, bg, width = WIDTH * 1.5, height = GOLDEN_RATIO * 1.5, children, ...props }) {
+export default function Frame({ id, name, author, bg = '#f0f0f0', width = WIDTH * 1.5, height = GOLDEN_RATIO * 1.5, children, ...props }) {
   const portal = useRef()
   const [, setLocation] = useLocation()
   const [, params] = useRoute('/item/:id')

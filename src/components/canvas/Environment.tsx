@@ -7,7 +7,7 @@ import { Stars } from "@react-three/drei"
 import gsap from "gsap"
 
 import { PRESETS, TRANSITION_SECONDS, type TimeOfDay, type EnvironmentBlend } from "./environmentPresets"
-import { ISLAND_CAMERA_POSITION } from "@/components/canvas/earthIntroPath"
+import { ISLAND_CAMERA_POSITION } from "@/config/positions"
 import { Sun } from "@/components/models/Sun"
 import { Moon } from "@/components/models/Moon"
 import { Campfire } from "@/components/models/Campfire"

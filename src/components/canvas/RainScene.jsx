@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useAtomValue } from "jotai";
-import { raining } from "@/components/layout/StateProvider";
+import { raining } from "@/helpers/StateProvider";
 
 export default function RainScene() {
   const isRaining = useAtomValue(raining);

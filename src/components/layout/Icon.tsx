@@ -1,6 +1,6 @@
 "use client"
 import { themes } from "@/helpers/Interfaces";
-import { useAppState, inSkyJourney, goHomeRequest } from "@/components/layout/StateProvider";
+import { useAppState, inSkyJourney, goHomeRequest } from "@/helpers/StateProvider";
 import { useAtomValue, useSetAtom } from "jotai";
 import Link from "next/link";
 export function Favicon() {
