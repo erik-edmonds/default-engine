@@ -24,6 +24,11 @@ import Rail from "@/components/layout/Rail";
 import { Mouse } from "@/helpers/CameraHelpers";
 import { Anchor } from "@/helpers/Interfaces";
 
+// Debug
+import { CameraTracker } from "@/helpers/CameraHelpers"
+import { OrbitControls } from "@react-three/drei";
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const OrbitCube = dynamic(() => import("@/components/layout/HUD").then((mod) => mod.ViewCube), {
   ssr: false,
 });
@@ -243,55 +248,56 @@ export default function Page() {
 
   return (
     <NavigationProvider>
-    <div className="relative h-screen w-screen overflow-hidden">
-      <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
-        <div className="relative">
-          {sceneReady && <h1 className="animate-stamp font-nunito text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
-          {nameStamped && <p className="font-nunito text-3xl font-normal text-white">Data Scientist</p>}
+      <div className="relative h-screen w-screen overflow-hidden">
+        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
+          <div className="relative">
+            {sceneReady && <h1 className="animate-stamp font-nunito text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
+            {nameStamped && <p className="font-nunito text-3xl font-normal text-white">Data Scientist</p>}
+          </div>
         </div>
+        <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
+          style={{ opacity: skyText ? 1 : 0 }}>
+          <span className="max-w-xl">{skyText}</span>
+        </div>
+        <div className="absolute right-5 top-5 z-10">
+          <PhaseCube defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} />
+        </div>
+        <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" />
+        <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
+          onPointerDown={() => {
+            setDragged(true)
+          }}
+          onPointerUp={() => setDragged(false)}
+          gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
+          <EffectComposer>
+            <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality="medium" />
+            <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
+          </EffectComposer>
+          <color attach="background" args={["#0a0a0a"]} />
+          <OrbitCube />
+          {islandMounted && <Suspense fallback={null}>
+            <Environment target={day} />
+            <group>
+              <Scene day={day} />
+              <AvatarController ref={avatarControllerRef} />
+              <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
+              {sceneReady && <> 
+                <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
+                {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
+                {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
+                {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
+                {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
+              </>}
+            </group>
+            {dragged && rotate && <Mouse />}
+            <CameraController ref={cameraControllerRef} />
+            <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
+
+            <Preload all />
+          </Suspense>}
+        </Canvas>
+        {rainTriggered && <RainScene />}
       </div>
-      <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
-        style={{ opacity: skyText ? 1 : 0 }}>
-        <span className="max-w-xl">{skyText}</span>
-      </div>
-      <div className="absolute right-5 top-5 z-10">
-        <PhaseCube defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} />
-      </div>
-      <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" />
-      <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
-        onPointerDown={() => {
-          setDragged(true)
-        }}
-        onPointerUp={() => setDragged(false)}
-        gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
-        <EffectComposer>
-          <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality="medium" />
-          <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
-        </EffectComposer>
-        <color attach="background" args={["#0a0a0a"]} />
-        <OrbitCube />
-        {islandMounted && <Suspense fallback={null}>
-          <Environment target={day} />
-          <group>
-            <Scene day={day} />
-            <AvatarController ref={avatarControllerRef} />
-            <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
-            {sceneReady && <> 
-              <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
-              {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
-              {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
-              {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
-              {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
-            </>}
-          </group>
-          {dragged && rotate && <Mouse />}
-          <CameraController ref={cameraControllerRef} />
-          <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
-          <Preload all />
-        </Suspense>}
-      </Canvas>
-      {rainTriggered && <RainScene />}
-    </div>
     </NavigationProvider>
   );
 }

@@ -624,7 +624,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
           position={[0.114, 1.348, -0.925]}
           scale={0.01}
         />
-        <group
+        {/* <group
           name="Tree3"
           position={[0.999, 1.216, -0.112]}
           rotation={[0, -Math.PI / 9, 0]}
@@ -706,7 +706,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             geometry={nodes.Mesh002_10.geometry}
             material={materials['03 - Default']}
           />
-        </group>
+        </group> */}
         <group
           name="Shack"
           position={[-0.037, 1.09, 0.707]}
@@ -762,7 +762,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             material={materials['08 - Default']}
           />
         </group>
-        <group
+        {/* <group
           name="Tree2"
           position={[0.035, 1.281, -0.982]}
           rotation={[0, -0.96, 0]}
@@ -830,7 +830,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             geometry={nodes.Mesh001_8.geometry}
             material={materials['03 - Default']}
           />
-        </group>
+        </group> */}
         <group
           name="Sketchfab_model"
           position={[7.324, 5.463, -2.3]}

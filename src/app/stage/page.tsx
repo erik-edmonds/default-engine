@@ -4,13 +4,14 @@ import { useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls,  Environment } from '@react-three/drei'
 import { ViewCube } from '@/components/layout/HUD'
+import { BrownTree } from '@/components/models/BrownTree'
+import { ClusterTree } from '@/components/models/ClusterTree'
 
 export default function Page() {
   return (
     <Canvas style={{ width: "100vw", height: "100vh" }}>
       <ambientLight intensity={0.5 * Math.PI} />
-      <Torus scale={1.75} />
-      <ViewCube />
+      <BrownTree />
       <OrbitControls />
       <Environment preset="city" />
     </Canvas>
