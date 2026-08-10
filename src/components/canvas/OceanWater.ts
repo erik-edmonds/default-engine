@@ -9,10 +9,22 @@ import { PRESETS, TRANSITION_SECONDS, type TimeOfDay } from "./environmentPreset
 import { tweenDuration } from "@/helpers/motion"
 
 // Calm tropical lagoon, not open ocean -- fixed, not tweened per time of
-// day. The sky-reflection tint (below) already carries the day/night mood
-// shift.
+// day, same as the sky-reflection tint below now is too.
 const DEEP_COLOR = "#0c4f63"
 const SHALLOW_COLOR = "#4fd8cd"
+
+// The water's reflected-sky tint used to be the live tweened uSkyZenith/
+// uSkyHorizon (same preset colors driving the actual sky) -- since fresnel
+// (below) pushes a lot of the visible surface toward this reflection color
+// rather than DEEP_COLOR/SHALLOW_COLOR, that made the whole pond visibly
+// swing from bright cyan at day to dark navy/purple at night, tracking the
+// sky far more than a real reflective water surface reads. Pinned to a
+// fixed bright sky tint instead, so the water stays a consistent, legible
+// turquoise regardless of time of day -- only its lighting (fog, specular
+// sparkle color/position from the sun or moon) still tracks the day/night
+// blend.
+const REFLECTION_ZENITH = "#8fd8e8"
+const REFLECTION_HORIZON = "#eafcff"
 
 // The merged island sits close to world XZ origin (Merged's own position
 // prop only offsets Y) -- shore radius/fade sized from its measured
@@ -266,17 +278,17 @@ const fragmentShader = /* glsl */ `
   }
 `
 
-export function useOceanWaterMaterial(day: TimeOfDay, transitionSeconds: number = TRANSITION_SECONDS) {
+export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitionSeconds: number = TRANSITION_SECONDS) {
   const material = useMemo(() => {
-    const preset = PRESETS[day]
+    const preset = PRESETS[from]
     return new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader,
       fog: false,
       uniforms: {
         uTime: { value: 0 },
-        uSkyZenith: { value: new THREE.Color(preset.skyTop) },
-        uSkyHorizon: { value: new THREE.Color(preset.skyHorizon) },
+        uSkyZenith: { value: new THREE.Color(REFLECTION_ZENITH) },
+        uSkyHorizon: { value: new THREE.Color(REFLECTION_HORIZON) },
         uSunDirection: { value: new THREE.Vector3(preset.dirX, preset.dirY, preset.dirZ).normalize() },
         uSunColor: { value: new THREE.Color(preset.dirColor) },
         uMoonOpacity: { value: preset.moonOpacity },
@@ -303,26 +315,27 @@ export function useOceanWaterMaterial(day: TimeOfDay, transitionSeconds: number 
   // an abrupt, almost-linear snap into motion rather than a physical
   // transition. Colors are hex strings (gsap interpolates them natively).
   const blendRef = useRef({
-    skyTop: PRESETS[day].skyTop,
-    skyHorizon: PRESETS[day].skyHorizon,
-    dirColor: PRESETS[day].dirColor,
-    fogColor: PRESETS[day].fogColor,
-    dirX: PRESETS[day].dirX,
-    dirY: PRESETS[day].dirY,
-    dirZ: PRESETS[day].dirZ,
-    fogNear: PRESETS[day].fogNear,
-    fogFar: PRESETS[day].fogFar,
-    moonOpacity: PRESETS[day].moonOpacity,
+    dirColor: PRESETS[from].dirColor,
+    fogColor: PRESETS[from].fogColor,
+    dirX: PRESETS[from].dirX,
+    dirY: PRESETS[from].dirY,
+    dirZ: PRESETS[from].dirZ,
+    fogNear: PRESETS[from].fogNear,
+    fogFar: PRESETS[from].fogFar,
+    moonOpacity: PRESETS[from].moonOpacity,
   })
-  const currentTarget = useRef<TimeOfDay>(day)
+  // Starts `null`, not `day` -- see the identical comment in Environment.tsx.
+  const currentTarget = useRef<TimeOfDay | null>(null)
 
   useEffect(() => {
     if (day === currentTarget.current) return
     currentTarget.current = day
     const preset = PRESETS[day]
+    // See Environment.tsx's identical auto/click split -- linear during the
+    // unattended auto-cycle so the sparkle/fog motion stays constant-speed
+    // in step with the sky, eased only for the short, standalone click skip.
+    const auto = transitionSeconds !== TRANSITION_SECONDS
     gsap.to(blendRef.current, {
-      skyTop: preset.skyTop,
-      skyHorizon: preset.skyHorizon,
       dirColor: preset.dirColor,
       fogColor: preset.fogColor,
       dirX: preset.dirX,
@@ -332,7 +345,7 @@ export function useOceanWaterMaterial(day: TimeOfDay, transitionSeconds: number 
       fogFar: preset.fogFar,
       moonOpacity: preset.moonOpacity,
       duration: tweenDuration(transitionSeconds),
-      ease: "power2.inOut",
+      ease: auto ? "none" : "power2.inOut",
       // See Environment.tsx's identical comment -- without this, a fast
       // click-triggered tween completing mid-way through a slow
       // auto-progression tween hands control back to the slow one,
@@ -350,8 +363,6 @@ export function useOceanWaterMaterial(day: TimeOfDay, transitionSeconds: number 
     const u = material.uniforms
     u.uTime.value = state.clock.elapsedTime
 
-    u.uSkyZenith.value.set(b.skyTop)
-    u.uSkyHorizon.value.set(b.skyHorizon)
     u.uSunColor.value.set(b.dirColor)
     u.uMoonOpacity.value = b.moonOpacity
     u.uFogColor.value.set(b.fogColor)

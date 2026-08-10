@@ -79,17 +79,20 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     // embers carrying over from night, on their way out by full day.
     campfireIntensity: 1,
     sunOpacity: 0.8,
-    // Just above the horizon crossing (~13.6deg, where ARC_CENTER_Y +
-    // ARC_RADIUS*sin(angle) = 0 -- see Environment.tsx) -- the sun has
-    // barely risen, well below day's higher 35deg.
-    sunAngle: 10,
+    // sunAngle/moonAngle across all four presets are exactly 90deg apart
+    // (see the shared comment on night's sunAngle below for why) -- sun and
+    // moon each get their OWN independent 90deg-apart cycle (not each
+    // other's mirror) specifically so sun's day angle and moon's night
+    // angle -- the two moments each body is fully opaque and most
+    // prominent -- can both be individually restored to their original,
+    // well-tuned positions; dawn/evening (partial opacity, less critical)
+    // absorb the resulting compromise instead.
+    sunAngle: 324,
     sunZ: -20,
     // Moon has already set by dawn -- same hard-0 convention evening uses
     // for "not yet risen."
     moonOpacity: 0,
-    // Continues sweeping forward from night's 39deg, on its way toward
-    // day's 340deg (see nextAngle in Environment.tsx).
-    moonAngle: 300,
+    moonAngle: 144,
     moonZ: -20,
     starsOpacity: 0,
     auroraOpacity: 0,
@@ -115,10 +118,13 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     campfireColor: "#ff7a30",
     campfireIntensity: 0,
     sunOpacity: 1,
+    // Original, hand-tuned value -- see the shared comment on night's
+    // sunAngle below. Day is the sun's fully-opaque moment, so it's the one
+    // preserved exactly.
     sunAngle: 54,
     sunZ: -20,
     moonOpacity: 0,
-    moonAngle: 340,
+    moonAngle: 234,
     moonZ: -20,
     starsOpacity: 0,
     auroraOpacity: 0,
@@ -144,12 +150,12 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     campfireColor: "#ff7a30",
     campfireIntensity: 3,
     sunOpacity: 0.35,
-    sunAngle: 165,
+    sunAngle: 144,
     sunZ: -22,
     // No moon during evening -- it's still below the horizon, rising, at
-    // this point in the cycle (see moonAngle: just past the horizon).
+    // this point in the cycle.
     moonOpacity: 0,
-    moonAngle: 10,
+    moonAngle: 324,
     moonZ: -20,
     starsOpacity: 0.3,
     // No aurora during evening -- it's a night-only effect.
@@ -183,13 +189,43 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     campfireColor: "#ff7a30",
     campfireIntensity: 3.5,
     sunOpacity: 0,
-    sunAngle: 195,
+    // sunAngle/moonAngle used to be individually hand-tuned per preset
+    // (sun: 10/54/165/195, moon: 300/340/10/54) to sit each body at a
+    // specific "ideal" height per phase. That produced wildly uneven
+    // angular deltas segment-to-segment once the environment auto-cycles
+    // continuously instead of hard-cutting between static presets (sun:
+    // dawn->day 44deg, day->evening 111deg, evening->night 30deg,
+    // night->dawn 175deg -- moonAngle was worse still, one single segment
+    // covering 246 of the moon's 360 total degrees). Since every segment
+    // now takes the same real time (AUTO_TRANSITION_SECONDS), an uneven
+    // split reads as the sun and moon moving at wildly different,
+    // inconsistent speeds -- most obviously the moon, which visibly raced
+    // across the sky in whichever segment absorbed most of its 360deg.
+    //
+    // Fix: lock each body's own four presets exactly 90deg apart, so every
+    // segment covers exactly a quarter turn -- genuinely constant angular
+    // speed at all times, not just on average. Sun and moon get their OWN
+    // independent 90deg cycle (not a fixed 180deg mirror of each other) --
+    // a first attempt tried a shared mirrored cycle (day's sunAngle at the
+    // arc's exact top, 90deg), which fixed the speed but pushed day's sun
+    // (and, being the mirror, night's moon) to the arc's horizontal center
+    // (cos(90deg)=0), reading as stuck at the top-center of the screen
+    // instead of its original upper-right corner. Decoupling the two
+    // cycles means sun's day angle and moon's night angle -- the one moment
+    // each body is fully opaque and actually matters most -- can each be
+    // restored to their exact original, well-tuned position (this file's
+    // day.sunAngle=54 and this preset's moonAngle=54 are both literally the
+    // old hand-tuned values). dawn/evening (both bodies, partial or zero
+    // opacity) absorb the resulting compromise instead, each landing
+    // somewhat below the geometric horizon at various points in their own
+    // cycle -- acceptable since they're either already partially
+    // transparent or, for the invisible body in that phase, not rendered
+    // at all.
+    sunAngle: 234,
     sunZ: -20,
     moonOpacity: 1,
-    // 39 (the original) read as too low; 62 (a later attempt) read as too
-    // high and, as a side effect of moving along the shared arc, too far
-    // left (see ARC_CENTER_X in Environment.tsx). 54 matches day's
-    // sunAngle -- settled middle, both bodies sit at the same height.
+    // Original, hand-tuned value -- see the comment above. Night is the
+    // moon's fully-opaque moment, so it's the one preserved exactly.
     moonAngle: 54,
     moonZ: -20,
     starsOpacity: 1,
@@ -208,7 +244,18 @@ export const TRANSITION_EASE_CSS = "cubic-bezier(0.65, 0, 0.35, 1)"
 // takes. The whole 4-phase cycle is 4x this. Also doubles as the
 // auto-progression interval -- transitions are back-to-back with no dwell,
 // so the scene is always mid-transition (see helpers/useTimeOfDayCycle.ts).
-export const AUTO_TRANSITION_SECONDS = 120
+export const AUTO_TRANSITION_SECONDS = 90
+
+// How long a clicked-to phase is actually held, fully settled, before
+// auto-progression resumes pulling toward the phase after it. Without this,
+// the auto-cycle's own "resume" timer (see useTimeOfDayCycle.ts) was armed
+// for exactly TRANSITION_SECONDS -- the same duration the click's OWN tween
+// takes -- so the instant the click finished arriving at its target, the
+// next auto-advance fired in the same frame, immediately pulling away
+// again. The clicked-to phase was never actually visible at rest: dawn and
+// evening in particular read as skippable, since a click from day landed on
+// evening for zero perceptible time before continuing straight on to night.
+export const CLICK_DWELL_SECONDS = 8
 
 // Cycle order for the time-of-day control (Dial.tsx).
 export const TIME_OF_DAY_ORDER: TimeOfDay[] = ["dawn", "day", "evening", "night"]

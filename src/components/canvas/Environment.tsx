@@ -60,6 +60,20 @@ const CAMPFIRE_LIGHT_POSITION: [number, number, number] = [1.5, -1, 1.5]
 // else here.)
 const CAMPFIRE_LIT_THRESHOLD = 0.5
 
+// Aurora visibility now tracks the sun's own live position (sunOpacity,
+// already tweened every frame below) instead of the preset-level
+// auroraOpacity field. auroraOpacity only differs between "night" (1) and
+// every other preset (0), tweened over the FULL segment duration -- during
+// an evening -> night transition that fades it in gradually across the
+// entire ~60s segment, so it was visibly appearing well before the sun had
+// actually gone down (and, symmetrically, lingering into dawn after the sun
+// was already rising). Gating on sunOpacity instead ties the aurora to the
+// sun's actual height in the sky: full aurora only once the sun is
+// essentially at the horizon/below (<= FLOOR), fully gone by the time the
+// sun is noticeably up again (>= CEIL).
+const AURORA_SUN_OPACITY_FLOOR = 0.05
+const AURORA_SUN_OPACITY_CEIL = 0.2
+
 const skyVertexShader = /* glsl */ `
   varying vec3 vPos;
   void main() {
@@ -105,11 +119,16 @@ function nextAngle(current: number, targetBase: number) {
 }
 
 export function Environment({
+  from,
   target,
   transitionSeconds = TRANSITION_SECONDS,
 }: {
+  /** The phase this component should start FROM if it's mounting into an
+   *  already-in-progress transition (the common case -- see
+   *  useTimeOfDayCycle.ts). Equals `target` for a no-op/instant snap. */
+  from: TimeOfDay
   target: TimeOfDay
-  /** Seconds for the blend into `target`. ~3 for a click, ~120 for the
+  /** Seconds for the blend into `target`. ~3 for a click, ~90 for the
    *  ambient auto-cycle. Must match whatever OceanWater.ts and PhaseCube
    *  were handed for this same change, or they visibly desync. */
   transitionSeconds?: number
@@ -117,13 +136,30 @@ export function Environment({
   // The single continuously-tweened source of truth. A ref (not state) --
   // this is read imperatively every frame in useFrame below, same pattern
   // as EarthIntro's shader-uniform updates, so a 60fps gsap tween doesn't
-  // mean 60 React re-renders/sec.
-  const blendRef = useRef<EnvironmentBlend>({ ...PRESETS[target] })
-  const currentTarget = useRef<TimeOfDay>(target)
+  // mean 60 React re-renders/sec. Starts at `from`, NOT `target` -- see the
+  // currentTarget initializer below.
+  const blendRef = useRef<EnvironmentBlend>({ ...PRESETS[from] })
+  // Starts `null` (never a real TimeOfDay) rather than `target`, so the
+  // effect below always runs at least once on mount instead of treating
+  // whatever `target` happens to already be as "already arrived, nothing to
+  // animate" -- see the comment on TimeOfDayTransition in
+  // useTimeOfDayCycle.ts for why that assumption is wrong here.
+  const currentTarget = useRef<TimeOfDay | null>(null)
 
   useEffect(() => {
     if (target === currentTarget.current) return
     currentTarget.current = target
+    // The ambient auto-cycle (transitionSeconds === AUTO_TRANSITION_SECONDS)
+    // needs to read as continuous, constant-speed motion -- the sun and moon
+    // "always moving, like in the real world," never stalling. power2.inOut
+    // (slow-fast-slow) is right for a single, standalone ~3s click-triggered
+    // skip, which is over almost as soon as you notice it, but chained
+    // back-to-back across an unattended cycle its slow ends mean velocity
+    // drops toward zero right at *every* phase boundary, which reads as the
+    // whole scene visibly pausing every minute -- the opposite of constant.
+    // Linear keeps speed uniform through and across every boundary; only a
+    // manual click (the short, fast case) still gets the eased feel.
+    const auto = transitionSeconds !== TRANSITION_SECONDS
     gsap.to(blendRef.current, {
       ...PRESETS[target],
       // Overridden below: the raw preset angles are always in [0, 360), but
@@ -134,12 +170,12 @@ export function Environment({
       moonAngle: nextAngle(blendRef.current.moonAngle, PRESETS[target].moonAngle),
       duration: tweenDuration(transitionSeconds),
       // gsap's power2 = cubic (power1 is quad, power3 is quart, etc.), so
-      // this is exactly "easeInOutCubic" -- slow start, committed middle,
-      // soft settle. See TRANSITION_SECONDS/TRANSITION_EASE_CSS in
-      // environmentPresets.ts for the CSS-side equivalent.
-      ease: "power2.inOut",
+      // "power2.inOut" is exactly "easeInOutCubic" -- slow start, committed
+      // middle, soft settle. See TRANSITION_EASE_CSS in environmentPresets.ts
+      // for the CSS-side equivalent (still used for the click case).
+      ease: auto ? "none" : "power2.inOut",
       // GSAP 3 defaults to overwrite:false. Without this, a fast (~3s)
-      // click-triggered tween that finishes while a still-alive ~120s
+      // click-triggered tween that finishes while a still-alive ambient
       // auto-progression tween has time left hands control back to that
       // slow tween on its next frame, visibly dragging the scene back
       // toward the phase the user just skipped past.
@@ -232,7 +268,8 @@ export function Environment({
     if (starsGroupRef.current) starsGroupRef.current.visible = b.starsOpacity > 0.5
     if (auroraMaterialRef.current) {
       auroraMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime
-      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity
+      const auroraVisibility = 1 - THREE.MathUtils.smoothstep(b.sunOpacity, AURORA_SUN_OPACITY_FLOOR, AURORA_SUN_OPACITY_CEIL)
+      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity * auroraVisibility
     }
 
     const lit = b.campfireIntensity > CAMPFIRE_LIT_THRESHOLD

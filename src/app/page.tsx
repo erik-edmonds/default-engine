@@ -90,8 +90,13 @@ export default function Page() {
   // crossed in between (4/6/14/17/18) desyncs server vs. client (same class
   // of bug fixed for the theme atom in StateProvider.tsx). `day` also
   // auto-progresses through phases every couple minutes on its own -- see
-  // useTimeOfDayCycle.
-  const { phase: day, transitionSeconds, skipAhead, resetTo } = useTimeOfDayCycle("day");
+  // useTimeOfDayCycle. `from` is the phase Environment/Scene/PhaseCube
+  // should animate FROM if they're mounting mid-transition (the norm, since
+  // they're Suspense-gated behind 3D asset loading and mount later than
+  // this component does).
+  const { from: dayFrom, phase: day, transitionSeconds, skipAhead, resetTo } = useTimeOfDayCycle("day");
+  const progress = useProgress((state) => state.progress);
+  const sceneReady = progress >= 100;
   const [motion, setMotion] = useState(false);
   const [islandMounted, setIslandMounted] = useState(false);
   const [nameStamped, setNameStamped] = useState(false);
@@ -111,8 +116,6 @@ export default function Page() {
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
   const skyTextRef = useRef("");
-  const progress = useProgress((state) => state.progress);
-  const sceneReady = progress >= 100;
 
   useEffect(() => {
     router.prefetch("/portfolio");
@@ -257,7 +260,7 @@ export default function Page() {
         </div>
         <div className="flex flex-col justify-items-center absolute right-5 top-5 z-10 bg-[#d25a1a]/50 rounded-xl">
           {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
-          <PhaseCube phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
+          <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
           
         </div>
         <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
@@ -272,9 +275,9 @@ export default function Page() {
           </EffectComposer>
           <color attach="background" args={["#0a0a0a"]} />
           {islandMounted && <Suspense fallback={null}>
-            <Environment target={day} transitionSeconds={transitionSeconds} />
+            <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />
             <group>
-              <Scene day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} />
+              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} />
               <AvatarController ref={avatarControllerRef} />
               <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
               {sceneReady && <> 

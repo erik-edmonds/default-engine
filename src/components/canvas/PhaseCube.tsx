@@ -5,7 +5,7 @@ import * as THREE from "three"
 import { Canvas } from "@react-three/fiber"
 import gsap from "gsap"
 
-import { TIME_OF_DAY_ORDER, TRANSITION_SECONDS, phaseIndex, nextPhase, forwardSteps, type TimeOfDay } from "./environmentPresets"
+import { TIME_OF_DAY_ORDER, TRANSITION_SECONDS, phaseIndex, forwardSteps, type TimeOfDay } from "./environmentPresets"
 import { tweenDuration } from "@/helpers/motion"
 
 // Same glyph shapes Dial.tsx used to draw as SVG, redrawn as canvas-2D paths
@@ -151,9 +151,13 @@ function CubeMesh({ meshRef, targetRotationRef }: { meshRef: React.RefObject<THR
 }
 
 export interface PhaseCubeProps {
+  /** The phase the cube should start FROM if it's mounting into an
+   *  already-in-progress transition (the common case -- see
+   *  useTimeOfDayCycle.ts). Equals `phase` for a no-op/instant snap. */
+  from: TimeOfDay
   /** The phase the cube should be showing/rotating toward. Always controlled. */
   phase: TimeOfDay
-  /** Seconds for the rotation into `phase` -- ~3 for a click, ~120 for the
+  /** Seconds for the rotation into `phase` -- ~3 for a click, ~90 for the
    *  ambient auto-cycle. Must be the same value handed to Environment/
    *  OceanWater for this same change, or the cube and scene drift apart. */
   transitionSeconds: number
@@ -163,27 +167,58 @@ export interface PhaseCubeProps {
   size?: number
 }
 
-export default function PhaseCube({ phase, transitionSeconds, onAdvance, size = 56 }: PhaseCubeProps) {
+export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, size = 56 }: PhaseCubeProps) {
   const meshRef = useRef<THREE.Mesh>(null)
-  // Quarter-turns taken since mount, monotonically increasing. The rotation
-  // target is always this ABSOLUTE angle, never a relative "+=90deg": once a
-  // slow (2-minute) rotation tween can be interrupted mid-flight by a click
-  // (see overwrite:true below), a relative tween resuming from wherever it
-  // got killed would leave the cube permanently off-axis from the face it
-  // claims to show, with the error compounding on every future interruption.
-  // An absolute target self-corrects instead.
-  const stepsRef = useRef(phaseIndex(phase))
+  // Quarter-turns taken since mount, monotonically increasing. Starts at
+  // `from`, not `phase` -- otherwise, mounting mid-transition (the common
+  // case; see useTimeOfDayCycle.ts), the cube would silently start already
+  // facing `phase` with nothing to rotate, instead of animating in from
+  // where it should actually be starting.  The rotation target is always
+  // this ABSOLUTE angle, never a relative "+=90deg": once a slow (~90s)
+  // rotation tween can be interrupted mid-flight by a click (see
+  // overwrite:true below), a relative tween resuming from wherever it got
+  // killed would leave the cube permanently off-axis from the face it
+  // claims to show, with the error compounding on every future
+  // interruption. An absolute target self-corrects instead.
+  const stepsRef = useRef(phaseIndex(from))
   const targetRotationRef = useRef(stepsRef.current * (Math.PI / 2))
-  const phaseRef = useRef(phase)
+  const phaseRef = useRef(from)
   const [busy, setBusy] = useState(false)
   const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // What the cube actually LOOKS like right now, for the aria-label -- see
+  // that label's own comment below. Starts at `from` since that's genuinely
+  // still on screen until the rotation tween below finishes.
+  const [settledPhase, setSettledPhase] = useState<TimeOfDay>(from)
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (phase === phaseRef.current) return
-    const from = TIME_OF_DAY_ORDER[((stepsRef.current % 4) + 4) % 4]
+    const fromPhase = TIME_OF_DAY_ORDER[((stepsRef.current % 4) + 4) % 4]
     phaseRef.current = phase
-    stepsRef.current += forwardSteps(from, phase)
+    stepsRef.current += forwardSteps(fromPhase, phase)
     targetRotationRef.current = stepsRef.current * (Math.PI / 2)
+
+    // Tracks when the rotation tween below ACTUALLY finishes, which is not
+    // the same moment the next auto-advance is scheduled for: a click's own
+    // tween completes in TRANSITION_SECONDS (~3s), but the phase then holds
+    // for CLICK_DWELL_SECONDS longer (~8s more) before auto-progression
+    // resumes -- see useTimeOfDayCycle.ts's holdSeconds. For the bulk of
+    // that hold, the cube has ALREADY visually finished turning to `phase`;
+    // it just isn't advancing further yet. Without this, `settledPhase`
+    // would only ever be driven by `from`/`phase` directly, which is right
+    // for the slow auto-cycle (where the ~90s tween genuinely dominates)
+    // but backwards for a click: the label would keep calling the
+    // ALREADY-ARRIVED-AT phase "changing to" for most of the hold, while
+    // the cube's face (and the sky/water, on the exact same
+    // TRANSITION_SECONDS duration) had already settled there.
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
+    const settleMs = transitionSeconds > 0 ? tweenDuration(transitionSeconds) * 1000 : 0
+    if (settleMs <= 0) {
+      setSettledPhase(phase)
+    } else {
+      setSettledPhase(fromPhase)
+      settleTimerRef.current = setTimeout(() => setSettledPhase(phase), settleMs)
+    }
 
     const mesh = meshRef.current
     // Can be null if this effect beats CubeMesh's own mount effect across
@@ -196,10 +231,15 @@ export default function PhaseCube({ phase, transitionSeconds, onAdvance, size = 
       mesh.rotation.y = targetRotationRef.current
       return
     }
+    // Same auto/click split as Environment.tsx/OceanWater.ts: linear during
+    // the unattended auto-cycle so the cube reads as constantly, smoothly
+    // turning in sync with the sky rather than easing to a near-stop at
+    // every phase boundary; eased only for the short, standalone click skip.
+    const auto = transitionSeconds !== TRANSITION_SECONDS
     gsap.to(mesh.rotation, {
       y: targetRotationRef.current,
       duration: tweenDuration(transitionSeconds),
-      ease: "power2.inOut",
+      ease: auto ? "none" : "power2.inOut",
       // Without this, an interrupting fast tween finishing while a slow
       // one still has time left hands control back to the slow tween,
       // visibly dragging the cube back toward the phase just skipped.
@@ -207,8 +247,16 @@ export default function PhaseCube({ phase, transitionSeconds, onAdvance, size = 
     })
   }, [phase, transitionSeconds])
 
-  const current = phase
-  const next = nextPhase(phase)
+  // `phase` is the LIVE TARGET of the in-flight transition, not necessarily
+  // what the scene currently looks like -- `settledPhase` (updated by the
+  // timer above once the tween actually finishes) is. `phase` remains
+  // correct as "changing to": once settledPhase catches up to it there's
+  // nothing left in flight, so `current === next` briefly and the label
+  // reads e.g. "Time of day: evening. Change to evening." until the NEXT
+  // transition starts -- expected, not a bug (nothing else meaningfully
+  // describes "arrived, nothing pending yet").
+  const current = settledPhase
+  const next = phase
 
   const handleClick = useCallback(() => {
     if (busy) return
@@ -223,7 +271,10 @@ export default function PhaseCube({ phase, transitionSeconds, onAdvance, size = 
     busyTimer.current = setTimeout(() => setBusy(false), lockMs)
   }, [busy, onAdvance])
 
-  useEffect(() => () => { if (busyTimer.current) clearTimeout(busyTimer.current) }, [])
+  useEffect(() => () => {
+    if (busyTimer.current) clearTimeout(busyTimer.current)
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
+  }, [])
 
   return (
     <button

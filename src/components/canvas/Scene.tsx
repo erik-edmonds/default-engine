@@ -12,7 +12,7 @@ import { Pokeball } from "@/components/models/Pokeball"
 import { Waterfall } from "@/components/models/Waterfall"
 import { Foams } from "@/components/models/Foams"
 
-export function Scene({ day, transitionSeconds, onDragoniteRelease }: { day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void }) {
+export function Scene({ from, day, transitionSeconds, onDragoniteRelease }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void }) {
     return (
         <>
             <Bvh firstHitOnly>
@@ -30,7 +30,7 @@ export function Scene({ day, transitionSeconds, onDragoniteRelease }: { day: Tim
             <Waterfall />
             <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
             <Speaker scale={65} position={[0.5, -2.75, 9]} rotation={[0, -Math.PI/4, 0]} />
-            <Merged day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
+            <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
         </>
     )
 }
