@@ -1,6 +1,6 @@
 "use client"
 
-import { useProgress } from "@react-three/drei";
+import { useProgress, Loader } from "@react-three/drei";
 import { useEffect, useRef, useState } from "react";
 
 export default function Loading() {
@@ -8,7 +8,7 @@ export default function Loading() {
     <>
       <div className="flex size-screen items-center justify-center">
         <div>
-          <LoadingIcon/>
+          <Loader />
         </div>
       </div>
     </>

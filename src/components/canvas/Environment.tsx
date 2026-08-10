@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
-import { Stars } from "@react-three/drei"
+import { Stars, Sparkles, Sky } from "@react-three/drei"
 import gsap from "gsap"
 
 import { PRESETS, TRANSITION_SECONDS, type TimeOfDay, type EnvironmentBlend } from "./environmentPresets"
@@ -106,8 +106,13 @@ function nextAngle(current: number, targetBase: number) {
 
 export function Environment({
   target,
+  transitionSeconds = TRANSITION_SECONDS,
 }: {
   target: TimeOfDay
+  /** Seconds for the blend into `target`. ~3 for a click, ~120 for the
+   *  ambient auto-cycle. Must match whatever OceanWater.ts and PhaseCube
+   *  were handed for this same change, or they visibly desync. */
+  transitionSeconds?: number
 }) {
   // The single continuously-tweened source of truth. A ref (not state) --
   // this is read imperatively every frame in useFrame below, same pattern
@@ -127,14 +132,20 @@ export function Environment({
       // value would undo that and snap backward on every other cycle.
       sunAngle: nextAngle(blendRef.current.sunAngle, PRESETS[target].sunAngle),
       moonAngle: nextAngle(blendRef.current.moonAngle, PRESETS[target].moonAngle),
-      duration: tweenDuration(TRANSITION_SECONDS),
+      duration: tweenDuration(transitionSeconds),
       // gsap's power2 = cubic (power1 is quad, power3 is quart, etc.), so
       // this is exactly "easeInOutCubic" -- slow start, committed middle,
       // soft settle. See TRANSITION_SECONDS/TRANSITION_EASE_CSS in
       // environmentPresets.ts for the CSS-side equivalent.
       ease: "power2.inOut",
+      // GSAP 3 defaults to overwrite:false. Without this, a fast (~3s)
+      // click-triggered tween that finishes while a still-alive ~120s
+      // auto-progression tween has time left hands control back to that
+      // slow tween on its next frame, visibly dragging the scene back
+      // toward the phase the user just skipped past.
+      overwrite: true,
     })
-  }, [target])
+  }, [target, transitionSeconds])
 
   const skyMaterial = useMemo(
     () =>
@@ -271,7 +282,9 @@ export function Environment({
         </group>
       </group>
       <group ref={starsGroupRef}>
-        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+        <Stars radius={100} depth={50} count={5000} factor={6} saturation={1} fade speed={2} />
+        <Sparkles count={2000} scale={50} size={6} speed={1} opacity={0.1} color="white" />
+       
       </group>
       <Aurora materialRef={auroraMaterialRef} />
 

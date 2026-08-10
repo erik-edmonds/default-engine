@@ -4,15 +4,15 @@ import { useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls,  Environment } from '@react-three/drei'
 import { ViewCube } from '@/components/layout/HUD'
-import { BrownTree } from '@/components/models/BrownTree'
-import { ClusterTree } from '@/components/models/ClusterTree'
-
+import { Pokeball } from '@/components/models/Pokeball'
 export default function Page() {
   return (
-    <Canvas style={{ width: "100vw", height: "100vh" }}>
+    <Canvas camera={{ position: [0,0,0], rotation: [0,0,0], fov: 45 }}style={{ width: "100vw", height: "100vh" }}>
       <ambientLight intensity={0.5 * Math.PI} />
-      <BrownTree />
-      <OrbitControls />
+      <group position={[0, 0, -15]}>
+        <Pokeball />
+      </group>
+      <Torus />
       <Environment preset="city" />
     </Canvas>
   )

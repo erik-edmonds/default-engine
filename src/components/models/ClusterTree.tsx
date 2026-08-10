@@ -8,7 +8,7 @@ export function ClusterTree(props) {
     const { actions } = useAnimations(animations, group)
   
     useEffect(() => {
-      actions["Swaying"]?.reset().play()
+        actions["Swaying"]?.reset().play()
     }, [])
   return (
     <group ref={group} {...props} dispose={null}>

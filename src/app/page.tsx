@@ -6,14 +6,15 @@ import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Preload, useProgress } from "@react-three/drei";
-import { Bloom, EffectComposer, N8AO } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, N8AO, Noise } from "@react-three/postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest } from "@/helpers/StateProvider";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { NavTotems } from "@/components/canvas/NavTotems";
-import { TRANSITION_SECONDS, type TimeOfDay } from "@/components/canvas/environmentPresets";
+import { type TimeOfDay } from "@/components/canvas/environmentPresets";
+import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
 import RainScene from "@/components/canvas/RainScene";
@@ -62,10 +63,10 @@ const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(15.098318983889161, 6.7
 const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394);
 
 const SECTIONS = [
-  { id: "home",    label: "Home",    scroll: 0.00 },
-  { id: "work",    label: "Work",    scroll: 0.33 },
-  { id: "about",   label: "About",   scroll: 0.66 },
-  { id: "contact", label: "Contact", scroll: 1.00 },
+  { id: "home", scroll: 0.00 },
+  { id: "work", scroll: 0.33 },
+  { id: "about", scroll: 0.66 },
+  { id: "contact", scroll: 1.00 },
 ];
 
 const ANCHORS: Anchor[] = [
@@ -83,7 +84,14 @@ export default function Page() {
   const router = useRouter();
   const { setTheme } = useAppState();
   const [, startTransition] = useTransition();
-  const [day, setDay] = useState<TimeOfDay>(getTimeOfDay);
+  // Fixed initial value, corrected to the real time-of-day in an effect
+  // below -- calling getTimeOfDay() directly in useState() runs it once on
+  // the server and again at hydration, and a real-clock hour boundary
+  // crossed in between (4/6/14/17/18) desyncs server vs. client (same class
+  // of bug fixed for the theme atom in StateProvider.tsx). `day` also
+  // auto-progresses through phases every couple minutes on its own -- see
+  // useTimeOfDayCycle.
+  const { phase: day, transitionSeconds, skipAhead, resetTo } = useTimeOfDayCycle("day");
   const [motion, setMotion] = useState(false);
   const [islandMounted, setIslandMounted] = useState(false);
   const [nameStamped, setNameStamped] = useState(false);
@@ -111,6 +119,8 @@ export default function Page() {
     const mountTimer = setTimeout(() => startTransition(() => setIslandMounted(true)), 0);
     return () => clearTimeout(mountTimer);
   }, [router, startTransition]);
+
+  useEffect(() => { resetTo(getTimeOfDay()); }, [resetTo]);
 
   useEffect(() => {
     if (!sceneReady) return;
@@ -158,22 +168,11 @@ export default function Page() {
     if (goHomeRequestValue > 0) handleGoHome();
   }, [goHomeRequestValue]);
 
-  const handleTimeOfDayChange = (next: TimeOfDay) => {
-    setDay(next);
-    setTheme(next);
-  };
+  // Kept in an effect rather than a click handler: with auto-progression,
+  // most phase changes never pass through a click, and a handler-only
+  // setTheme would leave the favicon frozen on the last *clicked* phase.
+  useEffect(() => { setTheme(day); }, [day, setTheme]);
 
-  // setActiveHotspot(id) is what hides a marker (see the `activeHotspot
-  // !== "..."` checks below) -- setting it for the *destination* right
-  // away, before the flight even starts, was fine (that marker should
-  // disappear as you head toward it). But since this is the same flag
-  // that reveals the marker you're *leaving* (it's simply "whichever
-  // marker isn't this one, show"), setting it early also revealed the
-  // departure marker instantly, the moment the camera started moving --
-  // while still standing right next to it. Awaiting flyTo first means
-  // both markers stay exactly as they were until the camera has actually
-  // arrived, so the departure marker only reappears once it's genuinely
-  // been left behind.
   const flyToHotspot = async (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
     await cameraControllerRef.current?.flyTo(position, rotation);
     setActiveHotspot(id);
@@ -183,15 +182,6 @@ export default function Page() {
   const handleMoonIslandHotspotClick = () => flyToHotspot("moon-island", MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION);
   const handleHomeHotspotClick = () => flyToHotspot("home", HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION);
 
-  // ANCHORS/SECTIONS (used by Rail + NavigationProjector) are, in order,
-  // the same 4 points of interest the hotspot markers already fly to --
-  // "models"/"donate"/"contact" share their positions 1:1 with
-  // LEFT_TREE_/MOON_ISLAND_/UPPER_ISLAND_HOTSPOT_POSITION, and "home"
-  // with AVATAR_POSITION. Clicking a Rail item reuses those same,
-  // already-working fly handlers rather than useScrollTravel's
-  // window.scrollTo -- this page sets overflow-hidden on its root and has
-  // no scrollable height at all (see the wheel handler above), so
-  // travelTo() has nothing to actually scroll and was a silent no-op.
   const RAIL_FLY_HANDLERS = [
     handleHomeHotspotClick,
     handleLeftTreeHotspotClick,
@@ -202,14 +192,27 @@ export default function Page() {
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
+    // Instant swap to a white-glowing dragonite, then its real material
+    // wipes in (no spin) -- only once that's fully resolved does the camera
+    // zoom/fly-up begin, per the redesigned reveal order.
+    await avatarControllerRef.current?.materializeDragonite();
     await cameraControllerRef.current?.zoomIn();
-    await avatarControllerRef.current?.spinAndTransform("dragonite");
     await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
     cameraControllerRef.current?.beginSkyJourney();
     avatarControllerRef.current?.beginSkyJourney();
     isInSkyJourney.current = true;
     setInSkyJourneyAtom(true);
     isSequenceRunning.current = false;
+  };
+
+  // Fired by the pokeball at click (see Pokeball.tsx's onRelease) -- a
+  // second, independent entry point into the same materialize/zoom/fly-up/
+  // sky-journey sequence the (still commented-out) NavTotems up-click
+  // already uses. setMotion(true) matches what that totem's own onUp
+  // already does.
+  const handleDragoniteRelease = () => {
+    setMotion(true);
+    handleUpClick();
   };
 
   const handleDownClick = async () => {
@@ -222,13 +225,6 @@ export default function Page() {
     startTransition(() => router.push("/portfolio"));
   };
 
-  // Mirrors handleUpClick in reverse -- but flies home *then* reveals the
-  // human form, rather than revealing the costume *then* flying, so the
-  // model-swap lands on arrival instead of mid-flight. isInSkyJourney/skyText
-  // flip immediately since they gate input (stray scroll/a stale caption
-  // would otherwise persist through the return flight); motion stays true
-  // (totems/name-tagline hidden) until everything has actually settled,
-  // mirroring how it already stays true for the whole outbound trip.
   const handleGoHome = async () => {
     if (isSequenceRunning.current || !isInSkyJourney.current) return;
     isSequenceRunning.current = true;
@@ -259,10 +255,11 @@ export default function Page() {
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
-        <div className="absolute right-5 top-5 z-10">
-          <PhaseCube defaultPhase={day} onPhaseChange={handleTimeOfDayChange} durationMs={TRANSITION_SECONDS * 1000} />
+        <div className="flex flex-col justify-items-center absolute right-5 top-5 z-10 bg-[#d25a1a]/50 rounded-xl">
+          {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
+          <PhaseCube phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
+          
         </div>
-        <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" />
         <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
           onPointerDown={() => {
             setDragged(true)
@@ -274,22 +271,21 @@ export default function Page() {
             <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
           </EffectComposer>
           <color attach="background" args={["#0a0a0a"]} />
-          <OrbitCube />
           {islandMounted && <Suspense fallback={null}>
-            <Environment target={day} />
+            <Environment target={day} transitionSeconds={transitionSeconds} />
             <group>
-              <Scene day={day} />
+              <Scene day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} />
               <AvatarController ref={avatarControllerRef} />
               <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
               {sceneReady && <> 
-                <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group>
+                {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
                 {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
                 {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
                 {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
               </>}
             </group>
-            {dragged && rotate && <Mouse />}
+            {/* dragged && rotate && <Mouse /> */}
             <CameraController ref={cameraControllerRef} />
             <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
 

@@ -97,16 +97,9 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     rimIntensity: 1.2,
   },
   day: {
-    // A single monotonic gradient, horizon (skyHorizon, lightest) to
-    // zenith (skyTop, darkest) -- see Environment.tsx's sky shader.
     skyTop: "#1a6bab",
     skyHorizon: "#eaf7ff",
     ambientColor: "#dff2ff",
-    // Was 0.7 -- at that level the omnidirectional ambient fill nearly
-    // matched the directional key light, washing shadow areas back out to
-    // flat even though the light *rig* itself was already correct. Cut
-    // hard here (and boosted dirIntensity below) so the sun's direction is
-    // what actually sculpts the scene.
     ambientIntensity: 0.28,
     hemiSky: "#bfe9ff",
     hemiGround: "#3a2a20",
@@ -116,20 +109,12 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     dirX: 25,
     dirY: 40,
     dirZ: -15,
-    // Lightened + pushed back further -- was still reading a bit heavy up
-    // close even after excluding the sun/moon from fog (fog={false} on
-    // their materials, fixed earlier).
     fogColor: "#dff8fc",
     fogNear: 28,
     fogFar: 120,
     campfireColor: "#ff7a30",
     campfireIntensity: 0,
     sunOpacity: 1,
-    // 35 read as too low; 62 (a later attempt) read as too high AND, as a
-    // side effect of moving along the shared arc, too far left (see
-    // ARC_CENTER_X in Environment.tsx, shifted right to compensate for
-    // this same angle). 54 is the settled middle: clearly higher than the
-    // original 35, short of 62's overhead extreme.
     sunAngle: 54,
     sunZ: -20,
     moonOpacity: 0,
@@ -144,12 +129,6 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     skyTop: "#1c2f52",
     skyHorizon: "#ff9d6b",
     ambientColor: "#ffcf9a",
-    // Sunset should still read as backlit/moody (rim stays strong below),
-    // but with fill cut this hard and the key light this low/grazing, the
-    // avatar/chair/palm trees were going nearly unlit on their
-    // camera-facing side -- raised fill and key intensity, and lifted the
-    // key light's angle so it actually strikes the front of these subjects
-    // instead of just grazing past them.
     ambientIntensity: 0.2,
     hemiSky: "#ffb37a",
     hemiGround: "#3a2a3a",
@@ -220,18 +199,33 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
   },
 }
 
-// Shared by every time-of-day-dependent transition (Environment.tsx's
-// lighting/sky blend, OceanWater.ts's water color, and the Dial control's
-// own needle animation in page.tsx) so a phase change reads as one
-// coordinated moment instead of several independently-timed animations.
-// Both are the same "easeInOutCubic" curve in their respective systems --
-// gsap's "power2.inOut" (used for every tween keyed off TRANSITION_SECONDS)
-// is exactly that curve (gsap's "power" naming is 1-indexed below quad:
-// power1=quad, power2=cubic, power3=quart, etc.), and this cubic-bezier is
-// the standard CSS approximation of the same shape. Slow start, committed
-// middle, soft settle -- reads as physical rather than a linear crossfade.
+// The fast, manual duration: how long a *click* on the phase cube takes to
+// skip ahead. Deliberately short -- a click is a "get me there now" gesture.
 export const TRANSITION_SECONDS = 3
 export const TRANSITION_EASE_CSS = "cubic-bezier(0.65, 0, 0.35, 1)"
 
+// The slow, ambient duration: how long one unattended phase-to-phase segment
+// takes. The whole 4-phase cycle is 4x this. Also doubles as the
+// auto-progression interval -- transitions are back-to-back with no dwell,
+// so the scene is always mid-transition (see helpers/useTimeOfDayCycle.ts).
+export const AUTO_TRANSITION_SECONDS = 120
+
 // Cycle order for the time-of-day control (Dial.tsx).
 export const TIME_OF_DAY_ORDER: TimeOfDay[] = ["dawn", "day", "evening", "night"]
+
+export function phaseIndex(phase: TimeOfDay) {
+  return TIME_OF_DAY_ORDER.indexOf(phase)
+}
+
+// Always forward around the cycle, wrapping night -> dawn. Matches the
+// forward-only sun/moon arc in Environment.tsx (nextAngle) -- a backward
+// step would rewind the cube while the sky kept sweeping forward.
+export function nextPhase(phase: TimeOfDay): TimeOfDay {
+  return TIME_OF_DAY_ORDER[(phaseIndex(phase) + 1) % TIME_OF_DAY_ORDER.length]
+}
+
+// Quarter-turns to rotate forward to land on `to` from `from`. Always in
+// [0, 3]; a "backward" request takes the long way round rather than reversing.
+export function forwardSteps(from: TimeOfDay, to: TimeOfDay) {
+  return (((phaseIndex(to) - phaseIndex(from)) % 4) + 4) % 4
+}

@@ -1,13 +1,13 @@
 "use client"
 
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState, Suspense } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, Suspense } from "react"
 import type { Group } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
 import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { Avatar } from "@/components/models/Avatar"
-import { Dragonite } from "@/components/models/Dragonite"
+import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
 import { Scuba } from "@/components/models/Scuba"
 
 const BASE_POSITION: [number, number, number] = [-1.3, -0.65, 1]
@@ -118,6 +118,7 @@ function getSkyY(offset: number) {
 
 export interface AvatarControllerHandle {
   spinAndTransform: (target: ModelKind) => Promise<void>
+  materializeDragonite: () => Promise<void>
   flyUp: () => Promise<void>
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
@@ -156,6 +157,32 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   const displaySkyOffset = useRef(0)
   const isSkyJourneyActive = useRef(false)
   const skyBobSeed = useMemo(() => Math.random() * Math.PI * 2, [])
+  const dragoniteInstanceRef = useRef<DragoniteHandle | null>(null)
+  const materializeResolveRef = useRef<(() => void) | null>(null)
+
+  // Starts materialize() the moment BOTH a pending request and a mounted
+  // Dragonite instance exist, whichever arrives second. This used to be a
+  // useEffect keyed on [modelKind], which only gets one chance to run right
+  // after modelKind flips -- if Dragonite was still Suspense-suspended
+  // (glb not finished loading/parsing yet) at that exact moment, the ref
+  // was null, the effect silently gave up and resolved immediately, and
+  // materialize() never ran at all -- confirmed live: the avatar skipped
+  // straight to its real texture with no white phase, and the "hold"
+  // duration below never had any effect because it was never reached. A
+  // ref *callback* (passed to Dragonite below) fires the instant the real
+  // instance actually attaches, however late Suspense makes that -- no
+  // missed window.
+  const tryStartMaterialize = () => {
+    if (dragoniteInstanceRef.current && materializeResolveRef.current) {
+      const resolve = materializeResolveRef.current
+      materializeResolveRef.current = null
+      dragoniteInstanceRef.current.materialize().then(resolve)
+    }
+  }
+  const setDragoniteRef = (instance: DragoniteHandle | null) => {
+    dragoniteInstanceRef.current = instance
+    tryStartMaterialize()
+  }
 
   useImperativeHandle(ref, () => ({
     spinAndTransform: (target: ModelKind) =>
@@ -169,6 +196,19 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           .to(group.current.rotation, { y: "+=" + Math.PI, duration: tweenDuration(0.5), ease: "power1.in" })
           .call(() => setModelKind(target))
           .to(group.current.rotation, { y: "+=" + Math.PI, duration: tweenDuration(0.5), ease: "power1.out" })
+      }),
+    // Instant swap, no spin: the avatar becomes Dragonite immediately
+    // (rendering fully white -- see Dragonite.tsx's uProgress default),
+    // then its real material wipes in. Resolves once that wipe finishes.
+    materializeDragonite: () =>
+      new Promise<void>((resolve) => {
+        materializeResolveRef.current = resolve
+        setModelKind("dragonite")
+        // Covers Dragonite already being mounted (e.g. materializing again
+        // without an intervening unmount) -- the ref callback only fires on
+        // attach/detach, not on every re-render, so it wouldn't fire again
+        // here on its own.
+        tryStartMaterialize()
       }),
     flyUp: () =>
       new Promise<void>((resolve) => {
@@ -290,7 +330,7 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     <group ref={group} position={BASE_POSITION} rotation={BASE_ROTATION}>
       <Suspense fallback={null}>
         {modelKind === "base" && <Avatar scale={1.4} />}
-        {modelKind === "dragonite" && <Dragonite scale={1.4} />}
+        {modelKind === "dragonite" && <Dragonite ref={setDragoniteRef} scale={1.4} />}
         {modelKind === "scuba" && <Scuba scale={1.4} />}
       </Suspense>
     </group>

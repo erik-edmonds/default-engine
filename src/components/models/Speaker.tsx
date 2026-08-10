@@ -10,19 +10,6 @@ export function Speaker(props) {
   const [hovered, setHover] = useState(false)
   const { nodes, materials } = useGLTF('/models/speaker.glb')
   const hover = useRef(false)
-  // Lazy useState initializer, not a plain const: the old `const song = new
-  // Howl(...)` recreated a fresh, never-played Howl instance on every
-  // render. Since a brand new instance always reports playing()===false,
-  // the effect below kept re-entering its "start playing" branch and
-  // calling setState from inside itself -- an infinite render loop
-  // (confirmed via "Maximum update depth exceeded" crashes once the parent
-  // scene mounts eagerly). The initializer only runs once on mount, and we
-  // never call the setter, so `song` stays referentially stable.
-  // preload: false -- otherwise Howler fetches+decodes the entire 92MB
-  // music.mp3 the instant this component mounts, regardless of whether the
-  // visitor ever clicks the speaker. Note this does NOT lazy-load on
-  // .play() by itself (Howler queues the play but never calls .load() for
-  // you) -- the effect below calls .load() explicitly on first use.
   const [song] = useState(() => new Howl({
     src: ['/sound/music.mp3'],
     volume: 0.5,

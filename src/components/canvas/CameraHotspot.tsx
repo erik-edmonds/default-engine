@@ -5,9 +5,6 @@ import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
 import { Billboard } from "@react-three/drei"
 
-// Same idle-bob + hover-scale convention as TimeOfDayOrb.tsx/NavTotems.tsx --
-// a per-instance random phase (seed) so multiple hotspots don't bob in
-// lockstep, imperative ref mutation every frame rather than React state.
 const BOB_AMPLITUDE = 0.12
 const BOB_SPEED = 0.9
 const BASE_SCALE = 1
@@ -22,6 +19,7 @@ export function CameraHotspot({
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState(false)
+  const [color, setColor] = useState("white")
   const seed = useMemo(() => Math.random() * Math.PI * 2, [])
   const scratchScale = useRef(new THREE.Vector3())
 
@@ -35,10 +33,6 @@ export function CameraHotspot({
   return (
     <group ref={groupRef} position={position}>
       <Billboard>
-        {/* A single invisible disc covering the whole icon handles hit
-            testing -- ringGeometry is an annulus with a hole in the
-            middle, so a click dead-center (right on the dot) would
-            otherwise miss the ring's own handler entirely. */}
         <mesh
           onClick={(e) => {
             e.stopPropagation()
@@ -47,10 +41,12 @@ export function CameraHotspot({
           onPointerOver={(e) => {
             e.stopPropagation()
             setHovered(true)
+            setColor("#d25a1a")
             document.body.style.cursor = "pointer"
           }}
           onPointerOut={() => {
             setHovered(false)
+            setColor("white")
             document.body.style.cursor = "auto"
           }}
         >
@@ -64,11 +60,11 @@ export function CameraHotspot({
             rock or island the way a real object would. */}
         <mesh raycast={() => null} renderOrder={999}>
           <ringGeometry args={[0.43, 0.44, 40]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
+          <meshBasicMaterial color={color} transparent opacity={0.85} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
         </mesh>
         <mesh raycast={() => null} renderOrder={999}>
           <circleGeometry args={[0.16, 40]} />
-          <meshBasicMaterial color="#ffffff" transparent toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
+          <meshBasicMaterial color={color} transparent toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
         </mesh>
       </Billboard>
     </group>

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useRef, forwardRef, useImperativeHandle } from 'react'
+import { createContext, useContext, useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import {  useFrame, useThree } from '@react-three/fiber'
 import { AppState } from '@/helpers/Interfaces';
 import { atom } from 'jotai'
@@ -52,7 +52,16 @@ export function useBox() {
 }
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState(time);
+  // Fixed initial value so SSR and the client's first render always agree --
+  // computing time() directly in useState() runs it once on the server and
+  // again at hydration, and if the real clock crosses an hour boundary (4,
+  // 6, 14, 17, 18) in between, server and client land in different theme
+  // buckets, causing a hydration mismatch on anything themed (e.g.
+  // Favicon's fill colors). Deferring the real read to a post-mount effect
+  // keeps the first paint deterministic; it then corrects to the real
+  // time-of-day immediately after.
+  const [theme, setTheme] = useState<string>("day");
+  useEffect(() => { setTheme(time()); }, []);
 
   return (
     <AppStateContext.Provider value={{ theme, setTheme }}>

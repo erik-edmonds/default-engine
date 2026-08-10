@@ -5,8 +5,8 @@ import * as THREE from "three"
 import { Canvas } from "@react-three/fiber"
 import gsap from "gsap"
 
-import { TIME_OF_DAY_ORDER, type TimeOfDay } from "./environmentPresets"
-import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
+import { TIME_OF_DAY_ORDER, TRANSITION_SECONDS, phaseIndex, nextPhase, forwardSteps, type TimeOfDay } from "./environmentPresets"
+import { tweenDuration } from "@/helpers/motion"
 
 // Same glyph shapes Dial.tsx used to draw as SVG, redrawn as canvas-2D paths
 // so they can be baked into a CanvasTexture per cube face. Coordinates are a
@@ -121,18 +121,19 @@ function buildFaceMaterials(textures: Record<TimeOfDay, THREE.CanvasTexture>) {
   ]
 }
 
-function CubeMesh({ meshRef, initialIndex }: { meshRef: React.RefObject<THREE.Mesh | null>; initialIndex: number }) {
+function CubeMesh({ meshRef, targetRotationRef }: { meshRef: React.RefObject<THREE.Mesh | null>; targetRotationRef: React.RefObject<number> }) {
   const [textures] = useState(buildFaceTextures)
   const materials = useMemo(() => buildFaceMaterials(textures), [textures])
 
-  // Without this, the mesh always starts at rotation.y=0 (showing
-  // whatever phase landed on the +z face -- "dawn" -- regardless of which
-  // phase the scene/aria-label actually started on). Runs once, inside
-  // the R3F tree so meshRef.current is guaranteed set by the time it
-  // fires (a parent-side effect can't guarantee that across the
-  // Canvas's separate reconciler root).
+  // Reads the live ref rather than a frozen prop, so this is correct
+  // whichever way the mount-order race goes against the parent's own
+  // phase-driven effect below (a parent-side effect can't guarantee
+  // meshRef.current is set yet, since <Canvas> is a separate reconciler
+  // root) -- if the parent's effect already ran and found meshRef null (so
+  // it skipped tweening), this picks up the target angle it computed; if
+  // this runs first, the parent's next effect run tweens from here.
   useEffect(() => {
-    if (meshRef.current) meshRef.current.rotation.y = initialIndex * (Math.PI / 2)
+    if (meshRef.current) meshRef.current.rotation.y = targetRotationRef.current
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -150,67 +151,84 @@ function CubeMesh({ meshRef, initialIndex }: { meshRef: React.RefObject<THREE.Me
 }
 
 export interface PhaseCubeProps {
-  /** Controlled phase. Omit to let the cube own its state. */
-  phase?: TimeOfDay
-  /** Starting phase when uncontrolled. */
-  defaultPhase?: TimeOfDay
-  onPhaseChange?: (next: TimeOfDay) => void
-  /** Must match the scene transition -- import both from one constant. */
-  durationMs?: number
+  /** The phase the cube should be showing/rotating toward. Always controlled. */
+  phase: TimeOfDay
+  /** Seconds for the rotation into `phase` -- ~3 for a click, ~120 for the
+   *  ambient auto-cycle. Must be the same value handed to Environment/
+   *  OceanWater for this same change, or the cube and scene drift apart. */
+  transitionSeconds: number
+  /** Fired on click. The cube doesn't advance itself -- the parent owns the
+   *  cycle and feeds the result back via `phase`. */
+  onAdvance?: () => void
   size?: number
 }
 
-export default function PhaseCube({
-  phase,
-  defaultPhase = "night",
-  onPhaseChange,
-  durationMs = 1200,
-  size = 56,
-}: PhaseCubeProps) {
-  const controlled = phase !== undefined
-
-  const [steps, setSteps] = useState(() => TIME_OF_DAY_ORDER.indexOf(controlled ? phase! : defaultPhase))
-  const [busy, setBusy] = useState(false)
+export default function PhaseCube({ phase, transitionSeconds, onAdvance, size = 56 }: PhaseCubeProps) {
   const meshRef = useRef<THREE.Mesh>(null)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Quarter-turns taken since mount, monotonically increasing. The rotation
+  // target is always this ABSOLUTE angle, never a relative "+=90deg": once a
+  // slow (2-minute) rotation tween can be interrupted mid-flight by a click
+  // (see overwrite:true below), a relative tween resuming from wherever it
+  // got killed would leave the cube permanently off-axis from the face it
+  // claims to show, with the error compounding on every future interruption.
+  // An absolute target self-corrects instead.
+  const stepsRef = useRef(phaseIndex(phase))
+  const targetRotationRef = useRef(stepsRef.current * (Math.PI / 2))
+  const phaseRef = useRef(phase)
+  const [busy, setBusy] = useState(false)
+  const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!controlled) return
-    const target = TIME_OF_DAY_ORDER.indexOf(phase!)
-    setSteps((s) => s + ((target - (s % 4) + 4) % 4))
-  }, [controlled, phase])
+    if (phase === phaseRef.current) return
+    const from = TIME_OF_DAY_ORDER[((stepsRef.current % 4) + 4) % 4]
+    phaseRef.current = phase
+    stepsRef.current += forwardSteps(from, phase)
+    targetRotationRef.current = stepsRef.current * (Math.PI / 2)
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+    const mesh = meshRef.current
+    // Can be null if this effect beats CubeMesh's own mount effect across
+    // the Canvas's separate reconciler root -- CubeMesh applies
+    // targetRotationRef itself in that case, so nothing more to do here.
+    if (!mesh) return
 
-  const index = ((steps % 4) + 4) % 4
-  const current = TIME_OF_DAY_ORDER[index]
-  const next = TIME_OF_DAY_ORDER[(index + 1) % 4]
-  // Frozen at mount -- CubeMesh's own initial-rotation effect only ever
-  // reads the first render's value anyway (empty deps), this just makes
-  // that explicit rather than relying on the closure.
-  const initialIndexRef = useRef(index)
+    if (transitionSeconds <= 0) {
+      gsap.killTweensOf(mesh.rotation)
+      mesh.rotation.y = targetRotationRef.current
+      return
+    }
+    gsap.to(mesh.rotation, {
+      y: targetRotationRef.current,
+      duration: tweenDuration(transitionSeconds),
+      ease: "power2.inOut",
+      // Without this, an interrupting fast tween finishing while a slow
+      // one still has time left hands control back to the slow tween,
+      // visibly dragging the cube back toward the phase just skipped.
+      overwrite: true,
+    })
+  }, [phase, transitionSeconds])
 
-  const ms = prefersReducedMotion() ? 0 : tweenDuration(durationMs / 1000) * 1000
+  const current = phase
+  const next = nextPhase(phase)
 
-  const advance = useCallback(() => {
+  const handleClick = useCallback(() => {
     if (busy) return
     setBusy(true)
-    setSteps((s) => s + 1)
-    onPhaseChange?.(TIME_OF_DAY_ORDER[(((steps + 1) % 4) + 4) % 4])
-    if (meshRef.current) {
-      if (ms === 0) {
-        meshRef.current.rotation.y += Math.PI / 2
-      } else {
-        gsap.to(meshRef.current.rotation, { y: "+=" + Math.PI / 2, duration: ms / 1000, ease: "power2.inOut" })
-      }
-    }
-    timer.current = setTimeout(() => setBusy(false), ms)
-  }, [busy, ms, onPhaseChange, steps])
+    onAdvance?.()
+    // Fixed to the click duration on purpose -- using the transitionSeconds
+    // prop would lock the button out for the full 2 minutes of an
+    // auto-transition. This is now just a UX rate-limit, not a correctness
+    // requirement (absolute rotation + overwrite:true means rapid clicks
+    // re-target cleanly either way).
+    const lockMs = tweenDuration(TRANSITION_SECONDS) * 1000
+    busyTimer.current = setTimeout(() => setBusy(false), lockMs)
+  }, [busy, onAdvance])
+
+  useEffect(() => () => { if (busyTimer.current) clearTimeout(busyTimer.current) }, [])
 
   return (
     <button
       type="button"
-      onClick={advance}
+      onClick={handleClick}
       aria-label={`Time of day: ${current}. Change to ${next}.`}
       style={{
         width: size,
@@ -231,7 +249,7 @@ export default function PhaseCube({
         camera={{ position: [0, 0, 2.1], fov: 35 }}
         style={{ width: "100%", height: "100%", pointerEvents: "none" }}
       >
-        <CubeMesh meshRef={meshRef} initialIndex={initialIndexRef.current} />
+        <CubeMesh meshRef={meshRef} targetRotationRef={targetRotationRef} />
       </Canvas>
     </button>
   )

@@ -266,7 +266,7 @@ const fragmentShader = /* glsl */ `
   }
 `
 
-export function useOceanWaterMaterial(day: TimeOfDay) {
+export function useOceanWaterMaterial(day: TimeOfDay, transitionSeconds: number = TRANSITION_SECONDS) {
   const material = useMemo(() => {
     const preset = PRESETS[day]
     return new THREE.ShaderMaterial({
@@ -331,10 +331,15 @@ export function useOceanWaterMaterial(day: TimeOfDay) {
       fogNear: preset.fogNear,
       fogFar: preset.fogFar,
       moonOpacity: preset.moonOpacity,
-      duration: tweenDuration(TRANSITION_SECONDS),
+      duration: tweenDuration(transitionSeconds),
       ease: "power2.inOut",
+      // See Environment.tsx's identical comment -- without this, a fast
+      // click-triggered tween completing mid-way through a slow
+      // auto-progression tween hands control back to the slow one,
+      // dragging the water's colors back toward the abandoned phase.
+      overwrite: true,
     })
-  }, [day])
+  }, [day, transitionSeconds])
 
   // Scratch object reused every frame -- avoid allocating a Vector3 per
   // frame on this hot path.

@@ -8,8 +8,11 @@ import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 import { BrownTree } from "@/components/models/BrownTree"
 import { ClusterTree } from "@/components/models/ClusterTree"
 import { data, surface } from "@/config/store"
+import { Pokeball } from "@/components/models/Pokeball"
+import { Waterfall } from "@/components/models/Waterfall"
+import { Foams } from "@/components/models/Foams"
 
-export function Scene({ day }: { day: TimeOfDay }) {
+export function Scene({ day, transitionSeconds, onDragoniteRelease }: { day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void }) {
     return (
         <>
             <Bvh firstHitOnly>
@@ -24,8 +27,10 @@ export function Scene({ day }: { day: TimeOfDay }) {
                 <GreenTree scale={0.01} position={[-4,-2,-1]} rotation={[Math.PI/7,0,Math.PI/7]}/>
                 <GreenTree scale={0.01} position={[1,-2,-3]} rotation={[0,0,0]}/>
             </Bvh>
-            <Speaker scale={65} position={[-2.5, -1.5, 1]} rotation={[-Math.PI/9, 0, Math.PI/15]} />
-            <Merged day={day} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
+            <Waterfall />
+            <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
+            <Speaker scale={65} position={[0.5, -2.75, 9]} rotation={[0, -Math.PI/4, 0]} />
+            <Merged day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
         </>
     )
 }

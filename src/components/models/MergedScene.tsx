@@ -9,13 +9,13 @@ import { createWoodRoughnessTexture } from '@/components/canvas/proceduralTextur
 
 const ROCK_NODES = ['Object_46', 'Object_48', 'Object_50', 'Object_52', 'Object_54', 'Object_56', 'Object_44', 'Object_79', 'Object_77'] as const
 
-export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unknown }) {
+export function Merged({ day, transitionSeconds, ...props }: { day: TimeOfDay, transitionSeconds?: number, [key: string]: unknown }) {
   const group = useRef()
   const { nodes, materials } = useGLTF('/models/merged.glb')
   const { animations } = useGLTF('/models/island_motion.glb')
   animations[0].name = "Shark"
   const { actions } = useAnimations(animations, group)
-  const oceanMaterial = useOceanWaterMaterial(day)
+  const oceanMaterial = useOceanWaterMaterial(day, transitionSeconds)
 
   useEffect(() => {
     actions["Shark"]?.reset().play()
@@ -44,14 +44,107 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
   // -- outside the water mesh's own measured ~15.2-unit radius, so still
   // needs pulling in, just from the right starting point this time. 0.55
   // brings that down to a range comfortably inside the water and outside
-  // the ~7-unit island footprint. Y is left untouched.
+  // the ~7-unit island footprint.
+  //
+  // Y was originally left untouched (the animation's own depth), which
+  // measured out to world Y ~-5.2 -- about 1.5 units *below* the water
+  // surface (~-3.7, see OceanWater.ts/MergedScene's New_Water mesh), and
+  // since the water material is fully opaque, that's completely invisible
+  // from above. SHARK_Y_OFFSET adds a local +40 (world +40*0.025*3=+3,
+  // same Armature*Merged 0.075 scale chain the orbit radius above already
+  // goes through) so it swims just above the surface instead, clearly
+  // visible.
+  //
+  // The skinned mesh (Mesh008/_1/_2) is entirely weight-bound to
+  // Shark_1's own descendant chain -- Shark_1 > CATRigHub001 > CATRigTail1
+  // > ... > CATRigTail4 (confirmed by summing skinWeight against every
+  // bone index; the parallel "SheK*" humanoid-style chain that also lives
+  // in this same skeleton.bones array carries *zero* weight anywhere and
+  // can be ignored). That chain is fully, natively nested under Shark_1
+  // (only Circle001 is separately mounted as a primitive below, and it
+  // carries this whole subtree with it), so it was never disconnected by
+  // anything in this file -- it just renders at its own bind-pose size,
+  // and Mesh008's local bounding sphere (radius ~0.91) is small enough
+  // that after the 0.075 Armature*Merged scale chain it comes out under a
+  // tenth of a world unit, i.e. a barely-visible fleck regardless of
+  // position. SHARK_MESH_SCALE grows the bone (and therefore its skinned
+  // descendants) up to an actually shark-sized creature without touching
+  // its bind matrices.
+  //
+  // Circle001's own animation (the only track that binds, per above) is a
+  // continuous, full 360 rotation about a roughly-vertical axis, looping
+  // every ~16.7s -- confirmed by parsing island_motion.glb's animation
+  // data directly. Shark_1 is a *rigid* child of Circle001, and its own
+  // rest rotation (baked into the GLB) points its forward axis radially
+  // (toward/away from Circle001, the orbit hub) rather than tangentially
+  // (in the direction of travel) -- a rigid radial spoke rotating with its
+  // hub reads as a spinning pinwheel/rotor, not a swimming fish. This was
+  // always true; it was only invisible before SHARK_MESH_SCALE because the
+  // mesh rendered near-zero size. SHARK_HEADING_CORRECTION rotates the
+  // bone's local frame (applied before its existing rest rotation, so it
+  // doesn't disturb the orbit radius/depth already solved above) to point
+  // tangentially instead -- once tangential, the *same* existing Circle001
+  // rotation that used to look like spinning will instead correctly read
+  // as circling/swimming, no per-frame counter-rotation needed.
+  //
+  // Getting the correction axis right took two failed attempts, both
+  // confirmed wrong by live numeric measurement (not just visual guessing):
+  // multiplying the correction directly onto bone.quaternion applies it
+  // *inside* the bone's own already-tipped rest rotation, so its "Y axis"
+  // isn't world-Y once that tipping composes on top -- a 90-degree attempt
+  // that way swung the heading to point vertically instead of sweeping the
+  // horizontal loop. The fix has to be built as a true world-space
+  // rotation -- applied as the outermost factor onto the bone's fully
+  // composed world quaternion, then converted back into the bone's local
+  // space via its parent's inverse world quaternion (a similarity
+  // transform) -- which a one-shot sweep (testing all 24 15-degree
+  // world-space corrections in a single frame, logging forward.dot(radius)
+  // and forward.y for each) confirmed swings forward cleanly through a
+  // full circle while staying perfectly horizontal (y ~ 0 throughout).
+  // That sweep put pure-radial-outward at 120 degrees (dot 1.0) and the two
+  // tangential candidates at 30 and 210 degrees (dot ~ 0); 210 is the one
+  // matching Circle001's own rotation *direction* (its quaternion w sweeps
+  // monotonically +1 -> -1 -> +1 over the loop, i.e. a positive angle about
+  // +Y -- direction-of-travel is that same radius rotated a further +90
+  // degrees the same way, landing on 120 + 90 = 210), so the shark's nose
+  // leads instead of trailing.
   useEffect(() => {
     const bone = nodes.Shark_1 as unknown as THREE.Bone | undefined
     if (bone && !bone.userData.orbitScaled) {
       const SHARK_ORBIT_SCALE = 0.55
+      const SHARK_Y_OFFSET = 40
+      const SHARK_MESH_SCALE = 25
+      const SHARK_HEADING_CORRECTION_DEG = 210
       bone.position.x *= SHARK_ORBIT_SCALE
       bone.position.z *= SHARK_ORBIT_SCALE
+      bone.position.y += SHARK_Y_OFFSET
+      bone.scale.setScalar(SHARK_MESH_SCALE)
       bone.userData.orbitScaled = true
+
+      // The rotation correction below reads Circle001's *world* quaternion
+      // to build a similarity transform (see the derivation above) -- that
+      // has to happen after the animation mixer has actually applied at
+      // least one sampled pose, not synchronously here. useAnimations'
+      // mixer only updates on the next render frame; reading the parent's
+      // world quaternion synchronously in this effect catches it still at
+      // its raw bind-pose rotation (whatever that happens to be, unrelated
+      // to the animation curve), producing a bogus correction -- confirmed
+      // live (read here synchronously, the shark's forward ended up
+      // pointing straight up, fwd.y = 1.0, not tangential at all).
+      // Deferring one frame with requestAnimationFrame is what the sweep
+      // that solved SHARK_HEADING_CORRECTION_DEG itself already did, which
+      // is why that test's numbers were trustworthy and this wasn't.
+      requestAnimationFrame(() => {
+        const restLocalQuat = bone.quaternion.clone()
+        const parentWorldQuat = new THREE.Quaternion()
+        bone.parent?.getWorldQuaternion(parentWorldQuat)
+        const correction = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          THREE.MathUtils.degToRad(SHARK_HEADING_CORRECTION_DEG)
+        )
+        const desiredWorldQuat = correction.multiply(parentWorldQuat).multiply(restLocalQuat)
+        bone.quaternion.copy(parentWorldQuat.clone().invert().multiply(desiredWorldQuat))
+      })
     }
   }, [nodes])
 
@@ -103,24 +196,33 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             diving well below it) instead of a flat circle at a fixed depth.
             Removing it keeps the animated circle level, under the water. */}
         <group name="Armature" scale={0.025}>
-          <group name="Shark">
+          {/* Hidden for now -- the heading/orbit math checks out live
+              (verified numerically, stable across the full loop), but
+              something about how it actually reads on screen still isn't
+              right and chasing it further isn't a good use of time right
+              now. Animation/bone updates above keep running harmlessly;
+              this just stops it from rendering. */}
+          <group name="Shark" visible={false}>
             <skinnedMesh
               name="Mesh008"
               geometry={nodes.Mesh008.geometry}
               material={materials['10 - Default']}
               skeleton={nodes.Mesh008.skeleton}
+              frustumCulled={false}
             />
             <skinnedMesh
               name="Mesh008_1"
               geometry={nodes.Mesh008_1.geometry}
               material={materials['11 - Default']}
               skeleton={nodes.Mesh008_1.skeleton}
+              frustumCulled={false}
             />
             <skinnedMesh
               name="Mesh008_2"
               geometry={nodes.Mesh008_2.geometry}
               material={materials['06 - Default']}
               skeleton={nodes.Mesh008_2.skeleton}
+              frustumCulled={false}
             />
           </group>
           <primitive object={nodes.Circle001} />
@@ -135,24 +237,6 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
           geometry={nodes.Island.geometry}
           material={sandMaterial}
           scale={0.025}
-        />
-        <mesh
-          name="CoCoNut003"
-          castShadow
-          receiveShadow
-          geometry={nodes.CoCoNut003.geometry}
-          material={materials['05 - Default']}
-          position={[0.944, 1.287, -0.012]}
-          scale={0.01}
-        />
-        <mesh
-          name="CoCoNut002"
-          castShadow
-          receiveShadow
-          geometry={nodes.CoCoNut002.geometry}
-          material={materials['05 - Default']}
-          position={[0.209, 1.354, -0.978]}
-          scale={0.01}
         />
         <mesh
           name="New_Water"
@@ -615,15 +699,6 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             material={dockPostMaterial}
           />
         </group>
-        <mesh
-          name="CoCoNut001"
-          castShadow
-          receiveShadow
-          geometry={nodes.CoCoNut001.geometry}
-          material={materials['05 - Default']}
-          position={[0.114, 1.348, -0.925]}
-          scale={0.01}
-        />
         {/* <group
           name="Tree3"
           position={[0.999, 1.216, -0.112]}
@@ -1591,7 +1666,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
             </group>
           </group>
         </group>
-        <mesh
+        {/* <mesh
           name="Mesh_0"
           castShadow
           receiveShadow
@@ -1600,7 +1675,7 @@ export function Merged({ day, ...props }: { day: TimeOfDay, [key: string]: unkno
           position={[-0.108, 1.312, -1.041]}
           rotation={[0, -1.028, 0]}
           scale={0.082}
-        />
+        /> */}
         <group
           name="Sketchfab_model003"
           position={[-2.102, 1.061, 4.554]}
