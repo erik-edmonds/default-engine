@@ -3,36 +3,14 @@ import React, { useRef, useEffect, useState, useMemo } from 'react'
 import { useGLTF, useAnimations, useCursor } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 
-// Numerically solved from the pokeball's own fixed transform (Scene.tsx --
-// position [-3.25,-1.5,0], rotation [0,-PI/4,0], scale 2) and the avatar's
-// BASE_POSITION ([-1.3,-0.65,1] in AvatarController.tsx) -- same "solve
-// once, hardcode the correction" approach as SUN_FACE_CORRECTION/
-// MOON_FACE_CORRECTION in Environment.tsx. Goes stale if either position/
-// rotation/scale changes.
-//
-// Derivation: world-space delta from the pokeball to the avatar is
-// [1.95, 0.85, 1.0]. Undoing the pokeball's own Y-rotation and dividing by
-// its scale lands that in the pokeball's own local space -- the vector a
-// child mesh would need to reach the avatar, ignoring the group's own
-// transform, which BEAM_LOCAL_TARGET below is exactly (also where the
-// target-end particles sit); its length is the beam's length; the
-// quaternion aligning +Y (the cylinder geometry's default long axis) to
-// it, converted to Euler XYZ, is its rotation.
 const BEAM_LOCAL_TARGET: [number, number, number] = [1.0430, 0.4250, -0.3359]
 const BEAM_LOCAL_LENGTH = 1.1753
 const BEAM_LOCAL_ROTATION: [number, number, number] = [-0.2951, 0.1874, -1.1273]
-// Unit vector along the same ball->avatar direction as BEAM_LOCAL_TARGET,
-// used during the retract phase to slide the beam's near (ball) end toward
-// the far (avatar) end while shrinking, instead of just shrinking in place.
 const BEAM_DIRECTION: [number, number, number] = [
   BEAM_LOCAL_TARGET[0] / BEAM_LOCAL_LENGTH,
   BEAM_LOCAL_TARGET[1] / BEAM_LOCAL_LENGTH,
   BEAM_LOCAL_TARGET[2] / BEAM_LOCAL_LENGTH,
 ]
-// Must stay >= Dragonite.tsx's HOLD_SECONDS plus its wipe duration (~0.6s)
-// so the beam is still there, connected, for the entire time the avatar is
-// white/fading in -- only retracting once the material has actually
-// finished appearing.
 const BEAM_HOLD_SECONDS = 2.8
 const BEAM_RETRACT_SECONDS = 0.45
 
@@ -67,11 +45,6 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
       setShowEnergy(true)
       uProgress.current = 0
       beamElapsed.current = 0
-      // Fires at the click itself, not once the beam/particle buildup below
-      // finishes -- the avatar needs to already be a white-glowing dragonite
-      // for the beam to visibly connect *to*, not swap in only after the
-      // beam's already fully built. The beam/particle animation below is
-      // purely visual from here on and doesn't drive anything external.
       onRelease?.()
 
       const velocities: THREE.Vector3[] = []
@@ -102,21 +75,6 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
   useFrame((state, delta) => {
     if (showEnergy) {
       beamElapsed.current += delta
-      // Extend along the beam's own long axis (local Y, always -- scale is
-      // applied before the BEAM_LOCAL_ROTATION tips the whole mesh to aim
-      // at the avatar, so Y stays "along the tube" regardless of which way
-      // it ends up pointing). Girth (X/Z) fills in alongside the
-      // extension, then thins back toward a slender resting width once
-      // fully extended -- the base geometry itself is already thin (see
-      // the cylinder radii below), this just avoids a momentary fat flash
-      // while it's still growing. Once BEAM_HOLD_SECONDS has passed --
-      // matching how long the dragonite takes to fully materialize -- the
-      // beam retracts: its near (ball) end slides toward the far (avatar)
-      // end while both shrink together, so it reads as the last of the
-      // light being drawn into/absorbed by the now-materialized dragonite,
-      // rather than just popping out or retreating back into the ball.
-      // The glow layer mirrors the core's position/scale throughout, so
-      // the two stay concentric.
       if (beamRef.current && beamGlowRef.current) {
         if (beamElapsed.current >= BEAM_HOLD_SECONDS) {
           const s = Math.min((beamElapsed.current - BEAM_HOLD_SECONDS) / BEAM_RETRACT_SECONDS, 1)
@@ -183,15 +141,6 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
 
   const initialPointsArray = useMemo(() => new Float32Array(particleCount * 3), [])
 
-  // Cylinders are centered on their own origin by default (span
-  // -length/2..+length/2), which is why the beam used to visibly grow
-  // outward from its own midpoint in both directions at once instead of
-  // shooting from the ball. Translating the geometry itself so it spans
-  // 0..length moves its local origin to one end (the ball end, since that's
-  // the thicker/bottom radius -- see BEAM_LOCAL_ROTATION's derivation
-  // comment, +Y points toward the avatar) -- with the mesh positioned at
-  // the pokeball's own origin, growing scale.y from 0 now keeps that end
-  // anchored at the ball while the far end extends toward the avatar.
   const coreGeometry = useMemo(() => {
     const g = new THREE.CylinderGeometry(0.008, 0.028, BEAM_LOCAL_LENGTH, 16, 1, true)
     g.translate(0, BEAM_LOCAL_LENGTH / 2, 0)
@@ -205,12 +154,6 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
 
   return (
     <group {...props}>
-
-      {/* Beam of light connecting the ball to the avatar -- geometry
-          solved once, see BEAM_LOCAL_* above. Two concentric layers: a
-          thin, near-white-hot core plus a wider, softer additive glow
-          around it (rather than one thick solid cone), which is what
-          actually reads as a slender beam of light instead of a funnel. */}
       <mesh
         ref={beamRef}
         geometry={coreGeometry}
@@ -258,7 +201,6 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
         />
       </points>
 
-      {/* Poké Ball GLTF Assembly Group Node */}
       <group ref={ballGroupRef} onClick={() => setClicked(!click)} position={[0, 0, 0]}>
         <group name="Sketchfab_Scene">
           <group name="Sketchfab_model" rotation={[-Math.PI / 2, 0, 0]} scale={0.001}>

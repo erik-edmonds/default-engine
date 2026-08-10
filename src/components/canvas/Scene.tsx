@@ -10,6 +10,7 @@ import { ClusterTree } from "@/components/models/ClusterTree"
 import { data, surface } from "@/config/store"
 import { Pokeball } from "@/components/models/Pokeball"
 import { Waterfall } from "@/components/models/Waterfall"
+import { Gear } from "@/components/models/Gear"
 import { Foams } from "@/components/models/Foams"
 
 export function Scene({ from, day, transitionSeconds, onDragoniteRelease }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void }) {
@@ -28,6 +29,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease }: { fr
                 <GreenTree scale={0.01} position={[1,-2,-3]} rotation={[0,0,0]}/>
             </Bvh>
             <Waterfall />
+            <Gear scale={1.5} position={[1.75,-1.8,4.5]} rotation={[0, Math.PI/1.8, Math.PI/9]} /> 
             <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
             <Speaker scale={65} position={[0.5, -2.75, 9]} rotation={[0, -Math.PI/4, 0]} />
             <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>

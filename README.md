@@ -4,6 +4,7 @@
 - [ ] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
 - [ ] Rain hits screen on cloud click, but ends abruptly. Needs to slowly stop.
 - [ ] Aurora Borealis needs to transition out first, so there's no overlap with the dawn skyscene
+- [ ] Slowly transition in/out flame 
 
 # ANIMATIONS!!!
 - [ ] Models are all rigged, but no animations are created ..
@@ -48,7 +49,7 @@
     - [ ] Maybe text boxes?
 - [x] Add Dots over iteractive items
     - [x] On hover, have the outer ring pulse
-    - [ ] On hover, change color - 
+    - [x] On hover, change color - 
     - [x] Add multiple dots on island and sky scene that the camera can move to?
     - [x] On rain from clouds, make screen appear wet as well
         - [ ] Need to improve this some though, it shows up, but it's not transparent like rain.

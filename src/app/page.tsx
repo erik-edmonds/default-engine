@@ -195,9 +195,6 @@ export default function Page() {
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
-    // Instant swap to a white-glowing dragonite, then its real material
-    // wipes in (no spin) -- only once that's fully resolved does the camera
-    // zoom/fly-up begin, per the redesigned reveal order.
     await avatarControllerRef.current?.materializeDragonite();
     await cameraControllerRef.current?.zoomIn();
     await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
@@ -208,11 +205,6 @@ export default function Page() {
     isSequenceRunning.current = false;
   };
 
-  // Fired by the pokeball at click (see Pokeball.tsx's onRelease) -- a
-  // second, independent entry point into the same materialize/zoom/fly-up/
-  // sky-journey sequence the (still commented-out) NavTotems up-click
-  // already uses. setMotion(true) matches what that totem's own onUp
-  // already does.
   const handleDragoniteRelease = () => {
     setMotion(true);
     handleUpClick();
