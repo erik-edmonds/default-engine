@@ -269,7 +269,7 @@ export default function Page() {
           {islandMounted && <Suspense fallback={null}>
             <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />
             <group>
-              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} />
+              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} />
               <AvatarController ref={avatarControllerRef} />
               <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
               {sceneReady && <> 
@@ -283,7 +283,6 @@ export default function Page() {
             {/* dragged && rotate && <Mouse /> */}
             <CameraController ref={cameraControllerRef} />
             <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
-
             <Preload all />
           </Suspense>}
         </Canvas>

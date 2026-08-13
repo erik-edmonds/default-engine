@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react'
 import * as THREE from "three"
-import { useGLTF } from '@react-three/drei'
+import { useGLTF, useCursor } from '@react-three/drei'
 import { useFrame } from "@react-three/fiber"
 import { Howl } from "howler"
 
@@ -17,19 +17,9 @@ export function Speaker(props) {
     preload: false
   }))
 
-  useFrame((state) => {
-    hover.current.scale.x = hover.current.scale.y = hover.current.scale.z = THREE.MathUtils.lerp(hover.current.scale.z, hovered ? 55 : 45, 0.1)
-  })
-
-  // One-way sync (state -> audio), not a loop: this only reacts to `sound`
-  // changing (from the click handler below), it never calls setSound
-  // itself, so it can't re-trigger.
+  useCursor(hovered)
   useEffect(() => {
     if (sound) {
-      // preload:false means Howler never calls .load() on its own --
-      // trigger it ourselves the first time the visitor turns sound on.
-      // .play() below still queues correctly and fires once loading
-      // finishes (Howler's own behavior for a not-yet-loaded sound).
       if (song.state() === "unloaded") song.load()
       song.play()
     } else {

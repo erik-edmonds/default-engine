@@ -21,6 +21,7 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
   const particlesRef = useRef<THREE.Points>(null)
 
   const [click, setClicked] = useState(false)
+  const [hovered, set] = useState(false)
   const [showEnergy, setShowEnergy] = useState(false)
   const uProgress = useRef(0)
   const beamElapsed = useRef(0)
@@ -128,16 +129,12 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
         const positions = particlesRef.current.geometry.attributes.position.array as Float32Array
         for (let i = 0; i < positions.length; i++) positions[i] = 0
         particlesRef.current.geometry.attributes.position.needsUpdate = true
-        // Also zero opacity, not just position -- 100 additively-blended,
-        // fully-opaque points stacked on one spot read as a small bright
-        // dot even at rest, which is what this was doing pre-click before
-        // this fix (positions alone don't hide overlapping opaque points).
         ;(particlesRef.current.material as THREE.PointsMaterial).opacity = 0
       }
     }
   })
 
-  useCursor(click)
+  useCursor(hovered)
 
   const initialPointsArray = useMemo(() => new Float32Array(particleCount * 3), [])
 
@@ -153,7 +150,7 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
   }, [])
 
   return (
-    <group {...props}>
+    <group onPointerOver={() => set(true)} onPointerOut={() => set(false)} {...props}>
       <mesh
         ref={beamRef}
         geometry={coreGeometry}
