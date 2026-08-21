@@ -42,3 +42,17 @@ next-env.d.ts
 
 # reference material (large video files, not project source)
 /sources
+
+# orphaned assets, unreferenced by any rendered component in src/ -- kept on
+# disk locally, not shipped to git/Vercel
+/public/models/Base/
+/public/models/cube.glb
+/public/models/tornado.glb
+/public/models/ditto.glb
+/public/water/blue.png
+/public/water/moss.png
+/public/water/tiles.jpg
+/public/water/tiles_bw.png
+/public/water/tiles_full.png
+/public/water/tiles_gray_white.png
+/public/water/worn.png

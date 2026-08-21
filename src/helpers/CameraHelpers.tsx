@@ -87,15 +87,46 @@ export function Rig({ position = new THREE.Vector3(0, 0, 2), focus = new THREE.V
   const displayY = useRef(SCROLL_MAX)
 
   useEffect(() => {
-    const handleWheel = (event: WheelEvent) => {
+    const applyScrollDelta = (deltaY: number) => {
       scrollTarget.current = THREE.MathUtils.clamp(
-        scrollTarget.current - event.deltaY * SCROLL_SPEED,
+        scrollTarget.current - deltaY * SCROLL_SPEED,
         SCROLL_MIN,
         SCROLL_MAX,
       )
     }
+
+    const handleWheel = (event: WheelEvent) => applyScrollDelta(event.deltaY)
+
+    // Touch equivalent -- there's no wheel event on a touchscreen, so
+    // without this the gallery scroll is simply inert on mobile. Swiping up
+    // (finger moves up the screen) reads the same as scrolling down/forward,
+    // so the synthesized delta is the *previous* touch Y minus the current
+    // one, matching the sky-journey touch handler in page.tsx.
+    let lastTouchY: number | null = null
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? null
+    }
+    const handleTouchMove = (event: TouchEvent) => {
+      if (lastTouchY === null) return
+      const currentY = event.touches[0]?.clientY
+      if (currentY === undefined) return
+      applyScrollDelta(lastTouchY - currentY)
+      lastTouchY = currentY
+    }
+    const handleTouchEnd = () => {
+      lastTouchY = null
+    }
+
     window.addEventListener('wheel', handleWheel, { passive: true })
-    return () => window.removeEventListener('wheel', handleWheel)
+    window.addEventListener('touchstart', handleTouchStart, { passive: true })
+    window.addEventListener('touchmove', handleTouchMove, { passive: true })
+    window.addEventListener('touchend', handleTouchEnd, { passive: true })
+    return () => {
+      window.removeEventListener('wheel', handleWheel)
+      window.removeEventListener('touchstart', handleTouchStart)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleTouchEnd)
+    }
   }, [])
 
   useFrame((_, delta) => {

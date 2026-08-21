@@ -13,8 +13,20 @@ export function Merged({ from, day, transitionSeconds, ...props }: { from: TimeO
   const group = useRef()
   const { nodes, materials } = useGLTF('/models/merged.glb')
   const { animations } = useGLTF('/models/island_motion.glb')
-  animations[0].name = "Shark"
-  const { actions } = useAnimations(animations, group)
+  // island_motion.glb's bone names mostly don't match merged.glb's -- only
+  // "Circle001" is shared between the two exports (see the long comment on
+  // the Armature group below), so every other track in this clip can never
+  // bind and only exists to spam "THREE.PropertyBinding: No target node
+  // found" to the console. Building a fresh clip with just the track that
+  // actually binds keeps the same swim animation and drops the noise, and
+  // avoids mutating the name on the array useGLTF itself returns (cached
+  // and shared across instances).
+  const sharkAnimations = useMemo(() => {
+    const source = animations[0]
+    const tracks = source.tracks.filter((t) => t.name.startsWith('Circle001.'))
+    return [new THREE.AnimationClip('Shark', source.duration, tracks)]
+  }, [animations])
+  const { actions } = useAnimations(sharkAnimations, group)
   const oceanMaterial = useOceanWaterMaterial(from, day, transitionSeconds)
 
   useEffect(() => {

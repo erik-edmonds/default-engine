@@ -119,6 +119,10 @@ export interface SceneRailProps {
   strokeWidth?: number;
   durationMs?: number;
   zIndex?: number;
+  /** Layout direction of the glyph list. "vertical" (default) stacks top to
+   *  bottom for a side rail; "horizontal" lays out left to right for a
+   *  bottom dock. */
+  orientation?: "vertical" | "horizontal";
 }
 
 /* -----------------------------RECORDS------------------------------ */

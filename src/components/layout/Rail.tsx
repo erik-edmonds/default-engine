@@ -39,6 +39,7 @@ export default function Rail({
   strokeWidth = 1.5,
   durationMs = DURATION_MS,
   zIndex = 9999,
+  orientation = "vertical",
 }: SceneRailProps) {
   // fall back rather than crash on a bad prop
   const safePhase: Phase = SHAPES[phase] ? phase : "night";
@@ -110,7 +111,8 @@ export default function Rail({
       aria-label="Scene sections"
       style={{
         display: "flex",
-        flexDirection: "column",
+        flexDirection: orientation === "horizontal" ? "row" : "column",
+        alignItems: "center",
         justifyItems: "center",
         gap: 10,
         zIndex,

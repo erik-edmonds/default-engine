@@ -1,11 +1,15 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
 import { useGLTF, useAnimations } from '@react-three/drei'
 
 export function Tree(props) {
   const group = useRef()
   const { nodes, materials, animations } = useGLTF('/models/tree.glb')
-  animations[0].name = 'Sway'
-  const { actions } = useAnimations(animations, group)
+  const namedAnimations = useMemo(() => {
+    const clip = animations[0].clone()
+    clip.name = 'Sway'
+    return [clip]
+  }, [animations])
+  const { actions } = useAnimations(namedAnimations, group)
 
   useEffect(() => {
     actions["Sway"]?.reset().play()

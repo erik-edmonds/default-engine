@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { createContext, useContext, useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import {  useFrame, useThree } from '@react-three/fiber'
 import { AppState } from '@/helpers/Interfaces';
 import { atom } from 'jotai'
@@ -24,7 +24,7 @@ const time = () => {
     }
   }
 
-export const BoxStateProvider = forwardRef(({ children, ...props }, fref) => {
+export const BoxStateProvider = forwardRef(function BoxStateProvider({ children, ...props }, fref) {
   const ref = useRef()
   const [hovered, hover] = useState(false)
   const [clicked, click] = useState(false)
@@ -61,7 +61,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   // keeps the first paint deterministic; it then corrects to the real
   // time-of-day immediately after.
   const [theme, setTheme] = useState<string>("day");
-  useEffect(() => { setTheme(time()); }, []);
+  const syncTheme = useCallback(() => setTheme(time()), []);
+  useEffect(() => { syncTheme(); }, [syncTheme]);
 
   return (
     <AppStateContext.Provider value={{ theme, setTheme }}>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Poppins, Arima, Raleway, Nunito } from "next/font/google";
 import "./globals.css";
 import { Favicon } from "@/components/layout/Icon";
@@ -64,6 +64,11 @@ export const metadata: Metadata = {
     description: SITE_DESCRIPTION,
     images: ["/images/logo.png"],
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({children,}: Readonly<{children: React.ReactNode;}>) {

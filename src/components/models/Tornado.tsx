@@ -1,11 +1,15 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useMemo } from 'react'
 import { useGLTF, useAnimations } from '@react-three/drei'
 
 export function Tornado(props) {
   const group = useRef()
   const { nodes, materials, animations } = useGLTF('/models/tornado.glb')
-  const { actions } = useAnimations(animations, group)
-  animations[0].name = "Tornado"
+  const namedAnimations = useMemo(() => {
+    const clip = animations[0].clone()
+    clip.name = "Tornado"
+    return [clip]
+  }, [animations])
+  const { actions } = useAnimations(namedAnimations, group)
   useEffect(() => {
     actions["Tornado"]?.reset().play()
   }, [])

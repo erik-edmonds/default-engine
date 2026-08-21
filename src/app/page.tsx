@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import dynamic from "next/dynamic";
-import { Suspense, useEffect, useRef, useState, useTransition } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Preload, useProgress } from "@react-three/drei";
@@ -105,6 +105,13 @@ export default function Page() {
   const [active, setActive] = useState(0);
   const [activeHotspot, setActiveHotspot] = useState("home");
   const [rainTriggered, setRainTriggered] = useState(false);
+  // Fixed initial value (SSR-safe), corrected on the client -- same pattern
+  // as getTimeOfDay() above. Gates the heaviest postprocessing passes, which
+  // are the single biggest mobile GPU-performance risk in this scene.
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  useEffect(() => {
+    setIsCoarsePointer(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
   const isRaining = useAtomValue(raining);
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
@@ -131,26 +138,18 @@ export default function Page() {
     return () => clearTimeout(timer);
   }, [sceneReady]);
 
+  const triggerRain = useCallback(() => setRainTriggered(true), []);
   useEffect(() => {
-    if (isRaining) setRainTriggered(true);
-  }, [isRaining]);
+    if (isRaining) triggerRain();
+  }, [isRaining, triggerRain]);
 
   useEffect(() => {
-    const SKY_JOURNEY_DISTANCE = 600; 
-    const SCROLL_SENSITIVITY = 0.4 / 6; 
+    const SKY_JOURNEY_DISTANCE = 600;
+    const SCROLL_SENSITIVITY = 0.4 / 6;
 
-    const handleWheel = (event: WheelEvent) => {
-      // This page has no scrollable content anywhere -- scrolling only ever
-      // drives the sky journey. Without this, the browser's native page
-      // scroll fires right alongside our own handling of the same wheel
-      // event: nothing here visibly moves (nothing on the page overflows),
-      // but trackpads still report a elastic "rubber-band" overscroll for a
-      // scroll the page never actually performs, which reads as the whole
-      // page bouncing. Requires the listener below to be non-passive, or
-      // preventDefault is a silent no-op.
-      event.preventDefault();
+    const applyScrollDelta = (deltaY: number) => {
       if (!isInSkyJourney.current) return;
-      skyOffset.current = Math.min(Math.max(skyOffset.current + event.deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE);
+      skyOffset.current = Math.min(Math.max(skyOffset.current + deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE);
       cameraControllerRef.current?.setSkyOffset(skyOffset.current);
       avatarControllerRef.current?.setSkyOffset(skyOffset.current);
 
@@ -163,13 +162,51 @@ export default function Page() {
       }
     };
 
-    window.addEventListener("wheel", handleWheel, { passive: false });
-    return () => window.removeEventListener("wheel", handleWheel);
-  }, []);
+    const handleWheel = (event: WheelEvent) => {
+      // This page has no scrollable content anywhere -- scrolling only ever
+      // drives the sky journey. Without this, the browser's native page
+      // scroll fires right alongside our own handling of the same wheel
+      // event: nothing here visibly moves (nothing on the page overflows),
+      // but trackpads still report a elastic "rubber-band" overscroll for a
+      // scroll the page never actually performs, which reads as the whole
+      // page bouncing. Requires the listener below to be non-passive, or
+      // preventDefault is a silent no-op.
+      event.preventDefault();
+      applyScrollDelta(event.deltaY);
+    };
 
-  useEffect(() => {
-    if (goHomeRequestValue > 0) handleGoHome();
-  }, [goHomeRequestValue]);
+    // Touch equivalent of the wheel handler above -- there's no wheel event
+    // on a touchscreen at all, so without this the sky journey (and this
+    // page in general) is simply inert on mobile. Swiping up (finger moves
+    // up the screen) should read the same as scrolling down/forward, so the
+    // synthesized delta is the *previous* touch Y minus the current one.
+    let lastTouchY: number | null = null;
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      if (lastTouchY === null) return;
+      event.preventDefault();
+      const currentY = event.touches[0]?.clientY;
+      if (currentY === undefined) return;
+      applyScrollDelta(lastTouchY - currentY);
+      lastTouchY = currentY;
+    };
+    const handleTouchEnd = () => {
+      lastTouchY = null;
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []);
 
   // Kept in an effect rather than a click handler: with auto-progression,
   // most phase changes never pass through a click, and a handler-only
@@ -220,7 +257,7 @@ export default function Page() {
     startTransition(() => router.push("/portfolio"));
   };
 
-  const handleGoHome = async () => {
+  const handleGoHome = useCallback(async () => {
     if (isSequenceRunning.current || !isInSkyJourney.current) return;
     isSequenceRunning.current = true;
     isInSkyJourney.current = false;
@@ -235,34 +272,58 @@ export default function Page() {
     skyOffset.current = 0;
     setMotion(false);
     isSequenceRunning.current = false;
-  };
+  }, [setInSkyJourneyAtom, setSkyText, setMotion]);
+
+  useEffect(() => {
+    if (goHomeRequestValue > 0) handleGoHome();
+  }, [goHomeRequestValue, handleGoHome]);
 
   return (
     <NavigationProvider>
       <div className="relative h-screen w-screen overflow-hidden">
         <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
           <div className="relative">
-            {sceneReady && <h1 className="animate-stamp font-nunito text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
-            {nameStamped && <p className="font-nunito text-3xl font-normal text-white">Data Scientist</p>}
+            {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
+            {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-white">Data Scientist</p>}
           </div>
         </div>
-        <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-20 text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
+        <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
         <div className="flex flex-col justify-items-center absolute right-5 top-5 z-10 bg-[#d25a1a]/50 rounded-xl">
           {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
-          
+
         </div>
-        <Canvas id="three-scene-canvas" shadows="soft" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
+        {/* Phone/tablet only -- on desktop this navigation lives in the
+            (currently disabled) side rail above instead. Below `lg` there's
+            no side rail, so without this the section dots have no mobile
+            equivalent at all. */}
+        <div className="flex lg:hidden absolute bottom-28 left-1/2 -translate-x-1/2 z-10 bg-[#d25a1a]/50 rounded-full px-4 py-2">
+          <Rail
+            sections={SECTIONS}
+            active={active}
+            onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }}
+            phase={day}
+            orientation="horizontal"
+          />
+        </div>
+        {/* "percentage" (PCFShadowMap), not "soft" (PCFSoftShadowMap) --
+            three.js has deprecated PCFSoftShadowMap and silently substitutes
+            PCFShadowMap for it at runtime anyway (with a console warning),
+            so this is the same shadow map already actually in effect,
+            requested directly instead of through the deprecated name. The
+            softness Environment.tsx's directional light relies on comes
+            from its own shadow-radius, not this type. */}
+        <Canvas id="three-scene-canvas" shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
           onPointerDown={() => {
             setDragged(true)
           }}
           onPointerUp={() => setDragged(false)}
-          gl={{ preserveDrawingBuffer: true }} style={{ width: "100vw", height: "100vh" }}>
+          gl={{ preserveDrawingBuffer: true }} dpr={[1, 2]} style={{ width: "100vw", height: "100vh" }}>
           <EffectComposer>
-            <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality="medium" />
+            <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
             <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
           </EffectComposer>
           <color attach="background" args={["#0a0a0a"]} />
@@ -271,7 +332,7 @@ export default function Page() {
             <group>
               <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} />
               <AvatarController ref={avatarControllerRef} />
-              <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />
+              {!isCoarsePointer && <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />}
               {sceneReady && <> 
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}

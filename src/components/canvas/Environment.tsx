@@ -295,8 +295,8 @@ export function Environment({
         shadow-camera-right={60}
         shadow-camera-top={60}
         shadow-camera-bottom={-60}
-        // Extra blur on top of Canvas's soft shadow map (see page.tsx,
-        // shadows="soft") -- a crisp, hard-edged shadow reads as if it's
+        // Extra blur on top of Canvas's shadow map (see page.tsx,
+        // shadows="percentage") -- a crisp, hard-edged shadow reads as if it's
         // falling on a rigid floor; this is most obvious on the water
         // shadow-catcher (OceanWater.ts/MergedScene.tsx), which otherwise
         // has a perfectly sharp silhouette sitting on top of an animated,
