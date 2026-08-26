@@ -2,11 +2,13 @@
 import { themes } from "@/helpers/Interfaces";
 import { useAppState, inSkyJourney, goHomeRequest } from "@/helpers/StateProvider";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useSfx } from "@/helpers/useSfx";
 import Link from "next/link";
 export function Favicon() {
   const { theme } = useAppState()
   const journeyActive = useAtomValue(inSkyJourney)
   const requestGoHome = useSetAtom(goHomeRequest)
+  const play = useSfx()
 
   return (
     <Link
@@ -18,6 +20,7 @@ export function Favicon() {
           requestGoHome((n) => n + 1)
         }
       }}
+      onMouseEnter={() => play("click")}
     >
       <svg width={50} height={50} viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
           <circle cx="70" cy="70" r="70" fill={themes[theme]["background"]}/>

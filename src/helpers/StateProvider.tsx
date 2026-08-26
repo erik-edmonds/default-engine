@@ -86,3 +86,17 @@ export const hovered = atom(false)
 export const raining = atom(false)
 export const inSkyJourney = atom(false)
 export const goHomeRequest = atom(0) // incrementing counter -- bumped to request a return-home
+
+// Master sound switch (SoundToggle.tsx) -- gates every sound in the app,
+// music included. Off by default so nothing plays before a visitor
+// explicitly opts in (Chrome blocks autoplay otherwise).
+export const sfxEnabled = atom(false)
+
+// Speaker prop's own toggle -- expresses intent only ("I want music
+// playing"), independent of whether the master switch above currently
+// allows anything to be heard. Speaker.tsx gates actual playback on
+// `musicEnabled && sfxEnabled` together, so this is a child control: you
+// can "turn music on" while muted and it starts the moment you unmute,
+// the same way an app's own volume survives your system output being
+// muted and unmuted.
+export const musicEnabled = atom(false)

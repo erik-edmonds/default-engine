@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { 
-  SceneRailProps, Phase, 
+import {
+  SceneRailProps, Phase,
   SHAPES, INK, INK_DIM, Pt,
   DURATION_MS, EASE_CSS
  } from "@/helpers/Interfaces";
+import { useSfx } from "@/helpers/useSfx";
 
 
 
@@ -47,6 +48,7 @@ export default function Rail({
   const dim = INK_DIM[safePhase];
 
   const [hover, setHover] = useState<number | null>(null);
+  const play = useSfx();
 
   const polys = useRef<(SVGPolygonElement | null)[]>([]);
   const live = useRef<Pt[]>(SHAPES[safePhase]);
@@ -134,8 +136,8 @@ export default function Rail({
             key={s.id ?? i}
             type="button"
             aria-current={on ? "true" : undefined}
-            onClick={() => onSelect(s, i)}
-            onMouseEnter={() => setHover(i)}
+            onClick={() => { play("click"); onSelect(s, i); }}
+            onMouseEnter={() => { setHover(i); play("click"); }}
             onMouseLeave={() => setHover(null)}
             onFocus={() => setHover(i)}
             onBlur={() => setHover(null)}

@@ -7,7 +7,9 @@ import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Preload, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, Noise } from "@react-three/postprocessing";
-import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest } from "@/helpers/StateProvider";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled } from "@/helpers/StateProvider";
+import { useSfx } from "@/helpers/useSfx";
+import SoundToggle from "@/components/layout/SoundToggle";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
@@ -103,7 +105,30 @@ export default function Page() {
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
   const [active, setActive] = useState(0);
-  const [activeHotspot, setActiveHotspot] = useState("home");
+  // A marker is hidden in exactly two cases:
+  // - `current`: wherever the camera is at/heading to right now -- its own
+  //   marker should never be visible in front of you.
+  // - `departingFrom`: the single hotspot you *just* left -- hidden only
+  //   for as long as it's still inside the camera's view frustum (checked
+  //   continuously, see CameraHotspot's onOffscreen), so it can't pop back
+  //   into view mid-flight or the instant you arrive somewhere new. Once
+  //   it's actually off-screen it reappears on its own -- every other
+  //   non-current marker is visible all the time, with no click-gating.
+  const [hotspotNav, setHotspotNav] = useState<{ current: string; departingFrom: string | null }>({
+    current: "home",
+    departingFrom: null,
+  });
+  const isHotspotHidden = (id: string) => hotspotNav.current === id || hotspotNav.departingFrom === id;
+  const isHotspotPendingOffscreen = (id: string) => hotspotNav.departingFrom === id;
+  const handleHotspotOffscreen = useCallback((id: string) => {
+    setHotspotNav((prev) => (prev.departingFrom === id ? { ...prev, departingFrom: null } : prev));
+  }, []);
+  // Instant, atomic state transition -- the *only* thing that decides a
+  // marker's hidden-ness updates here, synchronously on click, never gated
+  // on the camera actually finishing its flight.
+  const beginHotspotTransition = useCallback((id: string) => {
+    setHotspotNav((prev) => (id === prev.current ? prev : { current: id, departingFrom: prev.current }));
+  }, []);
   const [rainTriggered, setRainTriggered] = useState(false);
   // Fixed initial value (SSR-safe), corrected on the client -- same pattern
   // as getTimeOfDay() above. Gates the heaviest postprocessing passes, which
@@ -117,6 +142,8 @@ export default function Page() {
   const [dragged, setDragged] = useAtom(pointer);
   const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
   const goHomeRequestValue = useAtomValue(goHomeRequest);
+  const setMusicEnabled = useSetAtom(musicEnabled);
+  const playSfx = useSfx();
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
   const isSequenceRunning = useRef(false);
@@ -213,9 +240,10 @@ export default function Page() {
   // setTheme would leave the favicon frozen on the last *clicked* phase.
   useEffect(() => { setTheme(day); }, [day, setTheme]);
 
-  const flyToHotspot = async (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
-    await cameraControllerRef.current?.flyTo(position, rotation);
-    setActiveHotspot(id);
+  const flyToHotspot = (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
+    beginHotspotTransition(id);
+    playSfx("whoosh");
+    cameraControllerRef.current?.flyTo(position, rotation);
   };
   const handleUpperIslandHotspotClick = () => flyToHotspot("upper", UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION);
   const handleLeftTreeHotspotClick = () => flyToHotspot("left-tree", LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION);
@@ -232,6 +260,7 @@ export default function Page() {
   const handleUpClick = async () => {
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
+    setMusicEnabled(false);
     await avatarControllerRef.current?.materializeDragonite();
     await cameraControllerRef.current?.zoomIn();
     await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
@@ -250,6 +279,7 @@ export default function Page() {
   const handleDownClick = async () => {
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
+    setMusicEnabled(false);
     await avatarControllerRef.current?.spinAndTransform("scuba");
     await avatarControllerRef.current?.moveToIslandEdge();
     await avatarControllerRef.current?.diveUnderwater();
@@ -264,6 +294,7 @@ export default function Page() {
     setInSkyJourneyAtom(false);
     skyTextRef.current = "";
     setSkyText("");
+    beginHotspotTransition("home");
     await Promise.all([
       cameraControllerRef.current?.flyTo(HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION),
       avatarControllerRef.current?.returnHome(),
@@ -272,7 +303,7 @@ export default function Page() {
     skyOffset.current = 0;
     setMotion(false);
     isSequenceRunning.current = false;
-  }, [setInSkyJourneyAtom, setSkyText, setMotion]);
+  }, [setInSkyJourneyAtom, setSkyText, setMotion, beginHotspotTransition]);
 
   useEffect(() => {
     if (goHomeRequestValue > 0) handleGoHome();
@@ -281,7 +312,7 @@ export default function Page() {
   return (
     <NavigationProvider>
       <div className="relative h-screen w-screen overflow-hidden">
-        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || activeHotspot !== "home" ? "invisible" : "visible"}`}>
+        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || hotspotNav.current !== "home" ? "invisible" : "visible"}`}>
           <div className="relative">
             {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
             {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-white">Data Scientist</p>}
@@ -291,10 +322,10 @@ export default function Page() {
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
-        <div className="flex flex-col justify-items-center absolute right-5 top-5 z-10 bg-[#d25a1a]/50 rounded-xl">
+        <div className="flex flex-col lg:flex-row items-center gap-2 absolute right-5 top-5 z-10">
           {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
+          <SoundToggle />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
-
         </div>
         {/* Phone/tablet only -- on desktop this navigation lives in the
             (currently disabled) side rail above instead. Below `lg` there's
@@ -335,10 +366,10 @@ export default function Page() {
               {!isCoarsePointer && <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />}
               {sceneReady && <> 
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
-                {activeHotspot !== "upper" && <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} />}
-                {activeHotspot !== "left-tree" && <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} />}
-                {activeHotspot !== "moon-island" && <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} />}
-                {activeHotspot !== "home" && <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} />}
+                <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
+                <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
+                <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} hidden={isHotspotHidden("moon-island")} pendingOffscreen={isHotspotPendingOffscreen("moon-island")} onOffscreen={() => handleHotspotOffscreen("moon-island")} />
+                <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} hidden={isHotspotHidden("home")} pendingOffscreen={isHotspotPendingOffscreen("home")} onOffscreen={() => handleHotspotOffscreen("home")} />
               </>}
             </group>
             {/* dragged && rotate && <Mouse /> */}

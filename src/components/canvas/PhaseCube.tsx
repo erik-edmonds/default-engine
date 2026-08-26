@@ -7,6 +7,7 @@ import gsap from "gsap"
 
 import { TIME_OF_DAY_ORDER, TRANSITION_SECONDS, phaseIndex, forwardSteps, type TimeOfDay } from "./environmentPresets"
 import { tweenDuration } from "@/helpers/motion"
+import { useSfx } from "@/helpers/useSfx"
 
 // Same glyph shapes Dial.tsx used to draw as SVG, redrawn as canvas-2D paths
 // so they can be baked into a CanvasTexture per cube face. Coordinates are a
@@ -184,6 +185,7 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   const targetRotationRef = useRef(stepsRef.current * (Math.PI / 2))
   const phaseRef = useRef(from)
   const [busy, setBusy] = useState(false)
+  const play = useSfx()
   // The actual re-entrancy guard `handleClick` checks -- `busy` (React
   // state) is NOT safe for this by itself: setBusy(true) only schedules a
   // re-render, it doesn't synchronously change `busy` in the current
@@ -356,6 +358,7 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
     <button
       type="button"
       onClick={handleClick}
+      onMouseEnter={() => { if (!busy) play("click") }}
       aria-label={`Time of day: ${current}. Change to ${next}.`}
       style={{
         width: size,

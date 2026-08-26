@@ -14,6 +14,8 @@ import { Waterfall } from "@/components/models/Waterfall"
 import { Gear } from "@/components/models/Gear"
 import { Charizard } from "@/components/models/Charizard"
 import { Palm } from "@/components/models/Palm"
+import { Gull } from "@/components/models/Gull"
+import { Seagull } from "@/components/models/Seagull"
 import { Foams } from "@/components/models/Foams"
 
 export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downclick }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; downclick: () => void }) {
