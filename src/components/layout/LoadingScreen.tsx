@@ -23,6 +23,29 @@ const GRADIENT_STEPS = 32
 const BURST_DISTANCE = 220 // css px particles fly outward on burst
 const STAMP_DURATION = 0.42 // seconds -- matches globals.css's .animate-stamp
 const STAMP_EASE = "cubic-bezier(0.2, 0.8, 0.3, 1)" // same curve, for motion continuity with the hero name-stamp
+const DESKTOP_DOT_BLUR = 3 // down from an earlier 6 -- crisper dots, since the connection graph now carries more of the visual richness
+
+// Nearest-neighbor connection graph: each particle links to its 2-3 closest
+// neighbors (by real, unclamped distance), redrawn continuously. A uniform
+// spatial grid keeps this cheap (avoids an O(n^2) pairwise scan every
+// frame) -- see rebuildGrid/findNeighbors below. The grid's own box is
+// deliberately *tighter* than the particles' full scatter radius, and only
+// used to pick which cell a particle buckets into (never for the actual
+// distance/line-drawing math, which always uses true position). That one
+// choice is what makes the "chaotic web while scattered, clean mesh once
+// converged" effect happen for free: scattered particles clamp to the same
+// border cells regardless of how far apart they really are, so their
+// (true-distance) connections read as long, crossing lines; once particles
+// land inside the box, clamping becomes a no-op and the graph naturally
+// tightens into an accurate nearest-neighbor mesh tracing the logo.
+const NEIGHBOR_COUNT = 3
+const CONNECTION_GRID_SIZE = 24
+const CONNECTION_GRID_MIN = -0.2
+const CONNECTION_GRID_MAX = 1.2
+const NEIGHBOR_REBUILD_INTERVAL_MS = 90
+const LINE_TIER_THRESH = [0.05, 0.15] // normalized-space distance breakpoints
+const LINE_TIER_ALPHA = [0.5, 0.25, 0.1]
+const LINE_TIER_WIDTH = [1.1, 0.8, 0.6] // css px
 
 const STATUS_WORDS: { at: number; text: string }[] = [
   { at: 0, text: "Scanning" },
@@ -104,6 +127,148 @@ const EMPTY_PARTICLES: Particles = {
   colorT: new Float32Array(0),
 }
 
+interface ConnectionState {
+  gridSize: number
+  cellCount: Int32Array
+  cellStart: Int32Array
+  writeCursor: Int32Array
+  cellOf: Int32Array
+  cellParticles: Int32Array
+  neighborIndex: Int32Array // -1 = no neighbor in that slot
+  neighborDistSq: Float32Array
+  currentX: Float32Array // this frame's drawn position -- shared between the line and dot passes
+  currentY: Float32Array
+}
+
+function buildConnectionState(n: number): ConnectionState {
+  const G = CONNECTION_GRID_SIZE
+  return {
+    gridSize: G,
+    cellCount: new Int32Array(G * G),
+    cellStart: new Int32Array(G * G + 1),
+    writeCursor: new Int32Array(G * G),
+    cellOf: new Int32Array(n),
+    cellParticles: new Int32Array(n),
+    neighborIndex: new Int32Array(n * NEIGHBOR_COUNT).fill(-1),
+    neighborDistSq: new Float32Array(n * NEIGHBOR_COUNT),
+    currentX: new Float32Array(n),
+    currentY: new Float32Array(n),
+  }
+}
+
+function clampCellIndex(v: number, gridSize: number): number {
+  const t = (v - CONNECTION_GRID_MIN) / (CONNECTION_GRID_MAX - CONNECTION_GRID_MIN)
+  const c = Math.floor(Math.min(1, Math.max(0, t)) * gridSize)
+  return c >= gridSize ? gridSize - 1 : c
+}
+
+// Bucket-sort (linked-cell-list) grid rebuild -- O(n + gridSize^2), no
+// per-call allocation. Only run on a cadence (see drawFrame), not every
+// frame; positions still animate smoothly every frame regardless.
+function rebuildGrid(particles: Particles, conn: ConnectionState, eased: number) {
+  const G = conn.gridSize
+  conn.cellCount.fill(0)
+
+  for (let i = 0; i < particles.n; i++) {
+    const nx = particles.scatterX[i] + (particles.targetX[i] - particles.scatterX[i]) * eased
+    const ny = particles.scatterY[i] + (particles.targetY[i] - particles.scatterY[i]) * eased
+    const cell = clampCellIndex(ny, G) * G + clampCellIndex(nx, G)
+    conn.cellOf[i] = cell
+    conn.cellCount[cell]++
+  }
+
+  conn.cellStart[0] = 0
+  for (let c = 0; c < G * G; c++) conn.cellStart[c + 1] = conn.cellStart[c] + conn.cellCount[c]
+
+  conn.writeCursor.set(conn.cellStart.subarray(0, G * G))
+  for (let i = 0; i < particles.n; i++) {
+    const cell = conn.cellOf[i]
+    conn.cellParticles[conn.writeCursor[cell]++] = i
+  }
+}
+
+// K=3 nearest-neighbor search via a 3x3 cell scan around each particle's own
+// bucket -- a running 3-slot insertion, no allocation. Always compares true
+// (unclamped) positions, even though bucketing used clamped ones.
+function findNeighbors(particles: Particles, conn: ConnectionState, eased: number) {
+  const G = conn.gridSize
+  for (let i = 0; i < particles.n; i++) {
+    const nxi = particles.scatterX[i] + (particles.targetX[i] - particles.scatterX[i]) * eased
+    const nyi = particles.scatterY[i] + (particles.targetY[i] - particles.scatterY[i]) * eased
+    const cxi = clampCellIndex(nxi, G)
+    const cyi = clampCellIndex(nyi, G)
+
+    let b0i = -1, b0d = Infinity
+    let b1i = -1, b1d = Infinity
+    let b2i = -1, b2d = Infinity
+
+    for (let dcy = -1; dcy <= 1; dcy++) {
+      const ccy = cyi + dcy
+      if (ccy < 0 || ccy >= G) continue
+      for (let dcx = -1; dcx <= 1; dcx++) {
+        const ccx = cxi + dcx
+        if (ccx < 0 || ccx >= G) continue
+        const cell = ccy * G + ccx
+        const start = conn.cellStart[cell]
+        const end = conn.cellStart[cell + 1]
+        for (let s = start; s < end; s++) {
+          const j = conn.cellParticles[s]
+          if (j === i) continue
+          const nxj = particles.scatterX[j] + (particles.targetX[j] - particles.scatterX[j]) * eased
+          const nyj = particles.scatterY[j] + (particles.targetY[j] - particles.scatterY[j]) * eased
+          const dx = nxi - nxj
+          const dy = nyi - nyj
+          const d = dx * dx + dy * dy
+          if (d < b2d) {
+            if (d < b0d) { b2i = b1i; b2d = b1d; b1i = b0i; b1d = b0d; b0i = j; b0d = d }
+            else if (d < b1d) { b2i = b1i; b2d = b1d; b1i = j; b1d = d }
+            else { b2i = j; b2d = d }
+          }
+        }
+      }
+    }
+
+    const base = i * NEIGHBOR_COUNT
+    conn.neighborIndex[base] = b0i; conn.neighborDistSq[base] = b0d
+    conn.neighborIndex[base + 1] = b1i; conn.neighborDistSq[base + 1] = b1d
+    conn.neighborIndex[base + 2] = b2i; conn.neighborDistSq[base + 2] = b2d
+  }
+}
+
+const LINE_COLOR = `rgb(${AMBER_LIGHT[0]}, ${AMBER_LIGHT[1]}, ${AMBER_LIGHT[2]})`
+
+// Exactly 3 stroke() calls total (not per particle/edge) -- every candidate
+// edge is bucketed by true distance into one of 3 tiers, each accumulated
+// into a single path first. No shadowBlur on lines, on any tier: crisp flat
+// lines read as "computed structure," deliberately contrasting the dots'
+// own soft glow ("raw data") -- and keeps this the cheap part of the frame.
+function drawConnections(ctx: CanvasRenderingContext2D, particles: Particles, conn: ConnectionState) {
+  ctx.strokeStyle = LINE_COLOR
+  ctx.shadowBlur = 0
+  const t0 = LINE_TIER_THRESH[0] * LINE_TIER_THRESH[0]
+  const t1 = LINE_TIER_THRESH[1] * LINE_TIER_THRESH[1]
+
+  for (let tier = 0; tier < 3; tier++) {
+    ctx.beginPath()
+    for (let i = 0; i < particles.n; i++) {
+      const base = i * NEIGHBOR_COUNT
+      for (let k = 0; k < NEIGHBOR_COUNT; k++) {
+        const j = conn.neighborIndex[base + k]
+        if (j < 0) continue
+        const d = conn.neighborDistSq[base + k]
+        const edgeTier = d < t0 ? 0 : d < t1 ? 1 : 2
+        if (edgeTier !== tier) continue
+        ctx.moveTo(conn.currentX[i], conn.currentY[i])
+        ctx.lineTo(conn.currentX[j], conn.currentY[j])
+      }
+    }
+    ctx.globalAlpha = LINE_TIER_ALPHA[tier]
+    ctx.lineWidth = LINE_TIER_WIDTH[tier]
+    ctx.stroke()
+  }
+  ctx.globalAlpha = 1
+}
+
 export interface LoadingScreenHandle {
   burst: () => Promise<void>
 }
@@ -131,6 +296,11 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
       [particleCount]
     )
     const amberRamp = useMemo(() => buildAmberRamp(GRADIENT_STEPS), [])
+    const connections = useMemo(() => buildConnectionState(particles.n), [particles])
+    const lastGridRebuildTimeRef = useRef(0)
+    // Cut, not degraded, on coarse pointer -- matches this codebase's
+    // existing perf-tier convention (ContactShadows/N8AO in page.tsx).
+    const showConnections = !isCoarsePointer
 
     const progressRef = useRef(progress)
     useEffect(() => {
@@ -174,36 +344,29 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
       const h = window.innerHeight
       ctx.clearRect(0, 0, w, h)
 
-      const boxSize = Math.min(Math.min(w, h) * 0.34, 320)
+      const boxSize = Math.min(Math.min(w, h) * 0.136, 128)
       const originX = w / 2 - boxSize / 2
       const originY = h / 2 - boxSize / 2 - 24
       const centerX = w / 2
       const centerY = originY + boxSize / 2
 
       const t = performance.now() / 1000
-      const jitterAmp = reducedMotion ? 0 : 5 * (1 - eased * 0.85)
-      ctx.shadowBlur = isCoarsePointer ? 0 : 6
+      // Scaled to boxSize (not a fixed px value) so jitter stays visually
+      // proportional regardless of how large the logo renders.
+      const jitterAmp = reducedMotion ? 0 : boxSize * 0.016 * (1 - eased * 0.85)
+      ctx.shadowBlur = isCoarsePointer ? 0 : DESKTOP_DOT_BLUR
 
-      for (let i = 0; i < particles.n; i++) {
+      const posScratch: [number, number] = [0, 0]
+      const computePosition = (i: number) => {
         const jx = jitterAmp === 0 ? 0 : Math.sin(t * 0.6 + particles.phase[i]) * jitterAmp
         const jy = jitterAmp === 0 ? 0 : Math.cos(t * 0.5 + particles.phase[i] * 1.3) * jitterAmp
         const nx = particles.scatterX[i] + (particles.targetX[i] - particles.scatterX[i]) * eased
         const ny = particles.scatterY[i] + (particles.targetY[i] - particles.scatterY[i]) * eased
+        posScratch[0] = originX + nx * boxSize + jx
+        posScratch[1] = originY + ny * boxSize + jy
+      }
 
-        let px = originX + nx * boxSize + jx
-        let py = originY + ny * boxSize + jy
-        let alpha = 1
-
-        if (burst > 0) {
-          const dx = px - centerX
-          const dy = py - centerY
-          const dist = Math.hypot(dx, dy) || 0.001
-          const extra = burst * BURST_DISTANCE
-          px = centerX + (dx / dist) * (dist + extra)
-          py = centerY + (dy / dist) * (dist + extra)
-          alpha = 1 - burst
-        }
-
+      const drawDot = (px: number, py: number, i: number, alpha: number) => {
         const color = amberRamp[Math.round(particles.colorT[i] * (amberRamp.length - 1))]
         ctx.globalAlpha = alpha
         ctx.fillStyle = color
@@ -211,6 +374,47 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
         ctx.beginPath()
         ctx.arc(px, py, particles.size[i], 0, Math.PI * 2)
         ctx.fill()
+      }
+
+      if (!showConnections || burst > 0) {
+        // Bursting or coarse-pointer: identical to the pre-connections
+        // code path -- no grid rebuild, no line drawing, ever, on either.
+        for (let i = 0; i < particles.n; i++) {
+          computePosition(i)
+          let px = posScratch[0]
+          let py = posScratch[1]
+          let alpha = 1
+          if (burst > 0) {
+            const dx = px - centerX
+            const dy = py - centerY
+            const dist = Math.hypot(dx, dy) || 0.001
+            const extra = burst * BURST_DISTANCE
+            px = centerX + (dx / dist) * (dist + extra)
+            py = centerY + (dy / dist) * (dist + extra)
+            alpha = 1 - burst
+          }
+          drawDot(px, py, i, alpha)
+        }
+      } else {
+        for (let i = 0; i < particles.n; i++) {
+          computePosition(i)
+          connections.currentX[i] = posScratch[0]
+          connections.currentY[i] = posScratch[1]
+        }
+
+        const now = performance.now()
+        if (now - lastGridRebuildTimeRef.current >= NEIGHBOR_REBUILD_INTERVAL_MS) {
+          rebuildGrid(particles, connections, eased)
+          findNeighbors(particles, connections, eased)
+          lastGridRebuildTimeRef.current = now
+        }
+
+        drawConnections(ctx, particles, connections)
+        ctx.shadowBlur = isCoarsePointer ? 0 : DESKTOP_DOT_BLUR // drawConnections resets this; restore for dots
+
+        for (let i = 0; i < particles.n; i++) {
+          drawDot(connections.currentX[i], connections.currentY[i], i, 1)
+        }
       }
       ctx.globalAlpha = 1
       ctx.shadowBlur = 0
@@ -258,7 +462,7 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
       window.addEventListener("resize", resize)
       return () => window.removeEventListener("resize", resize)
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [particles, amberRamp, isCoarsePointer, reducedMotion])
+    }, [particles, amberRamp, connections, isCoarsePointer, reducedMotion])
 
     // Continuous animation loop -- normal (non-reduced-motion) case only.
     // `progress` is read from a ref, not a dependency, so this loop never
@@ -292,9 +496,9 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
       raf = requestAnimationFrame(tick)
       return () => cancelAnimationFrame(raf)
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [particles, amberRamp, isCoarsePointer, reducedMotion])
+    }, [particles, amberRamp, connections, isCoarsePointer, reducedMotion])
 
-    const boxSizeCss = "min(34vmin, 320px)"
+    const boxSizeCss = "min(13.6vmin, 128px)"
     const enterOpacity = (ready ? 1 : 0) * (1 - burstAmount)
 
     return (
@@ -303,8 +507,15 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
         style={{ pointerEvents: "none", backgroundColor: `rgba(10, 10, 10, ${1 - burstAmount})` }}
       >
         <canvas ref={canvasRef} className="absolute inset-0" />
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div style={{ height: `calc(${boxSizeCss} / 2 + 28px)` }} />
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: `calc(50% - 24px + ${boxSizeCss} / 2 + 24px)`, // Enter button's own bottom edge + a fixed gap
+            transform: "translateX(-50%)",
+            textAlign: "center",
+          }}
+        >
           <div
             className="font-nunito tabular-nums text-3xl sm:text-4xl text-white tracking-tight"
             style={{ opacity: 1 - burstAmount, transition: "opacity 0.2s ease" }}
