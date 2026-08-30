@@ -87,6 +87,12 @@ export const raining = atom(false)
 export const inSkyJourney = atom(false)
 export const goHomeRequest = atom(0) // incrementing counter -- bumped to request a return-home
 
+// True while the LiDAR-scan title screen is up (page.tsx: sceneReady &&
+// !started). Favicon.tsx reads this to hide the home button during load --
+// it's rendered from layout.tsx, outside page.tsx's own component tree, so
+// local state there can't reach it directly.
+export const titleScreenActive = atom(false)
+
 // Master sound switch (SoundToggle.tsx) -- gates every sound in the app,
 // music included. Off by default so nothing plays before a visitor
 // explicitly opts in (Chrome blocks autoplay otherwise).

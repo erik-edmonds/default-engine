@@ -14,6 +14,7 @@ import { Waterfall } from "@/components/models/Waterfall"
 import { Gear } from "@/components/models/Gear"
 import { Charizard } from "@/components/models/Charizard"
 import { Palm } from "@/components/models/Palm"
+import { Ditto } from "@/components/models/Ditto"
 import { Gull } from "@/components/models/Gull"
 import { Seagull } from "@/components/models/Seagull"
 import { Foams } from "@/components/models/Foams"
@@ -37,6 +38,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                 <GreenTree scale={0.01} position={[1,-2,-3]} rotation={[0,0,0]}/> */}
             </Bvh>
             <Waterfall />
+            {/* <Ditto scale={0.15} position={[-0.1,-2.8,8.2]} rotation={[0,-Math.PI/5,0]}/> */}
             <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
             <Gear onClick={() => downclick()} onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1.5} position={[1.75,-1.8,4.5]} rotation={[0, Math.PI/1.8, Math.PI/9]} /> 
             <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>

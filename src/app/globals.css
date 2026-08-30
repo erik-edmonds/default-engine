@@ -75,3 +75,33 @@ body {
     animation: none;
   }
 }
+
+/* LoadingScreen's "Enter" affordance, once the point cloud has resolved
+   into the logo: a slow breathing glow signaling "this is now clickable",
+   distinct from the particles' own much smaller idle jitter. Only
+   scale/opacity are animated (never transform-for-position or opacity used
+   for the fade-in/out) since this class applies to an element whose own
+   positioning and ready/burst-driven fade are handled separately via
+   inline styles on its wrapper -- a CSS animation's keyframe values win
+   the cascade over inline styles for whichever properties it declares, so
+   animating position/fade here would fight that wrapper's own state. */
+@keyframes loading-enter-breathe {
+  0%, 100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+}
+
+.loading-enter-pulse {
+  animation: loading-enter-breathe 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-enter-pulse {
+    animation: none;
+  }
+}

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Preload, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, Noise } from "@react-three/postprocessing";
-import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled } from "@/helpers/StateProvider";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive } from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
 import { Scene } from "@/components/canvas/Scene";
@@ -24,13 +24,13 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
 import { NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
 import Rail from "@/components/layout/Rail";
+import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
 import { Mouse } from "@/helpers/CameraHelpers";
 import { Anchor } from "@/helpers/Interfaces";
 
 // Debug
 import { CameraTracker } from "@/helpers/CameraHelpers"
 import { OrbitControls } from "@react-three/drei";
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const OrbitCube = dynamic(() => import("@/components/layout/HUD").then((mod) => mod.ViewCube), {
   ssr: false,
@@ -101,6 +101,20 @@ export default function Page() {
   const sceneReady = progress >= 100;
   const [motion, setMotion] = useState(false);
   const [islandMounted, setIslandMounted] = useState(false);
+  // Gates the loading screen: once the scene can render (sceneReady) but
+  // before `started`, LoadingScreen's point cloud is up and the scene is
+  // inert (see CameraHotspot below); clicking Enter runs LoadingScreen's
+  // burst() dissolve, which only flips `started` once it resolves.
+  const [started, setStarted] = useState(false);
+  const loadingScreenRef = useRef<LoadingScreenHandle>(null);
+  // Re-entrancy guard for handleEnter: set synchronously before any await,
+  // so a second click during burst() can't fire a second burst.
+  const startingRef = useRef(false);
+  // Favicon.tsx (the home button) is rendered from layout.tsx, outside this
+  // component's tree, so it needs this atom rather than local state to know
+  // to hide itself while the loading screen is up.
+  const setTitleScreenActive = useSetAtom(titleScreenActive);
+  useEffect(() => { setTitleScreenActive(sceneReady && !started); }, [sceneReady, started, setTitleScreenActive]);
   const [nameStamped, setNameStamped] = useState(false);
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
@@ -150,6 +164,15 @@ export default function Page() {
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
   const skyTextRef = useRef("");
+  const handleEnter = useCallback(async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    playSfx("click");
+    // `started` (which wakes the hotspots/UI back up) only flips once the
+    // burst/dissolve animation has actually finished.
+    await loadingScreenRef.current?.burst();
+    setStarted(true);
+  }, [playSfx]);
 
   useEffect(() => {
     router.prefetch("/portfolio");
@@ -312,7 +335,7 @@ export default function Page() {
   return (
     <NavigationProvider>
       <div className="relative h-screen w-screen overflow-hidden">
-        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || hotspotNav.current !== "home" ? "invisible" : "visible"}`}>
+        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || hotspotNav.current !== "home" || !started ? "invisible" : "visible"}`}>
           <div className="relative">
             {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
             {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-white">Data Scientist</p>}
@@ -322,7 +345,7 @@ export default function Page() {
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
-        <div className="flex flex-col lg:flex-row items-center gap-2 absolute right-5 top-5 z-10">
+        <div className={`flex flex-col lg:flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && !started ? "invisible opacity-0" : "visible opacity-100"}`}>
           {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
           <SoundToggle />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
@@ -355,7 +378,9 @@ export default function Page() {
           gl={{ preserveDrawingBuffer: true }} dpr={[1, 2]} style={{ width: "100vw", height: "100vh" }}>
           <EffectComposer>
             <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
-            <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} />
+            {/* Held back until Enter is clicked, so the world visibly "lights up"
+                as you enter rather than looking fully lit under the loading screen. */}
+            {started ? <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /> : <></>}
           </EffectComposer>
           <color attach="background" args={["#0a0a0a"]} />
           {islandMounted && <Suspense fallback={null}>
@@ -364,7 +389,7 @@ export default function Page() {
               <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} />
               <AvatarController ref={avatarControllerRef} />
               {!isCoarsePointer && <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />}
-              {sceneReady && <> 
+              {sceneReady && started && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
                 <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
@@ -378,6 +403,12 @@ export default function Page() {
             <Preload all />
           </Suspense>}
         </Canvas>
+        {/* Plain DOM + 2D-canvas overlay, not a second WebGL canvas -- see
+            LoadingScreen.tsx for why. Unmounted (not just hidden) once
+            `started` flips, so its animation loop actually stops. */}
+        {!started && (
+          <LoadingScreen ref={loadingScreenRef} progress={progress} isCoarsePointer={isCoarsePointer} onEnter={handleEnter} />
+        )}
         {rainTriggered && <RainScene />}
       </div>
     </NavigationProvider>
