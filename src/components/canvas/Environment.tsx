@@ -145,10 +145,20 @@ export function Environment({
   // animate" -- see the comment on TimeOfDayTransition in
   // useTimeOfDayCycle.ts for why that assumption is wrong here.
   const currentTarget = useRef<TimeOfDay | null>(null)
+  // Tracked alongside currentTarget, not folded into one check -- a click
+  // landing mid an in-flight, not-yet-settled transition (see
+  // useTimeOfDayCycle.ts's skipAhead) can retarget ONLY the pace (same
+  // `target`, shorter `transitionSeconds`) without `target` itself ever
+  // changing value. Guarding on `target` alone would silently ignore that:
+  // the sky/sun/moon blend would just keep tweening at its original slow
+  // pace as if the click never happened, while PhaseCube (fixed
+  // separately) visibly sped up -- the two would desync.
+  const currentTransitionSeconds = useRef<number | null>(null)
 
   useEffect(() => {
-    if (target === currentTarget.current) return
+    if (target === currentTarget.current && transitionSeconds === currentTransitionSeconds.current) return
     currentTarget.current = target
+    currentTransitionSeconds.current = transitionSeconds
     // The ambient auto-cycle (transitionSeconds === AUTO_TRANSITION_SECONDS)
     // needs to read as continuous, constant-speed motion -- the sun and moon
     // "always moving, like in the real world," never stalling. power2.inOut

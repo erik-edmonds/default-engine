@@ -34,17 +34,19 @@ export function InteractionHint({ visible, dismissed }: InteractionHintProps) {
 
   return (
     <div
-      className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex flex-col items-center gap-3"
+      className="pointer-events-none absolute left-1/2 z-10 flex flex-col items-center gap-3"
       style={{
+        top: "73%",
         opacity: shown ? 1 : 0,
         transform: `translate(-50%, calc(-50% + ${shown ? "0px" : "8px"}))`,
         transition: "opacity 0.5s ease, transform 0.5s ease",
       }}
     >
-      <div className="relative flex h-10 w-10 items-center justify-center">
+      <div className="relative flex h-40 w-40 items-center justify-center">
         <FontAwesomeIcon
           icon={faHandPointer}
-          className="hint-icon relative text-xl text-white"
+          className="hint-icon relative text-white"
+          style={{ fontSize: 144 }}
         />
       </div>
       <div
@@ -52,7 +54,6 @@ export function InteractionHint({ visible, dismissed }: InteractionHintProps) {
         style={{
           background: "rgba(0,0,0,0.55)",
           backdropFilter: "blur(6px)",
-          border: "1px solid rgba(210,90,26,0.6)",
         }}
       >
         Click to Explore

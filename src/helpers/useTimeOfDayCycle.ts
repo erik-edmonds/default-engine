@@ -87,11 +87,19 @@ export function useTimeOfDayCycle(initialPhase: TimeOfDay) {
   // the identical problem for that component's local display only.
   const settledRef = useRef(true)
 
+  // Same settle timing as settledRef above, but as actual React state so
+  // consumers that need to CONDITIONALLY RENDER off "what phase is
+  // currently on screen" (e.g. hiding the seagull flock at night) can react
+  // to it directly, without reimplementing this timing themselves.
+  const [currentPhase, setCurrentPhase] = useState<TimeOfDay>(initialPhase)
+
   useEffect(() => {
     settledRef.current = transition.seconds <= 0
+    setCurrentPhase(transition.seconds <= 0 ? transition.phase : transition.from)
     if (transition.seconds <= 0) return
     const id = setTimeout(() => {
       settledRef.current = true
+      setCurrentPhase(transition.phase)
     }, tweenDuration(transition.seconds) * 1000)
     return () => clearTimeout(id)
   }, [transition])
@@ -161,5 +169,5 @@ export function useTimeOfDayCycle(initialPhase: TimeOfDay) {
     return () => clearTimeout(id)
   }, [transition])
 
-  return { from: transition.from, phase: transition.phase, transitionSeconds: transition.seconds, skipAhead, resetTo }
+  return { from: transition.from, phase: transition.phase, transitionSeconds: transition.seconds, skipAhead, resetTo, currentPhase }
 }

@@ -1,10 +1,15 @@
 # TODO:
+- Sunflare
+- Shadows, hard and soft
+- Transition splash screen 
+- Fix joystick on rotate mode on mobile
+- Fix logs propertybinding
 
 # Small Tweaks needed
 - [x] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
-- [ ] Rain hits screen on cloud click, but ends abruptly. Needs to slowly stop.
+- [x] Rain hits screen on cloud click, but ends abruptly. Needs to slowly stop.
 - [x] Aurora Borealis needs to transition out first, so there's no overlap with the dawn skyscene
-- [ ] Slowly transition in/out flame 
+- [x] Slowly transition in/out flame 
 
 # ANIMATIONS!!!
 - [ ] Models are all rigged, but no animations are created ..
@@ -17,7 +22,7 @@
     - [ ] Floating in air dragonite avatar
 
 # Splash
-- [ ] Logo, that fills with color on percentage loaded
+- [x] Logo, that fills with color on percentage loaded
 
 # Homepage 
 - [x] Fix Camera rubix cube 
@@ -39,10 +44,10 @@
     - [ ] Camera doesn't align properly when going up and not at home position
         - [ ] On any position, on arrow up/down: 
         should camera return to home position then transition
-    - [ ] On click, pokeball animation
-        - [ ] Pokeball opens up 
-        - [ ] White light like pokemon coming out of ball
-        - [ ] Avatar disappears behind white like
+    - [x] On click, pokeball animation
+        - [x] Pokeball opens up 
+        - [x] White light like pokemon coming out of ball
+        - [x] Avatar disappears behind white like
         - [ ] Dragonite appears as well, so when white light is gone, Dragonite is left 
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
 - [x] Stylize up/down button

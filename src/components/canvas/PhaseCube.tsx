@@ -184,6 +184,15 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   const fromRotationRef = useRef(stepsRef.current * (Math.PI / 2))
   const targetRotationRef = useRef(stepsRef.current * (Math.PI / 2))
   const phaseRef = useRef(from)
+  // Last `transitionSeconds` this effect actually applied -- tracked
+  // separately from `phaseRef` because a click landing mid an in-flight,
+  // not-yet-settled transition (see useTimeOfDayCycle.ts's skipAhead) can
+  // change ONLY the pace (e.g. 90s auto -> 3s click) while `phase` itself
+  // stays the exact same destination. Without tracking this too, the guard
+  // below would see `phase === phaseRef.current` and bail out entirely,
+  // silently ignoring the click: the cube would just keep turning at its
+  // original slow pace as if nothing happened.
+  const transitionSecondsRef = useRef(transitionSeconds)
   const [busy, setBusy] = useState(false)
   const play = useSfx()
   // The actual re-entrancy guard `handleClick` checks -- `busy` (React
@@ -214,7 +223,7 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   // setMeshRef), using whatever fromRotationRef/targetRotationRef the
   // tracking effect has ALREADY correctly computed by then, even if it ran
   // several phase changes ago while mesh was still null.
-  const applyRotation = useCallback(() => {
+  const applyRotation = useCallback((snapFirst = true) => {
     const mesh = meshRef.current
     if (!mesh) return
     if (transitionSeconds <= 0) {
@@ -226,8 +235,12 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
     // currently happens to be (e.g. 0, on a brand new mesh that's never had
     // a rotation applied) -- otherwise a late-attaching mesh would tween
     // from the wrong place, or (worse) instantly jump because gsap has
-    // nothing to interpolate from a mismatched starting value.
-    mesh.rotation.y = fromRotationRef.current
+    // nothing to interpolate from a mismatched starting value. Skipped when
+    // `snapFirst` is false (a same-destination pace change): the mesh is
+    // mid-flight, genuinely NOT resting at fromRotationRef, so snapping
+    // there first would visibly yank it backward before the new tween
+    // started -- exactly the jump this whole mechanism exists to avoid.
+    if (snapFirst) mesh.rotation.y = fromRotationRef.current
     // Same auto/click split as Environment.tsx/OceanWater.ts: linear during
     // the unattended auto-cycle so the cube reads as constantly, smoothly
     // turning in sync with the sky rather than easing to a near-stop at
@@ -239,7 +252,9 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
       ease: auto ? "none" : "power2.inOut",
       // Without this, an interrupting fast tween finishing while a slow
       // one still has time left hands control back to the slow tween,
-      // visibly dragging the cube back toward the phase just skipped.
+      // visibly dragging the cube back toward the phase just skipped. Also
+      // what makes the snapFirst:false retarget above work: gsap picks up
+      // the mesh's CURRENT live rotation as the new tween's start point.
       overwrite: true,
     })
   }, [transitionSeconds])
@@ -260,35 +275,50 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   }, [applyRotation])
 
   useEffect(() => {
-    if (phase === phaseRef.current) return
+    // A click landing mid an in-flight, not-yet-settled transition (see
+    // useTimeOfDayCycle.ts's skipAhead) can retarget ONLY the pace -- same
+    // `from`/`phase` destination, shorter `transitionSeconds` -- without
+    // `phase` itself ever changing value. That still needs a response here
+    // (the cube should visibly speed up), just a lighter one: see the
+    // `targetChanged` branch below.
+    const targetChanged = phase !== phaseRef.current
+    const paceChanged = transitionSeconds !== transitionSecondsRef.current
+    if (!targetChanged && !paceChanged) return
     phaseRef.current = phase
+    transitionSecondsRef.current = transitionSeconds
 
-    // Self-correct stepsRef against `from` (the hook's own authoritative
-    // "phase we're coming from" for this transition -- see
-    // useTimeOfDayCycle.ts) before using it, instead of trusting stepsRef's
-    // own derived phase unconditionally. Without this, stepsRef could stay
-    // permanently wrong from a single bad mount: it's seeded once from the
-    // `from` prop at mount (see its useRef initializer above), but if THIS
-    // component's first render happens to land before page.tsx's resetTo()
-    // corrects the SSR-safe "day" placeholder to the real clock hour --a
-    // real race, since child effects run before parent effects in the same
-    // commit, and resetTo lives in a parent effect -- stepsRef gets seeded
-    // from that wrong placeholder. Every later transition only ever
-    // advanced stepsRef relative to ITS OWN previous value, with nothing to
-    // ever notice or fix the initial error: the cube (and, via
-    // settledPhase below, the aria-label) would silently stay one or more
-    // phases off from the real time of day for the rest of the session.
-    // Resyncing to `from` here -- which the hook always keeps correct --
-    // whenever they've drifted apart closes that permanently.
-    const stepsPhase = TIME_OF_DAY_ORDER[((stepsRef.current % 4) + 4) % 4]
-    if (stepsPhase !== from) {
-      const laps = Math.floor(stepsRef.current / 4)
-      stepsRef.current = laps * 4 + phaseIndex(from)
+    if (targetChanged) {
+      // Self-correct stepsRef against `from` (the hook's own authoritative
+      // "phase we're coming from" for this transition -- see
+      // useTimeOfDayCycle.ts) before using it, instead of trusting stepsRef's
+      // own derived phase unconditionally. Without this, stepsRef could stay
+      // permanently wrong from a single bad mount: it's seeded once from the
+      // `from` prop at mount (see its useRef initializer above), but if THIS
+      // component's first render happens to land before page.tsx's resetTo()
+      // corrects the SSR-safe "day" placeholder to the real clock hour --a
+      // real race, since child effects run before parent effects in the same
+      // commit, and resetTo lives in a parent effect -- stepsRef gets seeded
+      // from that wrong placeholder. Every later transition only ever
+      // advanced stepsRef relative to ITS OWN previous value, with nothing to
+      // ever notice or fix the initial error: the cube (and, via
+      // settledPhase below, the aria-label) would silently stay one or more
+      // phases off from the real time of day for the rest of the session.
+      // Resyncing to `from` here -- which the hook always keeps correct --
+      // whenever they've drifted apart closes that permanently.
+      const stepsPhase = TIME_OF_DAY_ORDER[((stepsRef.current % 4) + 4) % 4]
+      if (stepsPhase !== from) {
+        const laps = Math.floor(stepsRef.current / 4)
+        stepsRef.current = laps * 4 + phaseIndex(from)
+      }
+      fromRotationRef.current = stepsRef.current * (Math.PI / 2)
+
+      stepsRef.current += forwardSteps(from, phase)
+      targetRotationRef.current = stepsRef.current * (Math.PI / 2)
     }
-    fromRotationRef.current = stepsRef.current * (Math.PI / 2)
-
-    stepsRef.current += forwardSteps(from, phase)
-    targetRotationRef.current = stepsRef.current * (Math.PI / 2)
+    // else: same destination, only the pace changed -- stepsRef/
+    // targetRotationRef are already correct from when this transition
+    // first started; applyRotation(false) below retargets the tween's
+    // duration only, from wherever the mesh currently is.
 
     // Tracks when the rotation tween below ACTUALLY finishes, which is not
     // the same moment the next auto-advance is scheduled for: a click's own
@@ -314,7 +344,9 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
 
     // No-ops (returns immediately) if mesh is still null -- see
     // setMeshRef's own comment for how that case is covered instead.
-    applyRotation()
+    // snapFirst only for a genuine target change -- see applyRotation's own
+    // comment for why a pace-only change must NOT hard-snap first.
+    applyRotation(targetChanged)
     // `from` always changes in lockstep with `phase` (see
     // useTimeOfDayCycle.ts -- every setTransition call sets both together),
     // so this never fires on a `from`-only change; listed because the

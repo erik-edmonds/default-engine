@@ -98,7 +98,7 @@ export default function Page() {
   // should animate FROM if they're mounting mid-transition (the norm, since
   // they're Suspense-gated behind 3D asset loading and mount later than
   // this component does).
-  const { from: dayFrom, phase: day, transitionSeconds, skipAhead, resetTo } = useTimeOfDayCycle("day");
+  const { from: dayFrom, phase: day, transitionSeconds, skipAhead, resetTo, currentPhase } = useTimeOfDayCycle("day");
   const progress = useProgress((state) => state.progress);
   const sceneReady = progress >= 100;
   const [motion, setMotion] = useState(false);
@@ -369,8 +369,8 @@ export default function Page() {
       <div className="relative h-screen w-screen overflow-hidden">
         <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${!started ? "invisible" : "visible"}`}>
           <div className="relative">
-            {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
-            {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-white">Data Scientist</p>}
+            {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-[#d25a1a]">Erik Edmonds</h1>}
+            {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-[#d25a1a]">Data Scientist</p>}
           </div>
         </div>
         <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
@@ -430,7 +430,7 @@ export default function Page() {
           {islandMounted && <Suspense fallback={null}>
             <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />
             <group>
-              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} />
+              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} showSeagulls={currentPhase !== "night"} />
               <AvatarController ref={avatarControllerRef} />
               {!isCoarsePointer && <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />}
               {/* Rings hidden on mobile/touch -- their hover-preview affordance
@@ -448,7 +448,6 @@ export default function Page() {
               </>}
             </group>
             {/* dragged && rotate && <Mouse /> */}
-            <OrbitControls />
             <CameraController ref={cameraControllerRef} />
             <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
             <Preload all />
@@ -460,7 +459,7 @@ export default function Page() {
         {!started && (
           <LoadingScreen ref={loadingScreenRef} progress={progress} isCoarsePointer={isCoarsePointer} onEnter={handleEnter} />
         )}
-        <InteractionHint visible={started} dismissed={hasInteracted} />
+        {!isCoarsePointer && <InteractionHint visible={started} dismissed={hasInteracted} />}
         {rainTriggered && <RainScene />}
       </div>
     </NavigationProvider>

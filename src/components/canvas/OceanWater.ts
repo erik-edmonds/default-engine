@@ -326,10 +326,15 @@ export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitio
   })
   // Starts `null`, not `day` -- see the identical comment in Environment.tsx.
   const currentTarget = useRef<TimeOfDay | null>(null)
+  // Tracked alongside currentTarget -- see the identical comment in
+  // Environment.tsx for why a pace-only change (same `day`, shorter
+  // `transitionSeconds`) still needs to retrigger this effect.
+  const currentTransitionSeconds = useRef<number | null>(null)
 
   useEffect(() => {
-    if (day === currentTarget.current) return
+    if (day === currentTarget.current && transitionSeconds === currentTransitionSeconds.current) return
     currentTarget.current = day
+    currentTransitionSeconds.current = transitionSeconds
     const preset = PRESETS[day]
     // See Environment.tsx's identical auto/click split -- linear during the
     // unattended auto-cycle so the sparkle/fog motion stays constant-speed

@@ -94,9 +94,11 @@ export const goHomeRequest = atom(0) // incrementing counter -- bumped to reques
 export const titleScreenActive = atom(false)
 
 // Master sound switch (SoundToggle.tsx) -- gates every sound in the app,
-// music included. Off by default so nothing plays before a visitor
-// explicitly opts in (Chrome blocks autoplay otherwise).
-export const sfxEnabled = atom(false)
+// music included. On by default -- SoundToggle.tsx itself handles the
+// autoplay-with-sound restriction this creates (mounting "on" happens
+// before any user gesture, so the very first play() attempt is silently
+// blocked; it retries on the page's first pointer interaction).
+export const sfxEnabled = atom(true)
 
 // Speaker prop's own toggle -- expresses intent only ("I want music
 // playing"), independent of whether the master switch above currently

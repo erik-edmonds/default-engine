@@ -1,66 +1,28 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useAtom } from "jotai"
-import gsap from "gsap"
 import { Howl } from "howler"
 import { sfxEnabled } from "@/helpers/StateProvider"
 import { useSfx } from "@/helpers/useSfx"
 
-// Same warm palette already used across the HUD (Favicon/PhaseCube/Rail
-// accent) and, notably, the actual 3D Speaker prop in the scene itself
-// (materials.emissive on its glow ring in Speaker.tsx) -- built from that
-// instead of generic black/white icon-font strokes so this control reads
-// as the same "material" as the rest of the site and the object it
-// controls, not a stock UI import.
-const GLOW_TOP = "#ffb37a"
-const GLOW_BOTTOM = "#ff7d1c"
-const DIM_COLOR = "#8a8a8a"
+// The site's own orange accent, flat -- same color family as the joystick
+// knob and the actual 3D Speaker prop's glow ring.
+const BAR_COLOR = "#d25a1a"
 
-// Both faces share one speaker-cone silhouette -- on/off is expressed as
-// whether it's *lit*, not a different glyph, the same way the real Speaker
-// prop's glow ring is either glowing or dark. That mirrors this site's own
-// established metaphor instead of an arbitrary icon swap.
-function LitSpeakerIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="55%"
-      height="55%"
-      style={{ filter: "drop-shadow(0 0 4px rgba(255, 125, 28, 0.9))" }}
-    >
-      <defs>
-        <linearGradient id="soundtoggle-glow" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={GLOW_TOP} />
-          <stop offset="100%" stopColor={GLOW_BOTTOM} />
-        </linearGradient>
-      </defs>
-      <polygon points="3,9 8,9 13,4 13,20 8,15 3,15" fill="url(#soundtoggle-glow)" />
-      <g fill="none" stroke={GLOW_BOTTOM} strokeWidth={2} strokeLinecap="round">
-        <path d="M16 8a5 5 0 0 1 0 8" />
-        <path d="M19 5a9 9 0 0 1 0 14" />
-      </g>
-    </svg>
-  )
-}
+const SIZE = 56
+// Per-bar (duration, delay) so the bars bounce out of sync with each other
+// -- an organic equalizer, not four bars moving in lockstep.
+const BARS = [
+  { duration: 0.8, delay: 0 },
+  { duration: 1.0, delay: 0.15 },
+  { duration: 0.7, delay: 0.05 },
+  { duration: 0.95, delay: 0.25 },
+]
 
-function DimSpeakerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="55%" height="55%">
-      <polygon points="3,9 8,9 13,4 13,20 8,15 3,15" fill={DIM_COLOR} />
-      <line x1="15" y1="7" x2="20" y2="17" stroke={DIM_COLOR} strokeWidth={2} strokeLinecap="round" />
-    </svg>
-  )
-}
-
-export default function SoundToggle({ size = 56 }: { size?: number }) {
+export default function SoundToggle() {
   const [enabled, setEnabled] = useAtom(sfxEnabled)
   const play = useSfx()
-  const flipRef = useRef<HTMLDivElement | null>(null)
-  // Absolute rotation target (steps * 180deg), not a relative "+= 180" --
-  // same reasoning as PhaseCube's stepsRef: self-correcting if a click
-  // interrupts an in-flight flip, rather than compounding drift.
-  const stepsRef = useRef(0)
 
   const [waves] = useState(() => new Howl({
     src: ["/sound/waves.mp3"],
@@ -76,12 +38,25 @@ export default function SoundToggle({ size = 56 }: { size?: number }) {
   }))
 
   useEffect(() => {
-    if (enabled) {
-      if (waves.state() === "unloaded") waves.load()
-      waves.play()
-    } else {
+    if (!enabled) {
       waves.pause()
+      return
     }
+    if (waves.state() === "unloaded") waves.load()
+    waves.play()
+    // sfxEnabled now defaults to true, so this effect's first run happens
+    // on mount -- before the Enter click, before any user gesture at all.
+    // Browsers block autoplay-with-sound until the page has one, so this
+    // first play() attempt silently does nothing. Retry once on the page's
+    // very first pointer interaction (in practice, the Enter click itself)
+    // so the ambient track actually starts instead of staying silently
+    // paused until someone happens to toggle the button off and back on.
+    if (waves.playing()) return
+    const retry = () => {
+      if (!waves.playing()) waves.play()
+    }
+    window.addEventListener("pointerdown", retry, { once: true })
+    return () => window.removeEventListener("pointerdown", retry)
   }, [enabled, waves])
 
   // Same orphaned-instance risk Speaker.tsx has -- stop cleanly on unmount
@@ -89,18 +64,7 @@ export default function SoundToggle({ size = 56 }: { size?: number }) {
   // to control it.
   useEffect(() => () => { waves.stop() }, [waves])
 
-  useEffect(() => {
-    if (!flipRef.current) return
-    gsap.to(flipRef.current, {
-      rotationY: stepsRef.current * 180,
-      duration: 0.6,
-      ease: "power2.inOut",
-      overwrite: true,
-    })
-  }, [enabled])
-
   const handleClick = () => {
-    stepsRef.current += 1
     setEnabled((v) => !v)
   }
 
@@ -112,68 +76,40 @@ export default function SoundToggle({ size = 56 }: { size?: number }) {
       aria-label={enabled ? "Turn sound off" : "Turn sound on"}
       aria-pressed={enabled}
       style={{
-        width: size,
-        height: size,
-        perspective: 400,
-        border: enabled ? "1px solid rgba(255,180,120,0.5)" : "1px solid rgba(255,255,255,0.25)",
-        borderRadius: 12,
-        background: "rgba(255,255,255,0.08)",
-        backdropFilter: "blur(6px)",
-        // A soft amber halo when lit, echoing the actual glow ring on the
-        // 3D Speaker prop -- gives this control its own distinct, "lit up"
-        // identity rather than sharing PhaseCube's neutral glass look.
-        boxShadow: enabled ? "0 0 14px 2px rgba(255, 125, 28, 0.45)" : "none",
-        transition: "box-shadow 0.4s ease, border-color 0.4s ease",
+        width: SIZE,
+        height: SIZE,
+        borderRadius: 9999,
+        background: "#fff",
         cursor: "pointer",
         padding: 0,
         outlineOffset: 2,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 4,
       }}
     >
-      <div
-        ref={flipRef}
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "100%",
-          transformStyle: "preserve-3d",
-          pointerEvents: "none",
-        }}
-      >
-        {/* Front face -- unrotated, visible when stepsRef is even (0, 2, 4...
-            clicks), which includes the very first render before any click.
-            sfxEnabled starts false, so the dim icon has to be the one
-            showing with zero rotation applied, not the lit one.
-            pointerEvents: none on this whole subtree (not just here) --
-            a backface-visibility:hidden face pointing away from the viewer
-            is unreliable for hover/click hit-testing in some browsers, so
-            all pointer interaction is left to the outer <button>, same as
-            PhaseCube's inner <Canvas>. */}
-        <div
+      {BARS.map((bar, i) => (
+        // Each bar rests at a short, flat height (see .eq-bar's own base
+        // transform in globals.css) and only bounces while `enabled` --
+        // toggling off just removes the animation class, letting the
+        // transition ease every bar back down to that same flat height
+        // instead of freezing mid-bounce.
+        <span
+          key={i}
+          aria-hidden="true"
+          className={enabled ? "eq-bar eq-bar-animating" : "eq-bar"}
           style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backfaceVisibility: "hidden",
+            display: "inline-block",
+            width: 4,
+            height: 20,
+            borderRadius: 2,
+            background: BAR_COLOR,
+            animationDuration: `${bar.duration}s`,
+            animationDelay: `${bar.delay}s`,
           }}
-        >
-          <DimSpeakerIcon />
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backfaceVisibility: "hidden",
-            transform: "rotateY(180deg)",
-          }}
-        >
-          <LitSpeakerIcon />
-        </div>
-      </div>
+        />
+      ))}
     </button>
   )
 }

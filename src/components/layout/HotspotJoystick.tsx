@@ -4,10 +4,10 @@ import { useRef, useState } from "react"
 import { useSfx } from "@/helpers/useSfx"
 
 const BASE_SIZE = 112 // px, glass puck diameter
-const STICK_SIZE = 46 // px, outer ring/collar diameter
-const RING_THICKNESS = 5 // px, how much of the collar shows around the cap
+const STICK_SIZE = 46 // px, knob diameter
 const DEAD_ZONE = 16 // px of drag before a direction is considered "chosen"
 const MAX_STICK_DISPLACEMENT = 24 // px, how far the knob can travel from center
+const ACCENT = "#d25a1a" // the site's base accent, used flat (no gradient/shading)
 
 type Direction = "up" | "down" | "left" | "right"
 
@@ -119,10 +119,8 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
           transform: "translateX(-50%)",
           whiteSpace: "nowrap",
           padding: "6px 16px",
-          borderRadius: "9999px",
-          background: "rgba(255,255,255,0.08)",
-          backdropFilter: "blur(6px)",
-          border: "1px solid rgba(210,90,26,0.6)",
+          borderRadius: "2px",
+          background: ACCENT,
           fontSize: 11,
           letterSpacing: "0.2em",
           textTransform: "uppercase",
@@ -134,9 +132,8 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
         {activeDirection ? directions[activeDirection].label : ""}
       </div>
 
-      {/* Outer collar -- a metallic-ish amber sweep standing in for the
-          ring/bevel on a real analog stick cap. The drag-follow transform
-          lives here (on the whole assembly), not on the cap inside it. */}
+      {/* Flat knob -- a single solid-color amber disc, no ring/collar or
+          concave shading, per the site's flat-design direction. */}
       <div
         aria-hidden="true"
         className={dragging ? "" : "joystick-stick-settle"}
@@ -147,29 +144,11 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
           width: STICK_SIZE,
           height: STICK_SIZE,
           borderRadius: "9999px",
-          padding: RING_THICKNESS,
-          background: "conic-gradient(from 180deg, #f2d9b8, #c98a4b, #7a4a22, #c98a4b, #f2d9b8)",
-          boxShadow: "0 0 14px 2px rgba(210,90,26,0.5), 0 2px 4px rgba(0,0,0,0.4)",
+          background: ACCENT,
+          boxShadow: "0 0 14px 2px rgba(210,90,26,0.5)",
           transform: `translate(calc(-50% + ${stickOffset.x}px), calc(-50% + ${stickOffset.y}px))`,
         }}
-      >
-        {/* Concave cap -- darker toward the center, brighter toward the rim
-            (the rim is the highest point of a dish, so it catches the most
-            light; the recessed center catches the least), plus a strong
-            top-down inset shadow pooling into the depression and a thin
-            bright inset lip at the bottom. The *opposite* shading direction
-            of a convex dome/marble, which is what a naive bright-corner
-            highlight (tried first) actually reads as. */}
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            borderRadius: "9999px",
-            background: "radial-gradient(circle at 50% 55%, #a8481a 0%, #c8531c 45%, #e8834a 85%, #f5a56a 100%)",
-            boxShadow: "inset 0 6px 10px rgba(0,0,0,0.55), inset 0 -2px 3px rgba(255,255,255,0.25)",
-          }}
-        />
-      </div>
+      />
     </div>
   )
 }

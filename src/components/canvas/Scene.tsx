@@ -20,7 +20,7 @@ import { Gull } from "@/components/models/Gull"
 import { SeagullFlock } from "@/components/canvas/SeagullFlock"
 import { Foams } from "@/components/models/Foams"
 
-export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downclick }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; downclick: () => void }) {
+export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downclick, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; downclick: () => void; showSeagulls?: boolean }) {
     const [hovered, set] = useState(false)
     useCursor(hovered)
     return (
@@ -36,7 +36,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
             </Bvh>
             <Waterfall />
             {/* <Ditto scale={0.15} position={[-0.1,-2.8,8.2]} rotation={[0,-Math.PI/5,0]}/> */}
-            <SeagullFlock />
+            {showSeagulls && <SeagullFlock />}
             <Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/>
             <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
             <Gear onClick={() => downclick()} onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1.5} position={[1.75,-1.8,4.5]} rotation={[0, Math.PI/1.8, Math.PI/9]} /> 
