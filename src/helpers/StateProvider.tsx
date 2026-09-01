@@ -86,6 +86,7 @@ export const hovered = atom(false)
 export const raining = atom(false)
 export const inSkyJourney = atom(false)
 export const goHomeRequest = atom(0) // incrementing counter -- bumped to request a return-home
+export const thunder = atom(0) // incrementing counter -- bumped on cloud click to trigger a thunder burst
 
 // True while the LiDAR-scan title screen is up (page.tsx: sceneReady &&
 // !started). Favicon.tsx reads this to hide the home button during load --
@@ -94,11 +95,11 @@ export const goHomeRequest = atom(0) // incrementing counter -- bumped to reques
 export const titleScreenActive = atom(false)
 
 // Master sound switch (SoundToggle.tsx) -- gates every sound in the app,
-// music included. On by default -- SoundToggle.tsx itself handles the
-// autoplay-with-sound restriction this creates (mounting "on" happens
-// before any user gesture, so the very first play() attempt is silently
-// blocked; it retries on the page's first pointer interaction).
-export const sfxEnabled = atom(true)
+// music included. Off during the loading screen; page.tsx's handleEnter
+// flips this true as part of the Enter click itself, a real user gesture,
+// so every gated Howl can start playing immediately with no autoplay
+// restriction to work around.
+export const sfxEnabled = atom(false)
 
 // Speaker prop's own toggle -- expresses intent only ("I want music
 // playing"), independent of whether the master switch above currently

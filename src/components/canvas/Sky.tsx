@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import { Instances, Instance, useGLTF } from '@react-three/drei'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Howl } from 'howler'
-import { raining, sfxEnabled } from '@/helpers/StateProvider'
+import { raining, sfxEnabled, thunder } from '@/helpers/StateProvider'
 import { Rain } from '@/components/canvas/Rain'
 
 const RAIN_HOLD_MS = 4000 // unchanged -- full-strength duration
@@ -91,6 +91,7 @@ function Cloud({ random, atom, clicked, color = new THREE.Color(), ...props }) {
   const ref = useRef()
   const [hovered, setHover] = useState(false)
   const setClick = useSetAtom(raining)
+  const setThunder = useSetAtom(thunder)
 
   useFrame((state) => {
     const t = state.clock.getElapsedTime() + random * 10000
@@ -106,8 +107,9 @@ function Cloud({ random, atom, clicked, color = new THREE.Color(), ...props }) {
         onPointerOut={(e) => setHover(false)}  
         onClick={() => {
           setClick(() => true)
-          clicked(true)}
-          }/>
+          clicked(true)
+          setThunder((c) => c + 1)
+        }}/>
     </group>
   )
 }

@@ -157,7 +157,9 @@ body {
 .eq-bar {
   transform-origin: bottom;
   transform: scaleY(0.35);
-  transition: transform 0.3s ease;
+  /* transform: the flat-settle spring; background: eases across a
+     time-of-day phase change (color set inline in SoundToggle.tsx). */
+  transition: transform 0.3s ease, background 0.4s ease;
 }
 
 .eq-bar-animating {

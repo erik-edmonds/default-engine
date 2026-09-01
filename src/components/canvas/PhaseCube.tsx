@@ -223,7 +223,7 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   // setMeshRef), using whatever fromRotationRef/targetRotationRef the
   // tracking effect has ALREADY correctly computed by then, even if it ran
   // several phase changes ago while mesh was still null.
-  const applyRotation = useCallback((snapFirst = true) => {
+  const applyRotation = useCallback((snapFirst = false) => {
     const mesh = meshRef.current
     if (!mesh) return
     if (transitionSeconds <= 0) {
@@ -231,15 +231,18 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
       mesh.rotation.y = targetRotationRef.current
       return
     }
-    // Always start from fromRotationRef, not wherever mesh.rotation.y
-    // currently happens to be (e.g. 0, on a brand new mesh that's never had
-    // a rotation applied) -- otherwise a late-attaching mesh would tween
-    // from the wrong place, or (worse) instantly jump because gsap has
-    // nothing to interpolate from a mismatched starting value. Skipped when
-    // `snapFirst` is false (a same-destination pace change): the mesh is
-    // mid-flight, genuinely NOT resting at fromRotationRef, so snapping
-    // there first would visibly yank it backward before the new tween
-    // started -- exactly the jump this whole mechanism exists to avoid.
+    // `snapFirst` is true ONLY for a just-attached, brand-new mesh (see
+    // setMeshRef below) -- a fresh THREE.Mesh defaults to rotation.y = 0,
+    // so there's nothing meaningful to tween FROM until it's snapped to
+    // fromRotationRef first. Every other call (every real transition, click
+    // or auto, same-destination pace change or genuinely new target) is a
+    // mesh that's already visible and already resting at SOME live
+    // rotation -- snapping it to a separately-computed fromRotationRef
+    // there risks visibly disagreeing with wherever it actually is and
+    // yanking it backward before the new tween starts. Leaving it alone and
+    // letting gsap's overwrite:true below retarget from the mesh's actual
+    // current rotation.y is what makes the cube only ever move forward
+    // toward its target, never snap back first.
     if (snapFirst) mesh.rotation.y = fromRotationRef.current
     // Same auto/click split as Environment.tsx/OceanWater.ts: linear during
     // the unattended auto-cycle so the cube reads as constantly, smoothly
@@ -271,7 +274,7 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   // when it ran against a still-null mesh.
   const setMeshRef = useCallback((instance: THREE.Mesh | null) => {
     meshRef.current = instance
-    if (instance) applyRotation()
+    if (instance) applyRotation(true) // fresh mesh only -- no live rotation to tween from yet
   }, [applyRotation])
 
   useEffect(() => {
@@ -343,10 +346,11 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
     }
 
     // No-ops (returns immediately) if mesh is still null -- see
-    // setMeshRef's own comment for how that case is covered instead.
-    // snapFirst only for a genuine target change -- see applyRotation's own
-    // comment for why a pace-only change must NOT hard-snap first.
-    applyRotation(targetChanged)
+    // setMeshRef's own comment for how that case is covered instead. No
+    // snapFirst here regardless of targetChanged -- see applyRotation's own
+    // comment for why every transition from an already-mounted mesh should
+    // just tween forward from wherever it currently is, never snap first.
+    applyRotation()
     // `from` always changes in lockstep with `phase` (see
     // useTimeOfDayCycle.ts -- every setTransition call sets both together),
     // so this never fires on a `from`-only change; listed because the

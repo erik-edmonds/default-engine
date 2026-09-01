@@ -3,6 +3,9 @@
 - Shadows, hard and soft
 - Transition splash screen 
 - Fix joystick on rotate mode on mobile
+- Add ambient beach music based on day
+    - Night no seagulls
+    - Day, people sounds?
 - Fix logs propertybinding
 
 # Small Tweaks needed

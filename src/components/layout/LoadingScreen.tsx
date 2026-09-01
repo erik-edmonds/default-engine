@@ -317,6 +317,16 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
     // appearing the instant `progress` hits 100 while the counter is still
     // visibly catching up from a lower number.
     const smoothProgressRef = useRef(0)
+    // Running max of progressRef.current -- drei's useProgress is NOT
+    // monotonic (it recomputes loaded/total across the shared
+    // THREE.DefaultLoadingManager, which can visibly dip when a new asset
+    // queues after an earlier batch settles; see useTimeOfDayCycle.ts's own
+    // comment documenting this same quirk). smoothProgressRef chases this
+    // ref instead of the raw prop, so a momentary dip can never propagate
+    // into `eased` below -- without this, since `eased` drives every
+    // particle's lerp identically, a dip snapped the *entire* dot cloud
+    // backward in lockstep for a frame or two before it resumed converging.
+    const maxProgressRef = useRef(0)
     const [burstAmount, setBurstAmount] = useState(0)
     const burstingRef = useRef(false)
     const burstAmountRef = useRef(0)
@@ -483,7 +493,8 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
         const dt = Math.min((now - lastTime) / 1000, 0.1)
         lastTime = now
         const factor = 1 - Math.exp(-3 * dt)
-        smoothProgressRef.current += (progressRef.current - smoothProgressRef.current) * factor
+        maxProgressRef.current = Math.max(maxProgressRef.current, progressRef.current)
+        smoothProgressRef.current += (maxProgressRef.current - smoothProgressRef.current) * factor
 
         const eased = burstingRef.current ? 1 : smoothstep(smoothProgressRef.current / 100)
         drawFrame(eased, burstAmountRef.current)

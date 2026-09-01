@@ -18,6 +18,7 @@ import { PalmTree } from "@/components/models/PalmTree"
 import { Ditto } from "@/components/models/Ditto"
 import { Gull } from "@/components/models/Gull"
 import { SeagullFlock } from "@/components/canvas/SeagullFlock"
+import { Thunder } from "@/components/canvas/Thunder"
 import { Foams } from "@/components/models/Foams"
 
 export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downclick, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; downclick: () => void; showSeagulls?: boolean }) {
@@ -35,6 +36,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                 <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
             </Bvh>
             <Waterfall />
+            <Thunder />
             {/* <Ditto scale={0.15} position={[-0.1,-2.8,8.2]} rotation={[0,-Math.PI/5,0]}/> */}
             {showSeagulls && <SeagullFlock />}
             <Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/>

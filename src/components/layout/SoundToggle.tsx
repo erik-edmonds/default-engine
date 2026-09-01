@@ -5,10 +5,18 @@ import { useAtom } from "jotai"
 import { Howl } from "howler"
 import { sfxEnabled } from "@/helpers/StateProvider"
 import { useSfx } from "@/helpers/useSfx"
+import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 
-// The site's own orange accent, flat -- same color family as the joystick
-// knob and the actual 3D Speaker prop's glow ring.
-const BAR_COLOR = "#d25a1a"
+// Same per-phase language as the logo (Icon.tsx's Favicon, via
+// Interfaces.tsx's `themes` table) where it coincides (dawn/evening);
+// day/night are this control's own values, per explicit design direction
+// rather than a 1:1 reuse of that table (themes.day is "white", not black).
+const BAR_COLOR_BY_PHASE: Record<TimeOfDay, string> = {
+  dawn: "#ffb37a",
+  day: "#000000",
+  evening: "#000000",
+  night: "#d25a1a",
+}
 
 const SIZE = 56
 // Per-bar (duration, delay) so the bars bounce out of sync with each other
@@ -20,7 +28,7 @@ const BARS = [
   { duration: 0.95, delay: 0.25 },
 ]
 
-export default function SoundToggle() {
+export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay }) {
   const [enabled, setEnabled] = useAtom(sfxEnabled)
   const play = useSfx()
 
@@ -38,25 +46,12 @@ export default function SoundToggle() {
   }))
 
   useEffect(() => {
-    if (!enabled) {
+    if (enabled) {
+      if (waves.state() === "unloaded") waves.load()
+      waves.play()
+    } else {
       waves.pause()
-      return
     }
-    if (waves.state() === "unloaded") waves.load()
-    waves.play()
-    // sfxEnabled now defaults to true, so this effect's first run happens
-    // on mount -- before the Enter click, before any user gesture at all.
-    // Browsers block autoplay-with-sound until the page has one, so this
-    // first play() attempt silently does nothing. Retry once on the page's
-    // very first pointer interaction (in practice, the Enter click itself)
-    // so the ambient track actually starts instead of staying silently
-    // paused until someone happens to toggle the button off and back on.
-    if (waves.playing()) return
-    const retry = () => {
-      if (!waves.playing()) waves.play()
-    }
-    window.addEventListener("pointerdown", retry, { once: true })
-    return () => window.removeEventListener("pointerdown", retry)
   }, [enabled, waves])
 
   // Same orphaned-instance risk Speaker.tsx has -- stop cleanly on unmount
@@ -94,7 +89,8 @@ export default function SoundToggle() {
         // transform in globals.css) and only bounces while `enabled` --
         // toggling off just removes the animation class, letting the
         // transition ease every bar back down to that same flat height
-        // instead of freezing mid-bounce.
+        // instead of freezing mid-bounce. Color eases across phase changes
+        // via the same transition property, rather than snapping.
         <span
           key={i}
           aria-hidden="true"
@@ -104,7 +100,7 @@ export default function SoundToggle() {
             width: 4,
             height: 20,
             borderRadius: 2,
-            background: BAR_COLOR,
+            background: BAR_COLOR_BY_PHASE[currentPhase],
             animationDuration: `${bar.duration}s`,
             animationDelay: `${bar.delay}s`,
           }}

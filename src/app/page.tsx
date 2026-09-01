@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Preload, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, Noise } from "@react-three/postprocessing";
-import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive } from "@/helpers/StateProvider";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled } from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
 import { Scene } from "@/components/canvas/Scene";
@@ -168,6 +168,7 @@ export default function Page() {
   const isInSkyJourneyValue = useAtomValue(inSkyJourney);
   const goHomeRequestValue = useAtomValue(goHomeRequest);
   const setMusicEnabled = useSetAtom(musicEnabled);
+  const setSfxEnabled = useSetAtom(sfxEnabled);
   const playSfx = useSfx();
   const cameraControllerRef = useRef<CameraControllerHandle>(null);
   const avatarControllerRef = useRef<AvatarControllerHandle>(null);
@@ -178,12 +179,18 @@ export default function Page() {
   const handleEnter = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
+    // A real user gesture -- flips sound on here (not before) so every
+    // gated Howl (SoundToggle's waves.mp3, Speaker's music.mp3, Sky.tsx's
+    // rain.wav) can start playing with no autoplay restriction to work
+    // around. Set before playSfx("click") so the Enter click's own sound
+    // is included, not silently swallowed by the switch still being off.
+    setSfxEnabled(true);
     playSfx("click");
     // `started` (which wakes the hotspots/UI back up) only flips once the
     // burst/dissolve animation has actually finished.
     await loadingScreenRef.current?.burst();
     setStarted(true);
-  }, [playSfx]);
+  }, [playSfx, setSfxEnabled]);
 
   useEffect(() => {
     router.prefetch("/portfolio");
@@ -377,9 +384,9 @@ export default function Page() {
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
-        <div className={`flex flex-col lg:flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && !started ? "invisible opacity-0" : "visible opacity-100"}`}>
+        <div className={`flex flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && !started ? "invisible opacity-0" : "visible opacity-100"}`}>
           {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
-          <SoundToggle />
+          <SoundToggle currentPhase={currentPhase} />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
         {/* Superseded by HotspotJoystick below -- kept here, commented out
