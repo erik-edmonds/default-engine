@@ -15,8 +15,9 @@ import { sampleLogoPoints } from "@/components/layout/logoSamples"
 // drift out of sync with the 3D scene the way the previous LiDAR-scan
 // title screen repeatedly did.
 
-const PARTICLE_COUNT_DESKTOP = 900
-const PARTICLE_COUNT_COARSE = 350
+const PARTICLE_COUNT_DESKTOP = 1600
+const PARTICLE_COUNT_COARSE = 500
+const SCATTER_RADIUS = 4.0 // multiple of the logo's own footprint particles start scattered across
 const AMBER_LIGHT: [number, number, number] = [255, 179, 122] // #ffb37a
 const AMBER_DEEP: [number, number, number] = [210, 90, 26] // #d25a1a
 const GRADIENT_STEPS = 32
@@ -101,7 +102,7 @@ function buildParticles(count: number): Particles {
 
   for (let i = 0; i < n; i++) {
     const angle = Math.random() * Math.PI * 2
-    const radius = Math.sqrt(Math.random()) * 1.7 // uniform-density disc, ~1.7x the logo's own footprint
+    const radius = Math.sqrt(Math.random()) * SCATTER_RADIUS // uniform-density disc
     scatterX[i] = 0.5 + Math.cos(angle) * radius
     scatterY[i] = 0.5 + Math.sin(angle) * radius
     targetX[i] = targets[i].x
@@ -506,29 +507,107 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
         className="absolute inset-0 z-20"
         style={{ pointerEvents: "none", backgroundColor: `rgba(10, 10, 10, ${1 - burstAmount})` }}
       >
-        <canvas ref={canvasRef} className="absolute inset-0" />
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0"
+          style={{ opacity: ready ? 0 : 1, transition: "opacity 0.6s ease" }}
+        />
+        {/* Once the point cloud resolves, cross-fade from the dot/line
+            rendering into the real vector mark -- "raw data" settling into
+            a clean, confident answer, the same read the connection graph
+            is already going for. Sits behind the Enter button so its
+            frosted glass still overlays it, same as the dots did before. */}
         <div
           style={{
             position: "absolute",
             left: "50%",
-            top: `calc(50% - 24px + ${boxSizeCss} / 2 + 24px)`, // Enter button's own bottom edge + a fixed gap
-            transform: "translateX(-50%)",
-            textAlign: "center",
+            top: "calc(50% - 24px)",
+            width: boxSizeCss,
+            height: boxSizeCss,
+            transform: "translate(-50%, -50%)",
+            opacity: ready ? 1 - burstAmount : 0,
+            transition: "opacity 0.6s ease",
+            pointerEvents: "none",
+            filter: "drop-shadow(0 0 12px rgba(255,179,122,0.55))",
           }}
         >
-          <div
-            className="font-nunito tabular-nums text-3xl sm:text-4xl text-white tracking-tight"
-            style={{ opacity: 1 - burstAmount, transition: "opacity 0.2s ease" }}
-          >
+          <svg width="100%" height="100%" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+            <g fill="#ffb37a">
+              <path d="M70 10 L114 35 L70 60 Z" />
+              <path d="M117 40 L117 96 L70 67 Z" />
+              <path d="M114 102 L70 128 L70 74 Z" />
+              <path d="M22 35 L65 10 L64 60 Z" />
+              <g transform="translate(45,0) rotate(30)">
+                <rect x="8" y="58" width="42" height="6" rx="4" />
+                <rect x="21" y="73" width="35" height="6" rx="4" />
+                <rect x="27" y="88" width="42" height="6" rx="4" />
+              </g>
+            </g>
+          </svg>
+        </div>
+        {/* Percentage/status readout -- parked at the bottom of the screen,
+            clear of the dot/line network above, and fades out once ready
+            rather than staying visible alongside the Enter pill. */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: "6%",
+            transform: "translateX(-50%)",
+            textAlign: "center",
+            opacity: ready ? 0 : 1 - burstAmount,
+            pointerEvents: "none",
+            transition: "opacity 0.4s ease",
+          }}
+        >
+          <div className="font-nunito tabular-nums text-xl sm:text-2xl text-white tracking-tight">
             {displayPercent}%
           </div>
-          <div
-            className="font-nunito text-xs sm:text-sm uppercase tracking-[0.2em] mt-1"
-            style={{ color: "#ffb37a", opacity: 0.8 * (1 - burstAmount), transition: "opacity 0.3s ease" }}
-          >
+          <div className="font-nunito text-[10px] sm:text-xs uppercase tracking-[0.2em] mt-1" style={{ color: "#ffb37a" }}>
             {statusFor(displayPercent)}
           </div>
         </div>
+        {/* The real click target once resolved -- the logo/circle above is
+            purely decorative now; entering the site is driven by this text,
+            not by clicking the mark. */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: `calc(50% - 24px + ${boxSizeCss} / 2 + 24px)`,
+            transform: "translateX(-50%)",
+            opacity: enterOpacity,
+            pointerEvents: ready ? "auto" : "none",
+            transition: "opacity 0.5s ease",
+          }}
+        >
+          <button
+            ref={enterButtonRef}
+            type="button"
+            aria-label="Enter site"
+            onClick={onEnter}
+            disabled={!ready}
+            className="font-nunito uppercase tracking-[0.2em] text-sm sm:text-base text-white px-8 py-3"
+            style={{
+              cursor: ready ? "pointer" : "default",
+              // No pill/border/glow left to frame this -- just the word
+              // itself, so the browser's own default focus rectangle (this
+              // button is auto-focused once ready) is suppressed too rather
+              // than left as the last remaining bit of chrome.
+              outline: "none",
+            }}
+          >
+            Enter
+          </button>
+        </div>
+        {/* Decorative glass frame around the resolved logo -- no longer
+            interactive; the Enter pill above is the real button now. The
+            breathing pulse lives on an inner element (see below) so its own
+            scale-based keyframe never fights this div's centering transform
+            -- a CSS animation's keyframe values win the cascade over inline
+            styles for whichever properties they declare, so animating scale
+            directly on a translate(-50%,-50%)-centered element would replace
+            that centering transform outright. */}
         <div
           style={{
             position: "absolute",
@@ -538,26 +617,20 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
             height: boxSizeCss,
             transform: "translate(-50%, -50%)",
             opacity: enterOpacity,
-            pointerEvents: ready ? "auto" : "none",
+            pointerEvents: "none",
             transition: "opacity 0.4s ease",
           }}
         >
-          <button
-            ref={enterButtonRef}
-            type="button"
-            aria-label="Enter site"
-            onClick={onEnter}
-            disabled={!ready}
-            className={`h-full w-full rounded-full ${ready ? "loading-enter-pulse" : ""}`}
+          <div
+            className={ready ? "loading-enter-pulse" : ""}
             style={{
+              width: "100%",
+              height: "100%",
+              borderRadius: "9999px",
               background: "rgba(255,255,255,0.08)",
               backdropFilter: "blur(6px)",
               border: "1px solid rgba(210,90,26,0.6)",
               boxShadow: "0 0 26px 4px rgba(210,90,26,0.5)",
-              cursor: ready ? "pointer" : "default",
-              // Themed in place of the browser's default blue focus ring,
-              // matching the site's accent rather than clashing with it.
-              outlineColor: "#ffb37a",
             }}
           />
         </div>

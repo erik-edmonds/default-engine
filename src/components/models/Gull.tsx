@@ -4,7 +4,13 @@ import { useGLTF, useAnimations } from '@react-three/drei'
 export function Gull(props) {
   const group = useRef()
   const { nodes, materials, animations } = useGLTF('/models/gull.glb')
+  animations[0].name = "Flying"
+  animations[1].name = "Idle"
   const { actions } = useAnimations(animations, group)
+  useEffect(() => {
+    actions["Idle"]?.reset().play()
+  }, [])
+
   return (
     <group ref={group} {...props} dispose={null}>
       <group name="Sketchfab_Scene">

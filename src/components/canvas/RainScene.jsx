@@ -53,7 +53,7 @@ export default function RainScene() {
   return (
     <canvas
       id="bg-canvas"
-      className={`pointer-events-none fixed inset-0 z-20 h-full w-full ${isRaining ? "visible" : "invisible"}`}
+      className={`pointer-events-none fixed inset-0 z-20 h-full w-full transition-opacity duration-[2500ms] ${isRaining ? "opacity-100" : "opacity-0"}`}
       width="1920"
       height="993"
       aria-label="Animated raindrops on glass"

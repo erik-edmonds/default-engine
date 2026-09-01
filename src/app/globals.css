@@ -105,3 +105,42 @@ body {
     animation: none;
   }
 }
+
+/* Traces a small circle at constant speed (linear, not eased) -- the hand
+   pointer itself orbits, the way a fingertip would while dragging in a
+   circle, matching the reference clip's own looping hand gesture. */
+@keyframes hint-hand-loop {
+  0% { transform: translate(5px, 0); }
+  12.5% { transform: translate(3.5px, 3.5px); }
+  25% { transform: translate(0, 5px); }
+  37.5% { transform: translate(-3.5px, 3.5px); }
+  50% { transform: translate(-5px, 0); }
+  62.5% { transform: translate(-3.5px, -3.5px); }
+  75% { transform: translate(0, -5px); }
+  87.5% { transform: translate(3.5px, -3.5px); }
+  100% { transform: translate(5px, 0); }
+}
+
+.hint-icon {
+  animation: hint-hand-loop 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint-icon {
+    animation: none;
+  }
+}
+
+/* HotspotJoystick's knob springs back to center once released (or once a
+   drag is cancelled by staying under the dead zone) -- applied only while
+   NOT actively dragging, so the drag itself stays a direct 1:1 follow with
+   no lag fighting the transition. */
+.joystick-stick-settle {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .joystick-stick-settle {
+    transition-duration: 0.01ms;
+  }
+}

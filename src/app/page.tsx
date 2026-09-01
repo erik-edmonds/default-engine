@@ -24,7 +24,9 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
 import { NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
 import Rail from "@/components/layout/Rail";
+import { HotspotJoystick } from "@/components/layout/HotspotJoystick";
 import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
+import { InteractionHint } from "@/components/layout/InteractionHint";
 import { Mouse } from "@/helpers/CameraHelpers";
 import { Anchor } from "@/helpers/Interfaces";
 
@@ -144,6 +146,10 @@ export default function Page() {
     setHotspotNav((prev) => (id === prev.current ? prev : { current: id, departingFrom: prev.current }));
   }, []);
   const [rainTriggered, setRainTriggered] = useState(false);
+  // Drives InteractionHint's dismissal: flips true on the first genuine
+  // interaction (a hotspot, the Poke Ball, or the Gear), or after an ~8s
+  // timeout below if the user hasn't touched anything yet.
+  const [hasInteracted, setHasInteracted] = useState(false);
   // Fixed initial value (SSR-safe), corrected on the client -- same pattern
   // as getTimeOfDay() above. Gates the heaviest postprocessing passes, which
   // are the single biggest mobile GPU-performance risk in this scene.
@@ -155,6 +161,11 @@ export default function Page() {
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
   const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
+  // page.tsx otherwise only *writes* this atom (see setInSkyJourneyAtom
+  // above) -- this is a second, independent read, purely to gate the
+  // compass HUD's visibility during the sky sequence. Icon.tsx already
+  // reads the same atom for the same "hide UI mid-sequence" purpose.
+  const isInSkyJourneyValue = useAtomValue(inSkyJourney);
   const goHomeRequestValue = useAtomValue(goHomeRequest);
   const setMusicEnabled = useSetAtom(musicEnabled);
   const playSfx = useSfx();
@@ -192,6 +203,14 @@ export default function Page() {
   useEffect(() => {
     if (isRaining) triggerRain();
   }, [isRaining, triggerRain]);
+
+  // Auto-dismiss the onboarding hint if the user hasn't interacted with
+  // anything within a few seconds of the site starting, so it never lingers.
+  useEffect(() => {
+    if (!started) return;
+    const timer = setTimeout(() => setHasInteracted(true), 8000);
+    return () => clearTimeout(timer);
+  }, [started]);
 
   useEffect(() => {
     const SKY_JOURNEY_DISTANCE = 600;
@@ -264,6 +283,7 @@ export default function Page() {
   useEffect(() => { setTheme(day); }, [day, setTheme]);
 
   const flyToHotspot = (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
+    setHasInteracted(true);
     beginHotspotTransition(id);
     playSfx("whoosh");
     cameraControllerRef.current?.flyTo(position, rotation);
@@ -280,7 +300,18 @@ export default function Page() {
     handleUpperIslandHotspotClick,
   ];
 
+  // Fixed screen-space directions for the mobile joystick (HotspotJoystick) --
+  // labels reuse ANCHORS' existing copy for the same landmarks rather than
+  // inventing new strings.
+  const JOYSTICK_DIRECTIONS = {
+    up: { id: "moon-island", label: "Donate", onSelect: handleMoonIslandHotspotClick },
+    down: { id: "home", label: "Home", onSelect: handleHomeHotspotClick },
+    left: { id: "left-tree", label: "Models", onSelect: handleLeftTreeHotspotClick },
+    right: { id: "upper", label: "Contact", onSelect: handleUpperIslandHotspotClick },
+  };
+
   const handleUpClick = async () => {
+    setHasInteracted(true);
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
     setMusicEnabled(false);
@@ -300,6 +331,7 @@ export default function Page() {
   };
 
   const handleDownClick = async () => {
+    setHasInteracted(true);
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
     setMusicEnabled(false);
@@ -335,7 +367,7 @@ export default function Page() {
   return (
     <NavigationProvider>
       <div className="relative h-screen w-screen overflow-hidden">
-        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${motion || hotspotNav.current !== "home" || !started ? "invisible" : "visible"}`}>
+        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${!started ? "invisible" : "visible"}`}>
           <div className="relative">
             {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-white">Erik Edmonds</h1>}
             {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-white">Data Scientist</p>}
@@ -350,11 +382,10 @@ export default function Page() {
           <SoundToggle />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
-        {/* Phone/tablet only -- on desktop this navigation lives in the
-            (currently disabled) side rail above instead. Below `lg` there's
-            no side rail, so without this the section dots have no mobile
-            equivalent at all. */}
-        <div className="flex lg:hidden absolute bottom-28 left-1/2 -translate-x-1/2 z-10 bg-[#d25a1a]/50 rounded-full px-4 py-2">
+        {/* Superseded by HotspotJoystick below -- kept here, commented out
+            rather than deleted, as a one-block revert path (Rail.tsx itself
+            is untouched and still fully functional). */}
+        {/* <div className="flex lg:hidden absolute bottom-28 left-1/2 -translate-x-1/2 z-10 bg-[#d25a1a]/50 rounded-full px-4 py-2">
           <Rail
             sections={SECTIONS}
             active={active}
@@ -362,7 +393,20 @@ export default function Page() {
             phase={day}
             orientation="horizontal"
           />
-        </div>
+        </div> */}
+        {/* Mobile/touch only -- the same isCoarsePointer signal that hides
+            the 3D ring hotspots below, so the two are perfectly
+            complementary: rings show exactly when the joystick doesn't.
+            Desktop keeps only the 3D rings, unchanged. */}
+        {isCoarsePointer && (
+          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-10">
+            <HotspotJoystick
+              directions={JOYSTICK_DIRECTIONS}
+              currentId={hotspotNav.current}
+              visible={sceneReady && started && !motion && !isInSkyJourneyValue}
+            />
+          </div>
+        )}
         {/* "percentage" (PCFShadowMap), not "soft" (PCFSoftShadowMap) --
             three.js has deprecated PCFSoftShadowMap and silently substitutes
             PCFShadowMap for it at runtime anyway (with a console warning),
@@ -389,7 +433,13 @@ export default function Page() {
               <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} />
               <AvatarController ref={avatarControllerRef} />
               {!isCoarsePointer && <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />}
-              {sceneReady && started && <>
+              {/* Rings hidden on mobile/touch -- their hover-preview affordance
+                  (grow, glow, sonar pulse) needs a real hover state that
+                  touch doesn't have, and most of the 4 are off-screen at
+                  once on a narrow mobile viewport anyway. HotspotJoystick
+                  (mounted below, outside the Canvas) is the touch-facing
+                  replacement. */}
+              {sceneReady && started && !isCoarsePointer && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
                 <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
@@ -398,6 +448,7 @@ export default function Page() {
               </>}
             </group>
             {/* dragged && rotate && <Mouse /> */}
+            <OrbitControls />
             <CameraController ref={cameraControllerRef} />
             <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
             <Preload all />
@@ -409,6 +460,7 @@ export default function Page() {
         {!started && (
           <LoadingScreen ref={loadingScreenRef} progress={progress} isCoarsePointer={isCoarsePointer} onEnter={handleEnter} />
         )}
+        <InteractionHint visible={started} dismissed={hasInteracted} />
         {rainTriggered && <RainScene />}
       </div>
     </NavigationProvider>

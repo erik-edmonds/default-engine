@@ -1,9 +1,9 @@
 # TODO:
 
 # Small Tweaks needed
-- [ ] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
+- [x] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
 - [ ] Rain hits screen on cloud click, but ends abruptly. Needs to slowly stop.
-- [ ] Aurora Borealis needs to transition out first, so there's no overlap with the dawn skyscene
+- [x] Aurora Borealis needs to transition out first, so there's no overlap with the dawn skyscene
 - [ ] Slowly transition in/out flame 
 
 # ANIMATIONS!!!
@@ -20,17 +20,17 @@
 - [ ] Logo, that fills with color on percentage loaded
 
 # Homepage 
-- [ ] Fix Camera rubix cube 
-    - [ ] Rotation moves it, while it should stay about 5% from the right and bottom edge
-    - [ ] Currently has logic to move on drag, but is very jerky and unnatural right now. Needs easing and spring reaction
+- [x] Fix Camera rubix cube 
+    - [x] Rotation moves it, while it should stay about 5% from the right and bottom edge
+    - [x] Currently has logic to move on drag, but is very jerky and unnatural right now. Needs easing and spring reaction
 - [ ] Add guassian blur in background? 
     - [ ] Focus follows the mouse
 - [x] transition on change from sun/evening/night
     - [x] transition finished, but need an object to interact with to make it change.
-        - [ ] Object added, needs to be stylized, feels a bit boring.
-            - [ ] A cube that rotates, each face is a setting 
+        - [x] Object added, needs to be stylized, feels a bit boring.
+            - [x] A cube that rotates, each face is a setting 
 - [ ] Add frames on the islands
-- [ ] Dot nav added
+- [x] Dot nav added
     - [x] Needs background removed
     - [ ] Needs to be stylized
     - [ ] Functionality needed
@@ -45,7 +45,7 @@
         - [ ] Avatar disappears behind white like
         - [ ] Dragonite appears as well, so when white light is gone, Dragonite is left 
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
-- [ ] Stylize up/down button
+- [x] Stylize up/down button
     - [ ] Maybe text boxes?
 - [x] Add Dots over iteractive items
     - [x] On hover, have the outer ring pulse
@@ -56,7 +56,7 @@
     - SEE: https://jordan-breton.com/
 - [x] Create logo
 - [x] Bloom for sun and moon
-    - [ ] Bloom added but now texture doesn't show
+    - [x] Bloom added but now texture doesn't show
 
 # Fix Lighting
     - [ ] Add ambient occlusion

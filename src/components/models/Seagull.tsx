@@ -1,9 +1,21 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useMemo } from 'react'
 import { useGLTF, useAnimations } from '@react-three/drei'
+import { useGraph } from '@react-three/fiber'
+import { SkeletonUtils } from 'three-stdlib'
 
 export function Seagull(props) {
   const group = useRef()
-  const { nodes, materials, animations } = useGLTF('/models/seagull.glb')
+  const { scene, materials, animations } = useGLTF('/models/seagull.glb')
+  // useGLTF caches nodes/scene globally by URL, so every mounted <Seagull>
+  // instance would otherwise share the exact same joint/skeleton objects --
+  // fine for materials/geometry (not scene-graph nodes), but the shared
+  // bone hierarchy means each instance's <primitive object={nodes._rootJoint}>
+  // steals it from whichever instance mounted before it (three.js detaches
+  // an Object3D from its old parent on re-add), leaving only the
+  // last-mounted bird correctly posed. Cloning per instance (bone-remapping
+  // included) and rebuilding `nodes` from the clone fixes this.
+  const clone = useMemo(() => SkeletonUtils.clone(scene), [scene])
+  const { nodes } = useGraph(clone)
   animations[0].name = "Flying"
   const { actions } = useAnimations(animations, group)
   useEffect(() => {
@@ -14,7 +26,6 @@ export function Seagull(props) {
       <group name="Sketchfab_Scene">
         <group
           name="Sketchfab_model"
-          position={[-8.706, 18.928, -8.488]}
           rotation={[-1.567, 0, -Math.PI / 2]}
           scale={0.113}>
           <group name="b8e0a8d2290944cc82d96cf3c33c11dafbx" rotation={[Math.PI / 2, 0, 0]}>

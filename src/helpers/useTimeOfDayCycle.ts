@@ -9,7 +9,7 @@ import {
   nextPhase,
   type TimeOfDay,
 } from "@/components/canvas/environmentPresets"
-import { prefersReducedMotion } from "@/helpers/motion"
+import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 
 // `from`/`phase`/`seconds` together describe ONE transition: animate from
 // `from`'s preset into `phase`'s preset, taking `seconds`. Every consumer
@@ -73,18 +73,47 @@ export function useTimeOfDayCycle(initialPhase: TimeOfDay) {
     setTransition({ from: phase, phase, seconds: 0, holdSeconds: 0 })
   }, [])
 
+  // Whether the CURRENTLY in-flight transition has actually finished
+  // animating -- auto-ticks are scheduled to fire exactly when their own
+  // tween completes (see the effect below), so `transition.phase` is safe
+  // to treat as "on screen" there, but a CLICK can land at any arbitrary
+  // point mid-tween, when the true on-screen state is still closer to
+  // `transition.from`. Without this, skipAhead (below) always trusted
+  // `prev.phase` -- the tween's not-yet-reached TARGET -- as if it were
+  // already showing, which skipped an entire phase on click (e.g. clicking
+  // mid a night->dawn auto-transition jumped straight to dawn, then
+  // animated on to day, instead of just finishing the transition to dawn).
+  // Mirrors PhaseCube.tsx's own settledPhase/settleTimerRef, which solves
+  // the identical problem for that component's local display only.
+  const settledRef = useRef(true)
+
+  useEffect(() => {
+    settledRef.current = transition.seconds <= 0
+    if (transition.seconds <= 0) return
+    const id = setTimeout(() => {
+      settledRef.current = true
+    }, tweenDuration(transition.seconds) * 1000)
+    return () => clearTimeout(id)
+  }, [transition])
+
   // The cube's click: skip ahead fast, then hold there (see holdSeconds'
   // own doc comment) before auto-progression resumes. A functional update
   // (rather than trusting a phase value computed elsewhere) means a click
   // landing in the same React batch as an auto-tick still advances from the
-  // tick's result instead of clobbering it with a stale value.
+  // tick's result instead of clobbering it with a stale value. Bases the
+  // step on `prev.phase` only once that phase has actually settled on
+  // screen (settledRef) -- otherwise steps from `prev.from`, completing the
+  // still in-flight transition at click speed rather than skipping past it.
   const skipAhead = useCallback(() => {
-    setTransition((prev) => ({
-      from: prev.phase,
-      phase: nextPhase(prev.phase),
-      seconds: TRANSITION_SECONDS,
-      holdSeconds: TRANSITION_SECONDS + CLICK_DWELL_SECONDS,
-    }))
+    setTransition((prev) => {
+      const base = settledRef.current ? prev.phase : prev.from
+      return {
+        from: base,
+        phase: nextPhase(base),
+        seconds: TRANSITION_SECONDS,
+        holdSeconds: TRANSITION_SECONDS + CLICK_DWELL_SECONDS,
+      }
+    })
   }, [])
 
   useEffect(() => {

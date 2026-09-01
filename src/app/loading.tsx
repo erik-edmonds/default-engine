@@ -1,17 +1,38 @@
 "use client"
 
-import { useProgress, Loader } from "@react-three/drei";
+import { useProgress } from "@react-three/drei";
 import { useEffect, useRef, useState } from "react";
 
+// This renders as a persistent overlay alongside page.tsx, not a Suspense
+// fallback that unmounts once page.tsx is ready (confirmed: both are
+// simultaneously present in the DOM) -- so, like drei's own default
+// <Loader/> it replaced, it must hide *itself* once nothing is loading,
+// via useProgress().active, rather than relying on ever being unmounted
+// from outside. Without this, this overlay -- being opaque and full-screen,
+// unlike drei's original -- would permanently block the real scene the
+// moment anything (e.g. Bloom mounting for the first time right as the
+// loading screen is dismissed) briefly ticks `active` back to true.
+const HIDE_DEBOUNCE_MS = 300 // matches drei's own Loader
+
 export default function Loading() {
+  const { active } = useProgress();
+  const [shown, setShown] = useState(active);
+
+  useEffect(() => {
+    if (active === shown) return;
+    const timer = setTimeout(() => setShown(active), HIDE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [active, shown]);
+
+  if (!shown) return null;
+
   return (
-    <>
-      <div className="flex size-screen items-center justify-center">
-        <div>
-          <Loader />
-        </div>
-      </div>
-    </>
+    <div
+      className="fixed inset-0 flex items-center justify-center"
+      style={{ backgroundColor: "#0a0a0a", opacity: active ? 1 : 0, transition: "opacity 300ms ease" }}
+    >
+      <LoadingIcon />
+    </div>
   )
 }
 
