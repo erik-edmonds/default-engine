@@ -3,6 +3,8 @@ import React, { useRef, useEffect, useState, useMemo } from 'react'
 import { useGLTF, useAnimations, useCursor } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 
+import { useShadows } from '@/helpers/useShadows'
+
 const BEAM_LOCAL_TARGET: [number, number, number] = [1.0430, 0.4250, -0.3359]
 const BEAM_LOCAL_LENGTH = 1.1753
 const BEAM_LOCAL_ROTATION: [number, number, number] = [-0.2951, 0.1874, -1.1273]
@@ -15,6 +17,7 @@ const BEAM_HOLD_SECONDS = 2.8
 const BEAM_RETRACT_SECONDS = 0.45
 
 export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key: string]: any }) {
+  const rootRef = useRef<THREE.Group>(null)
   const ballGroupRef = useRef<THREE.Group>(null)
   const beamRef = useRef<THREE.Mesh>(null)
   const beamGlowRef = useRef<THREE.Mesh>(null)
@@ -135,6 +138,7 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
   })
 
   useCursor(hovered)
+  useShadows(rootRef)
 
   const initialPointsArray = useMemo(() => new Float32Array(particleCount * 3), [])
 
@@ -150,7 +154,10 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
   }, [])
 
   return (
-    <group onPointerOver={() => set(true)} onPointerOut={() => set(false)} {...props}>
+    // useShadows skips transparent materials, so the ball itself casts but the
+    // release beam and its glow cone -- both additive, both meshes -- don't
+    // throw solid silhouettes across the sand.
+    <group ref={rootRef} onPointerOver={() => set(true)} onPointerOut={() => set(false)} {...props}>
       <mesh
         ref={beamRef}
         geometry={coreGeometry}

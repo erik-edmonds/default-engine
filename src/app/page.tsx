@@ -5,25 +5,27 @@ import dynamic from "next/dynamic";
 import { Suspense, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
-import { ContactShadows, Preload, useProgress } from "@react-three/drei";
-import { Bloom, EffectComposer, N8AO, Noise } from "@react-three/postprocessing";
-import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled } from "@/helpers/StateProvider";
+import { Gltf, Preload, useGLTF, useProgress } from "@react-three/drei";
+import { Bloom, EffectComposer, N8AO, Noise, ToneMapping } from "@react-three/postprocessing";
+import { ToneMappingMode } from "postprocessing";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest } from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
-import { NavTotems } from "@/components/canvas/NavTotems";
+import { SunFlare } from "@/components/canvas/SunFlare";
 import { type TimeOfDay } from "@/components/canvas/environmentPresets";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
+import { HotspotPortal, portalTransformFor } from "@/components/canvas/HotspotPortal";
+import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
 import { NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
-import Rail from "@/components/layout/Rail";
 import { HotspotJoystick } from "@/components/layout/HotspotJoystick";
 import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
 import { InteractionHint } from "@/components/layout/InteractionHint";
@@ -84,6 +86,77 @@ const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
 const HOME_VIEWPOINT_POSITION = ISLAND_CAMERA_POSITION;
 const HOME_VIEWPOINT_ROTATION = ISLAND_CAMERA_ROTATION;
 
+// One portal standing permanently at each destination viewpoint, framed by a
+// carved surround (HotspotPortal.tsx). The ring markers still own navigation --
+// fly to a hotspot and its portal is what's waiting in front of the camera;
+// double-clicking the portal is what enters it.
+//
+// Deliberately NOT one for "home": home's viewpoint is the establishing shot
+// of the whole island, and a portal placed in front of that camera by the
+// same rule would sit dead centre over the avatar and the scene. Three
+// destinations, three portals -- which also matches the three distinct GLBs
+// the portfolio page uses (it repeats orange.glb for its fourth).
+//
+// id/name/author/bg/model values are lifted verbatim from app/portfolio's own
+// <Frame> usages, so these are the same portals that page renders -- the only
+// thing added here is where they stand. `hotspotId` is the island waypoint
+// each one is parked in front of; `id` is what Card.tsx's Frame matches its
+// own `/item/:id` route on.
+const HOTSPOT_PORTALS = [
+  {
+    hotspotId: "left-tree",
+    ...portalTransformFor(LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION),
+    id: "01",
+    name: "1",
+    author: "Omar Faruq Tawsif",
+    bg: "#e4cdac",
+    src: "/models/pickles.glb",
+    modelScale: 8,
+    modelPosition: [0, -0.7, -2] as [number, number, number],
+  },
+  {
+    hotspotId: "moon-island",
+    ...portalTransformFor(MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION),
+    id: "02",
+    name: "2",
+    author: "Omar Faruq Tawsif",
+    bg: "#f0f0f0",
+    src: "/models/tea.glb",
+    modelScale: 1,
+    modelPosition: [0, -2, -3] as [number, number, number],
+  },
+  {
+    hotspotId: "upper",
+    ...portalTransformFor(UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION),
+    id: "03",
+    name: "3",
+    author: "Omar Faruq Tawsif",
+    bg: "#d1d1ca",
+    src: "/models/orange.glb",
+    modelScale: 2,
+    modelPosition: [0, -0.8, -4] as [number, number, number],
+  },
+];
+
+// Warms the portal models alongside everything else during the loading screen
+// rather than leaving them to <Preload all />'s scene-graph walk alone.
+// useGLTF.preload is a static method, not a hook, so module scope is fine.
+HOTSPOT_PORTALS.forEach((portal) => useGLTF.preload(portal.src));
+
+// Where the camera ends up when a portal is entered: just short of the plane,
+// on the viewpoint side. The portal material's own blend (0 -> 1) is what
+// actually takes you "through" -- the flight only has to close the distance.
+const PORTAL_ENTER_INSET = 0.3;
+
+// The viewpoint each portal is parked in front of, so backing out of a portal
+// can return to exactly where you entered from.
+const HOTSPOT_VIEWPOINTS: Record<string, { position: THREE.Vector3; rotation: THREE.Euler }> = {
+  "left-tree": { position: LEFT_TREE_VIEWPOINT_POSITION, rotation: LEFT_TREE_VIEWPOINT_ROTATION },
+  "moon-island": { position: MOON_ISLAND_VIEWPOINT_POSITION, rotation: MOON_ISLAND_VIEWPOINT_ROTATION },
+  upper: { position: UPPER_ISLAND_VIEWPOINT_POSITION, rotation: UPPER_ISLAND_VIEWPOINT_ROTATION },
+  home: { position: HOME_VIEWPOINT_POSITION, rotation: HOME_VIEWPOINT_ROTATION },
+};
+
 export default function Page() {
   const router = useRouter();
   const { setTheme } = useAppState();
@@ -116,7 +189,12 @@ export default function Page() {
   // component's tree, so it needs this atom rather than local state to know
   // to hide itself while the loading screen is up.
   const setTitleScreenActive = useSetAtom(titleScreenActive);
-  useEffect(() => { setTitleScreenActive(sceneReady && !started); }, [sceneReady, started, setTitleScreenActive]);
+  // Must match the LoadingScreen's own mount condition below, which is plain
+  // `!started`. Gating on `sceneReady && !started` only covered the window
+  // AFTER loading finished but before Enter -- so for the whole time assets
+  // were actually loading (sceneReady false), the logo sat on top of the
+  // loading screen.
+  useEffect(() => { setTitleScreenActive(!started); }, [started, setTitleScreenActive]);
   const [nameStamped, setNameStamped] = useState(false);
   const [skyText, setSkyText] = useState("");
   const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
@@ -146,6 +224,14 @@ export default function Page() {
     setHotspotNav((prev) => (id === prev.current ? prev : { current: id, departingFrom: prev.current }));
   }, []);
   const [rainTriggered, setRainTriggered] = useState(false);
+  // Entering/leaving a portal is expressed entirely as the wouter route
+  // Card.tsx's Frame already reads (`/item/:id`), so there's no separate
+  // "which portal is open" state here. All wouter calls live in
+  // PortalRouteSync (inside <Canvas>) because wouter reads `location` at
+  // render and this page is statically prerendered; this atom is how we ask
+  // it to close an open portal.
+  const requestPortalExit = useSetAtom(portalExitRequest);
+  const closePortal = useCallback(() => requestPortalExit((n) => n + 1), [requestPortalExit]);
   // Drives InteractionHint's dismissal: flips true on the first genuine
   // interaction (a hotspot, the Poke Ball, or the Gear), or after an ~8s
   // timeout below if the user hasn't touched anything yet.
@@ -211,12 +297,22 @@ export default function Page() {
     if (isRaining) triggerRain();
   }, [isRaining, triggerRain]);
 
-  // Auto-dismiss the onboarding hint if the user hasn't interacted with
-  // anything within a few seconds of the site starting, so it never lingers.
+  // The onboarding hint stays up until the user actually moves the pointer --
+  // it's telling them the scene is interactive, so it should persist for
+  // exactly as long as they haven't worked that out. This replaces a fixed 8s
+  // auto-dismiss, which could time out while someone was still reading it.
+  // (Real interactions -- a hotspot, the Poke Ball, the Gear -- also set this,
+  // elsewhere.)
   useEffect(() => {
     if (!started) return;
-    const timer = setTimeout(() => setHasInteracted(true), 8000);
-    return () => clearTimeout(timer);
+    const dismiss = () => setHasInteracted(true);
+    // Capture phase: the pointer spends most of its time over the r3f canvas,
+    // which handles pointer events itself and can stop them propagating up to
+    // window. Capturing runs on the way DOWN from window, so this sees the
+    // move regardless of what the canvas does with it afterwards.
+    const opts = { once: true, capture: true } as const;
+    window.addEventListener("pointermove", dismiss, opts);
+    return () => window.removeEventListener("pointermove", dismiss, opts);
   }, [started]);
 
   useEffect(() => {
@@ -293,12 +389,16 @@ export default function Page() {
     setHasInteracted(true);
     beginHotspotTransition(id);
     playSfx("whoosh");
+    // Leaving for any hotspot closes whatever portal was open -- otherwise a
+    // blended-in portal would stay blended while the camera flew away from it.
+    closePortal();
     cameraControllerRef.current?.flyTo(position, rotation);
   };
   const handleUpperIslandHotspotClick = () => flyToHotspot("upper", UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION);
   const handleLeftTreeHotspotClick = () => flyToHotspot("left-tree", LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION);
   const handleMoonIslandHotspotClick = () => flyToHotspot("moon-island", MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION);
   const handleHomeHotspotClick = () => flyToHotspot("home", HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION);
+
 
   const RAIL_FLY_HANDLERS = [
     handleHomeHotspotClick,
@@ -357,6 +457,9 @@ export default function Page() {
     skyTextRef.current = "";
     setSkyText("");
     beginHotspotTransition("home");
+    // A second way out of a hotspot that doesn't go through flyToHotspot, so
+    // it has to close an open portal itself.
+    closePortal();
     await Promise.all([
       cameraControllerRef.current?.flyTo(HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION),
       avatarControllerRef.current?.returnHome(),
@@ -385,7 +488,6 @@ export default function Page() {
           <span className="max-w-xl">{skyText}</span>
         </div>
         <div className={`flex flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && !started ? "invisible opacity-0" : "visible opacity-100"}`}>
-          {/* <Rail sections={SECTIONS} active={active} onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }} phase={day} side="right" /> */}
           <SoundToggle currentPhase={currentPhase} />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
@@ -421,7 +523,7 @@ export default function Page() {
             requested directly instead of through the deprecated name. The
             softness Environment.tsx's directional light relies on comes
             from its own shadow-radius, not this type. */}
-        <Canvas id="three-scene-canvas" shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 45 }}
+        <Canvas id="three-scene-canvas" shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 50 }}
           onPointerDown={() => {
             setDragged(true)
           }}
@@ -429,9 +531,30 @@ export default function Page() {
           gl={{ preserveDrawingBuffer: true }} dpr={[1, 2]} style={{ width: "100vw", height: "100vh" }}>
           <EffectComposer>
             <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
+            {/* Before Bloom, so the flare's hot core blooms like any other
+                highlight rather than sitting flat on top of the image. */}
+            <SunFlare />
             {/* Held back until Enter is clicked, so the world visibly "lights up"
-                as you enter rather than looking fully lit under the loading screen. */}
-            {started ? <Bloom mipmapBlur={false} luminanceThreshold={1} intensity={1} /> : <></>}
+                as you enter rather than looking fully lit under the loading screen.
+                luminanceThreshold was 1 -- "strictly brighter than white" -- so
+                with the composer running a HalfFloat buffer essentially nothing
+                ever cleared it. 0.9 catches the sun/moon disc, the water's
+                specular dapples, the campfire core and the hottest key-facing
+                sand, and nothing else. The 0.3 smoothing is a soft knee so
+                pixels crossing the threshold as the sun travels its arc fade in
+                instead of popping (the default 0.03 is knife-edged).
+                mipmapBlur was explicitly false, which forces postprocessing's
+                deprecated half-resolution Kawase path -- true is both wider and
+                cheaper. */}
+            {started ? <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.3} intensity={0.85} radius={0.7} levels={7} /> : <></>}
+            {/* Last, and the single biggest change to how this scene reads.
+                <EffectComposer> pins renderer.toneMapping to NoToneMapping
+                while it's mounted, and nothing was putting a curve back -- so
+                every linear value above 1 clipped flat to white (the lake
+                glare, day's brightest sand losing all texture). AgX rolls
+                highlights off filmically instead. Outside the `started` gate
+                so the curve exists on frame one. */}
+            <ToneMapping mode={ToneMappingMode.AGX} />
           </EffectComposer>
           <color attach="background" args={["#0a0a0a"]} />
           {islandMounted && <Suspense fallback={null}>
@@ -439,7 +562,17 @@ export default function Page() {
             <group>
               <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} showSeagulls={currentPhase !== "night"} />
               <AvatarController ref={avatarControllerRef} />
-              {!isCoarsePointer && <ContactShadows opacity={0.42} color="black" position={[0, -10, 0]} scale={50} blur={1.8} far={40} resolution={512} />}
+              {/* <ContactShadows> removed. Its plane sat at y = -10, but the
+                  water surface resolves to about y = -3.44 -- so it was 6.6
+                  units UNDERWATER, and with the camera at y = -1.33 pitched up
+                  ~8 degrees the bottom of frame only reaches y = -10 some 34
+                  units out, well past the island's ~14 unit radius. It was
+                  never in shot. It was not free either: drei defaults
+                  frames={Infinity} and renders the whole scene again with an
+                  override material every frame, plus four fullscreen blur
+                  passes. Real cast shadows (Environment.tsx's key, now at
+                  2048 over a +/-26 frustum, with the props actually flagged to
+                  cast -- see helpers/useShadows.ts) do the job properly. */}
               {/* Rings hidden on mobile/touch -- their hover-preview affordance
                   (grow, glow, sonar pulse) needs a real hover state that
                   touch doesn't have, and most of the 4 are off-screen at
@@ -453,9 +586,41 @@ export default function Page() {
                 <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} hidden={isHotspotHidden("moon-island")} pendingOffscreen={isHotspotPendingOffscreen("moon-island")} onOffscreen={() => handleHotspotOffscreen("moon-island")} />
                 <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} hidden={isHotspotHidden("home")} pendingOffscreen={isHotspotPendingOffscreen("home")} onOffscreen={() => handleHotspotOffscreen("home")} />
               </>}
+              {/* Outside the ring-marker gate above: the portals are real
+                  objects standing in the world, not overlay markers, so they
+                  stay put on touch devices too (where the joystick, not the
+                  rings, does the navigating). */}
+              {/* Permanently in the scene -- they never appear or disappear.
+                  Note this means three MeshPortalMaterials each render their
+                  whole interior to a framebuffer every frame, on top of N8AO +
+                  Bloom + the shadow map; if frame time becomes a problem, the
+                  portals' `resolution` is the first dial. */}
+              {HOTSPOT_PORTALS.map((portal) => (
+                <HotspotPortal
+                  key={portal.id}
+                  position={portal.position}
+                  rotation={portal.rotation}
+                  id={portal.id}
+                  name={portal.name}
+                  author={portal.author}
+                  bg={portal.bg}
+                >
+                  <Gltf src={portal.src} scale={portal.modelScale} position={portal.modelPosition} />
+                </HotspotPortal>
+              ))}
             </group>
             {/* dragged && rotate && <Mouse /> */}
             <CameraController ref={cameraControllerRef} />
+            {/* Inside the Canvas on purpose -- it owns every wouter call, and
+                wouter reads `location` at render, which would break this
+                page's static prerender if it ran at the page's top level. */}
+            <PortalRouteSync
+              portals={HOTSPOT_PORTALS}
+              viewpoints={HOTSPOT_VIEWPOINTS}
+              cameraControllerRef={cameraControllerRef}
+              enterInset={PORTAL_ENTER_INSET}
+              onEnter={() => playSfx("whoosh")}
+            />
             <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
             <Preload all />
           </Suspense>}

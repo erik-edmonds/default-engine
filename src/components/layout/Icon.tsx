@@ -28,7 +28,7 @@ export function Favicon() {
         transition: "opacity 0.3s ease",
       }}
     >
-      <svg width={50} height={50} viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+      <svg width={56} height={56} viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
           <circle cx="70" cy="70" r="70" fill={themes[theme]["background"]}/>
           <g fill={themes[theme]["lines"]}>
               <path d="M70 10 L114 35 L70 60 Z"/>

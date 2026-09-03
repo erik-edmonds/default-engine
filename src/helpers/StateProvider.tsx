@@ -88,6 +88,25 @@ export const inSkyJourney = atom(false)
 export const goHomeRequest = atom(0) // incrementing counter -- bumped to request a return-home
 export const thunder = atom(0) // incrementing counter -- bumped on cloud click to trigger a thunder burst
 
+// Incrementing counter -- bumped on cloud click to request rain.
+//
+// Deliberately a counter and not a boolean, and deliberately separate from
+// `raining` above. `raining` is the *output* (RainScene.jsx's DOM overlay
+// reads it); this is the *input*. Clicking a cloud while it's already raining
+// has to restart the hold timer, and a boolean can't express that -- setting
+// an already-true boolean is a no-op React bails out of, so the effect that
+// owns the timer never re-runs and the rain gets stranded on. See
+// RainController.tsx, which is the single owner of the whole rain lifecycle.
+export const rainRequest = atom(0)
+
+// Incrementing counter -- bumped to ask that any open hotspot portal be
+// closed. Exists because closing one means writing a wouter route, and wouter
+// reads `location` at render: calling it from page.tsx's top level breaks the
+// static prerender of "/" with "ReferenceError: location is not defined".
+// PortalRouteSync lives inside <Canvas> (whose children never render on the
+// server) and owns every wouter call; this atom is how the page asks it to act.
+export const portalExitRequest = atom(0)
+
 // True while the LiDAR-scan title screen is up (page.tsx: sceneReady &&
 // !started). Favicon.tsx reads this to hide the home button during load --
 // it's rendered from layout.tsx, outside page.tsx's own component tree, so
@@ -101,9 +120,9 @@ export const titleScreenActive = atom(false)
 // restriction to work around.
 export const sfxEnabled = atom(false)
 
-// Speaker prop's own toggle -- expresses intent only ("I want music
+// Guitar prop's own toggle -- expresses intent only ("I want music
 // playing"), independent of whether the master switch above currently
-// allows anything to be heard. Speaker.tsx gates actual playback on
+// allows anything to be heard. Guitar.tsx gates actual playback on
 // `musicEnabled && sfxEnabled` together, so this is a child control: you
 // can "turn music on" while muted and it starts the moment you unmute,
 // the same way an app's own volume survives your system output being

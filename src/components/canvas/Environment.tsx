@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
-import { Stars, Sparkles, Sky } from "@react-three/drei"
+// NOT drei's <Sky> -- the sky here is the custom two-colour smoothstep dome
+// below. (That import was dead and has been removed.)
+import { Stars, Sparkles } from "@react-three/drei"
 import gsap from "gsap"
 
 import { PRESETS, TRANSITION_SECONDS, type TimeOfDay, type EnvironmentBlend } from "./environmentPresets"
@@ -14,8 +16,28 @@ import { Campfire } from "@/components/models/Campfire"
 import { DeadCampfire } from "@/components/models/DeadCampfire"
 import { Aurora } from "./Aurora"
 import { tweenDuration } from "@/helpers/motion"
+import { sunState } from "@/helpers/sunTracker"
 
-const RIM_LIGHT_POSITION: [number, number, number] = [-2, 7, -9]
+// dirX/dirY/dirZ describe a DIRECTION, but a directionalLight takes a
+// position, and the presets' own vectors range from 31 to 49 units long. That
+// spread used to travel straight into the shadow camera's depth range, so the
+// depth precision -- and therefore the bias needed to avoid acne -- changed
+// with the time of day. Renormalising to one fixed distance every frame makes
+// the shadow frustum's near/far bracket identical in all four phases, which is
+// what lets near/far be pinned tight below. Nothing downstream can tell:
+// shading depends only on direction, and OceanWater.ts normalises the same
+// three fields itself for uSunDirection.
+const KEY_DISTANCE = 75
+// Half-width of the key's orthographic shadow frustum -- the bounding radius
+// of everything that actually casts (the main island, the dock, the upper
+// island, the left tree, the moon island). The old +/-60 spent most of a
+// 1024 map on empty ocean.
+const SHADOW_EXTENT = 26
+// The shadow frustum is centred on the light's target, and a directionalLight
+// targets the world origin by default -- but the island group sits at y = -5.5
+// (see Scene.tsx's <Merged>), so the box used to be aimed well above the
+// geometry it was meant to bracket.
+const SHADOW_TARGET_POSITION: [number, number, number] = [0, -4, 0]
 // Sun and moon both move along this same shared arc (a circle in the X-Y
 // plane) -- see environmentPresets.ts's sunAngle/moonAngle. Center/radius
 // were fit so each preset's angle lands close to where the sun/moon used
@@ -59,6 +81,25 @@ const CAMPFIRE_LIGHT_POSITION: [number, number, number] = [1.5, -1, 1.5]
 // detail is a threshold swap rather than a smooth fade like everything
 // else here.)
 const CAMPFIRE_LIT_THRESHOLD = 0.5
+// The campfire uses a Schmitt trigger (two thresholds), not one, because a
+// single threshold on a linearly-tweened value can only ever fire at a fixed
+// FRACTION of a transition -- and the fraction that's right in one direction
+// is wrong in the other. Day's campfireIntensity is 0 and evening's is 3, so
+// one threshold at 0.5 lit the fire 17% into the day->evening blend: barely
+// past noon, with the sun still high. Raising that single number to fix it
+// would have put the fire out almost immediately during dawn->day instead,
+// where 0.5 is currently right.
+//
+// So: it takes a real dusk to CATCH (2.6, ~87% of the way into evening), but
+// once lit it keeps burning down to embers (CAMPFIRE_LIT_THRESHOLD above)
+// before going out. That leaves dawn lit and the dawn->day burn-out timing
+// exactly as they were, and only delays the evening ignition.
+const CAMPFIRE_IGNITE_THRESHOLD = 2.6
+// How fast the campfire's light eases toward its lit/unlit target, in
+// THREE.MathUtils.damp lambda terms (~1s to close most of the gap). Without
+// this the light would snap on at ignition, since by then the tweened value
+// is already most of the way to full.
+const CAMPFIRE_GLOW_DAMP = 2.5
 
 // Aurora visibility now tracks the sun's own live position (sunOpacity,
 // already tweened every frame below) instead of the preset-level
@@ -193,6 +234,33 @@ export function Environment({
     })
   }, [target, transitionSeconds])
 
+  useEffect(() => {
+    const key = dirRef.current
+    if (!key) return
+
+    // Aim the key's shadow frustum at the island rather than the world origin
+    // (the default). Done here rather than as a prop because both objects have
+    // to exist first, and it only needs doing once.
+    if (shadowTargetRef.current) key.target = shadowTargetRef.current
+
+    // REQUIRED, and the reason the shadow-camera-* props above did nothing
+    // before this. r3f's applyProps happily writes light.shadow.camera.left,
+    // .near and so on, but it only ever calls updateProjectionMatrix() for the
+    // Canvas's own default camera -- never for a nested prop path like
+    // shadow-camera-far. three doesn't rescue that either: LightShadow
+    // .updateMatrices reads shadowCamera.projectionMatrix as-is every frame
+    // and never rebuilds it.
+    //
+    // So the fields were being set and then ignored, and every shadow in this
+    // scene was still being rendered through DirectionalLightShadow's
+    // constructor default -- a +/-5 orthographic box at the world origin. With
+    // the island group sitting at y = -5.5 and spanning ~20 units, that box
+    // covered a small patch of the middle of the scene and nothing else, which
+    // is why so much of the island had no cast shadow at all regardless of
+    // what the props said.
+    key.shadow.camera.updateProjectionMatrix()
+  }, [])
+
   const skyMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -213,7 +281,19 @@ export function Environment({
   const hemiRef = useRef<THREE.HemisphereLight>(null)
   const dirRef = useRef<THREE.DirectionalLight>(null)
   const rimRef = useRef<THREE.DirectionalLight>(null)
+  const fillRef = useRef<THREE.DirectionalLight>(null)
+  const kickRef = useRef<THREE.DirectionalLight>(null)
+  const shadowTargetRef = useRef<THREE.Object3D>(null)
   const campfireLightRef = useRef<THREE.PointLight>(null)
+  // Seeded from the phase we're mounting into, using the LOW threshold: the
+  // delayed ignition is about transitions, so landing directly on a phase
+  // where the fire belongs lit (dawn's embers, evening, night) should just
+  // start lit rather than wait for a rise that already happened.
+  const campfireLitRef = useRef(PRESETS[from].campfireIntensity > CAMPFIRE_LIT_THRESHOLD)
+  const campfireGlowRef = useRef(campfireLitRef.current ? PRESETS[from].campfireIntensity : 0)
+  // Scratch vector, reused every frame rather than allocated -- same pattern
+  // as OceanWater.ts.
+  const keyDir = useRef(new THREE.Vector3())
   const sunGroupRef = useRef<THREE.Group>(null)
   const moonGroupRef = useRef<THREE.Group>(null)
   const sunMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
@@ -223,7 +303,7 @@ export function Environment({
   const litCampfireRef = useRef<THREE.Group>(null)
   const deadCampfireRef = useRef<THREE.Group>(null)
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const b = blendRef.current
 
     skyMaterial.uniforms.uTop.value.set(b.skyTop)
@@ -242,18 +322,59 @@ export function Environment({
       hemiRef.current.groundColor.set(b.hemiGround)
       hemiRef.current.intensity = b.hemiIntensity
     }
+    // KEY -- the sun/moon, and the only shadow caster in the scene.
     if (dirRef.current) {
       dirRef.current.color.set(b.dirColor)
       dirRef.current.intensity = b.dirIntensity
-      dirRef.current.position.set(b.dirX, b.dirY, b.dirZ)
+      keyDir.current.set(b.dirX, b.dirY, b.dirZ).normalize().multiplyScalar(KEY_DISTANCE)
+      dirRef.current.position.copy(keyDir.current)
     }
+    // FILL -- camera side, opposite the key. No shadow: a fill that casts one
+    // isn't a fill any more, it's a second key.
+    if (fillRef.current) {
+      fillRef.current.color.set(b.fillColor)
+      fillRef.current.intensity = b.fillIntensity
+      fillRef.current.position.set(b.fillX, b.fillY, b.fillZ)
+    }
+    // RIM -- behind, and now on the opposite side of frame from the key.
     if (rimRef.current) {
       rimRef.current.color.set(b.rimColor)
       rimRef.current.intensity = b.rimIntensity
+      rimRef.current.position.set(b.rimX, b.rimY, b.rimZ)
     }
+    // KICK -- low front quarter on the key's side; sand/water bounce.
+    if (kickRef.current) {
+      kickRef.current.color.set(b.kickColor)
+      kickRef.current.intensity = b.kickIntensity
+      kickRef.current.position.set(b.kickX, b.kickY, b.kickZ)
+    }
+    // Apparent exposure. This still reaches the image even though
+    // <EffectComposer> pins renderer.toneMapping to NoToneMapping, because the
+    // two are independent: the <ToneMapping> effect in page.tsx compiles
+    // three's own tonemapping_pars_fragment chunk, which declares
+    // `uniform float toneMappingExposure`, and WebGLRenderer.setProgram pushes
+    // this value into it. Environment's useFrame runs at the default priority
+    // 0 and the composer subscribes at 1, so this lands before the render.
+    state.gl.toneMappingExposure = b.exposure
+    // Two thresholds, picked by which state we're currently in -- see
+    // CAMPFIRE_IGNITE_THRESHOLD. Evaluated before the light below so the glow
+    // can follow it.
+    campfireLitRef.current = campfireLitRef.current
+      ? b.campfireIntensity > CAMPFIRE_LIT_THRESHOLD
+      : b.campfireIntensity > CAMPFIRE_IGNITE_THRESHOLD
+
     if (campfireLightRef.current) {
       campfireLightRef.current.color.set(b.campfireColor)
-      campfireLightRef.current.intensity = b.campfireIntensity
+      // Driven off the lit state, not the raw blend: otherwise the fire pit
+      // would cast a growing orange glow through the whole back half of the
+      // afternoon with no flame in it to explain the light.
+      campfireGlowRef.current = THREE.MathUtils.damp(
+        campfireGlowRef.current,
+        campfireLitRef.current ? b.campfireIntensity : 0,
+        CAMPFIRE_GLOW_DAMP,
+        delta,
+      )
+      campfireLightRef.current.intensity = campfireGlowRef.current
     }
     if (sunGroupRef.current) {
       const rad = (b.sunAngle * Math.PI) / 180
@@ -267,6 +388,12 @@ export function Environment({
       // the (fixed) home camera position every frame instead keeps it
       // face-on from that vantage point for the whole arc.
       sunGroupRef.current.lookAt(ISLAND_CAMERA_POSITION)
+      // Hand the sun's live position (and how much glare it should throw) to
+      // SunFlare.tsx, which is mounted in page.tsx's <EffectComposer> --
+      // outside the <Suspense> this component lives in, so a module-level
+      // singleton is the cheapest bridge. See helpers/sunTracker.ts.
+      sunState.position.copy(sunGroupRef.current.position)
+      sunState.flare = b.flareOpacity
     }
     if (moonGroupRef.current) {
       const rad = (b.moonAngle * Math.PI) / 180
@@ -282,7 +409,7 @@ export function Environment({
       auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity * auroraVisibility
     }
 
-    const lit = b.campfireIntensity > CAMPFIRE_LIT_THRESHOLD
+    const lit = campfireLitRef.current
     if (litCampfireRef.current) litCampfireRef.current.visible = lit
     if (deadCampfireRef.current) deadCampfireRef.current.visible = !lit
   })
@@ -295,28 +422,62 @@ export function Environment({
         <primitive object={skyMaterial} attach="material" />
       </mesh>
 
+      {/* A four-role cinematic rig: key, fill, rim, kick. Every position,
+          colour and intensity below comes from the tweened blend in useFrame
+          -- the initial values here are only what the light holds for the
+          first frame before that runs. */}
       <ambientLight ref={ambientRef} />
       <hemisphereLight ref={hemiRef} />
+
+      {/* KEY */}
       <directionalLight
         ref={dirRef}
         castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-left={-60}
-        shadow-camera-right={60}
-        shadow-camera-top={60}
-        shadow-camera-bottom={-60}
-        // Extra blur on top of Canvas's shadow map (see page.tsx,
-        // shadows="percentage") -- a crisp, hard-edged shadow reads as if it's
-        // falling on a rigid floor; this is most obvious on the water
-        // shadow-catcher (OceanWater.ts/MergedScene.tsx), which otherwise
-        // has a perfectly sharp silhouette sitting on top of an animated,
-        // rippling surface with no visual connection between the two.
-        shadow-radius={6}
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-SHADOW_EXTENT}
+        shadow-camera-right={SHADOW_EXTENT}
+        shadow-camera-top={SHADOW_EXTENT}
+        shadow-camera-bottom={-SHADOW_EXTENT}
+        // Only pinnable this tight because KEY_DISTANCE fixes how far away
+        // the light sits. A 64-unit depth range instead of the default
+        // 0.5..500 buys roughly 8x the depth precision per unit of bias.
+        shadow-camera-near={KEY_DISTANCE - SHADOW_EXTENT - 6}
+        shadow-camera-far={KEY_DISTANCE + SHADOW_EXTENT + 6}
+        // Sign matters and is easy to get backwards: r185's PCF path does
+        // `shadowCoord.z += shadowBias` against a LEQUAL sampler2DShadow, so
+        // NEGATIVE is what pushes the comparison out of self-shadowing.
+        shadow-bias={-0.0006}
+        // World units, and the main defence against acne here. At dawn's ~30
+        // degree key elevation a ground texel stretches to 0.0254 / sin(30) =
+        // 0.051 units, which is exactly the acne threshold; 0.05 covers a
+        // grazing sun without visibly detaching contact shadows (detachment
+        // works out to ~0.087 units, comfortably inside the ~0.20 unit
+        // penumbra from shadow-radius below).
+        shadow-normalBias={0.05}
+        // Softness. NOTE this scales a TEXEL-sized disk, so it is not
+        // comparable to its old value: 6 x 0.117 u/texel was a 0.70 unit
+        // blur, while 5 x 0.0254 is 0.13 units. Kept deliberately tight --
+        // the whole complaint was that hard shadows were missing, and
+        // spreading the same amount of darkening over a wider penumbra is
+        // exactly what makes a shadow read as a smudge instead of a shape.
+        // Don't push past ~12 either way: r185 filters with a 5-sample Vogel
+        // disk rotated per pixel by interleaved gradient noise, and with no
+        // TAA to resolve it a wide radius reads as dither, not softness.
+        shadow-radius={5}
       />
-      {/* The new rim/back light: fixed position, only color+intensity
-          tweened, giving the avatar a consistent backlit edge across every
-          time of day instead of reading flat. */}
-      <directionalLight ref={rimRef} position={RIM_LIGHT_POSITION} />
+      {/* three only recomputes target.matrixWorld for a target that's in the
+          scene graph, so this has to be rendered, not just constructed. */}
+      <object3D ref={shadowTargetRef} position={SHADOW_TARGET_POSITION} />
+
+      {/* FILL */}
+      <directionalLight ref={fillRef} />
+      {/* RIM / back light -- position is preset-driven (see rimX/rimY/rimZ in
+          environmentPresets.ts), because a single fixed position sat on the
+          same side of frame as the key during evening and gave no separation
+          at all. */}
+      <directionalLight ref={rimRef} />
+      {/* KICK */}
+      <directionalLight ref={kickRef} />
 
       <group ref={sunGroupRef} scale={4}>
         <group rotation={SUN_FACE_CORRECTION}>

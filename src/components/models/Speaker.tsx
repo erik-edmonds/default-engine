@@ -1,66 +1,20 @@
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useRef } from 'react'
 import * as THREE from "three"
-import { useGLTF, useCursor } from '@react-three/drei'
-import { useFrame } from "@react-three/fiber"
-import { Howl } from "howler"
-import { useAtom, useAtomValue } from 'jotai'
-import { musicEnabled, sfxEnabled } from '@/helpers/StateProvider'
+import { useGLTF } from '@react-three/drei'
+import { useShadows } from '@/helpers/useShadows'
 
-
+// Decorative only. The music toggle (the musicEnabled atom, the music.mp3
+// Howl, the hover cursor) used to live here and now lives on Guitar.tsx --
+// there's only ever one thing driving that atom, so it moved wholesale rather
+// than being duplicated.
 export function Speaker(props) {
-  // `sound` is this prop's own intent ("I want music playing"); the master
-  // switch (SoundToggle.tsx) independently gates whether that's actually
-  // audible -- see the comment on musicEnabled in StateProvider.tsx.
-  const [sound, setSound] = useAtom(musicEnabled);
-  const masterOn = useAtomValue(sfxEnabled);
-  const [hovered, setHover] = useState(false)
   const { nodes, materials } = useGLTF('/models/speaker.glb')
-  const hover = useRef(false)
-  const [song] = useState(() => new Howl({
-    src: ['/sound/music.mp3'],
-    volume: 0.5,
-    autoplay: false,
-    preload: false,
-    // Same fix as waves.mp3 in SoundToggle.tsx -- at 96MB, Howler's default
-    // decode-the-whole-file-first mode means a multi-second wait before any
-    // sound; html5: true streams instead, starting almost immediately.
-    html5: true,
-  }))
+  const group = useRef<THREE.Group>(null)
 
-  useCursor(hovered)
-  useEffect(() => {
-    if (sound && masterOn) {
-      if (song.state() === "unloaded") song.load()
-      song.play()
-    } else {
-      song.pause()
-    }
-  }, [sound, masterOn, song])
-
-  // Without this, a route change away from this page (diving underwater
-  // navigates to /portfolio, which unmounts everything here) leaves this
-  // Howl instance orphaned and still playing -- nothing left in the tree
-  // references it, but Howler's underlying audio node lives independently
-  // of React and keeps going until told to stop. Navigating back home then
-  // mounts a fresh Speaker with a fresh Howl on top of the still-playing
-  // orphan, audible as doubled music.
-  useEffect(() => () => { song.stop() }, [song])
+  useShadows(group)
 
   return (
-    <group ref={hover} {...props} dispose={null}
-      onClick={() => {
-          setSound(!sound)
-        }
-      }
-      onPointerOver={(e) => {
-          setHover(true)
-        }
-      }
-      onPointerOut={(e) => {
-          setHover(false)
-        }
-      }>
-      
+    <group ref={group} {...props} dispose={null}>
       <group scale={0.01}>
         <mesh
           castShadow
@@ -79,4 +33,3 @@ export function Speaker(props) {
 }
 
 useGLTF.preload('/models/speaker.glb')
-

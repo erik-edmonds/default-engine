@@ -121,8 +121,13 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
           padding: "6px 16px",
           borderRadius: "2px",
           background: ACCENT,
-          fontSize: 11,
-          letterSpacing: "0.2em",
+          // Same reasoning as InteractionHint.tsx's caption: font-nunito was
+          // already on this element and resolving, but 11px all-caps at 0.2em
+          // tracking and weight 400 renders Nunito indistinguishable from
+          // Helvetica. Heavier and tighter is what makes the typeface read.
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.08em",
           textTransform: "uppercase",
           color: activeIsCurrent ? "rgba(255,255,255,0.5)" : "#fff",
           opacity: activeDirection ? 1 : 0,

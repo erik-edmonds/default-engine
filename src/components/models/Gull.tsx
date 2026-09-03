@@ -1,12 +1,16 @@
 import React, { useRef, useEffect } from 'react'
+import type * as THREE from 'three'
 import { useGLTF, useAnimations } from '@react-three/drei'
 
+import { useShadows } from '@/helpers/useShadows'
+
 export function Gull(props) {
-  const group = useRef()
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/gull.glb')
   animations[0].name = "Flying"
   animations[1].name = "Idle"
   const { actions } = useAnimations(animations, group)
+  useShadows(group)
   useEffect(() => {
     actions["Idle"]?.reset().play()
   }, [])

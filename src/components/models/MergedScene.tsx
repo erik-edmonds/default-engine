@@ -269,7 +269,12 @@ export function Merged({ from, day, transitionSeconds, ...props }: { from: TimeO
             depth just enough to avoid z-fighting between two literally
             coincident surfaces, with no visible position change. */}
         <mesh geometry={nodes.New_Water.geometry} position={[-0.162, 0.687, 0.064]} scale={0.028} receiveShadow>
-          <shadowMaterial transparent opacity={0.35} polygonOffset polygonOffsetFactor={-1} />
+          {/* Tinted toward deep water rather than left neutral grey, and
+              eased back from 0.35: the key's shadow map went from 0.117 to
+              0.025 world units per texel, so what used to be a soft smudge
+              now lands as a defined shape and reads much heavier at the same
+              opacity. */}
+          <shadowMaterial transparent opacity={0.28} color="#0a2836" polygonOffset polygonOffsetFactor={-1} />
         </mesh>
         <group
           name="Dock"

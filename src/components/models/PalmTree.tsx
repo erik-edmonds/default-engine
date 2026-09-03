@@ -1,11 +1,38 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useMemo } from 'react'
+import * as THREE from 'three'
 import { useGLTF, useAnimations } from '@react-three/drei'
 
+import { useShadows } from '@/helpers/useShadows'
+
 export function PalmTree(props) {
-  const group = useRef()
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/palmtree.glb')
-  animations[0].name = "Wind"
-  const { actions } = useAnimations(animations, group)
+  // palmtree.glb holds eight separate armatures but a single 78-channel clip
+  // covering all of them; the JSX below mounts only GLTF_created_2's, so 45 of
+  // those channels have no node to bind to and each one warns
+  // "THREE.PropertyBinding: No target node found for track: Bone#..." the
+  // moment the action first plays. Rebuilding the clip from just the tracks
+  // that actually resolve inside the mounted armature keeps the identical wind
+  // motion and drops the noise -- same fix, same reasoning, as the retargeted
+  // shark clip in MergedScene.tsx.
+  //
+  // Resolving each track against the live subtree (rather than hard-coding the
+  // 33 surviving names) means this stays correct if the JSX is ever re-exported
+  // with a different slice of the file mounted.
+  //
+  // Also note what this replaced: `animations[0].name = "Wind"` mutated the
+  // clip object *inside useGLTF's global cache*, shared by every consumer of
+  // this URL.
+  const windAnimations = useMemo(() => {
+    const source = animations[0]
+    const root = nodes.GLTF_created_2_rootJoint
+    const tracks = source.tracks.filter((t) =>
+      THREE.PropertyBinding.findNode(root, THREE.PropertyBinding.parseTrackName(t.name).nodeName),
+    )
+    return [new THREE.AnimationClip('Wind', source.duration, tracks)]
+  }, [animations, nodes])
+  const { actions } = useAnimations(windAnimations, group)
+  useShadows(group)
   useEffect(() => {
     actions["Wind"]?.reset().play()
   }, [])

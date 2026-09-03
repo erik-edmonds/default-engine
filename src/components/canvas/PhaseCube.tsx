@@ -272,10 +272,30 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
   // there, instead of a brand-new mesh silently defaulting to rotation 0
   // (dawn) or however the tracking effect's own snap/tween attempt landed
   // when it ran against a still-null mesh.
+  //
+  // CRITICAL: this callback must keep a STABLE identity for the life of the
+  // component. React re-invokes a ref callback whenever its identity changes
+  // -- detaching with null, then re-attaching with the same instance -- and it
+  // cannot tell that apart from a real remount. Depending on `applyRotation`
+  // here (which is itself keyed on `transitionSeconds`) meant every click
+  // changed this identity, because a click IS a change of transitionSeconds
+  // (90s auto -> 3s click, and 3s -> 90s again when the dwell ends). React
+  // then re-ran this with the still-mounted mesh, hitting the snapFirst path
+  // and yanking rotation.y back to fromRotationRef -- the start of the
+  // transition already in progress -- before tweening forward again. That is
+  // the "click mid-turn makes the cube jump back to the beginning of the
+  // current phase, then go forward" bug, and it fired twice per click.
+  //
+  // Reading the latest applyRotation out of a ref keeps this stable at []. The
+  // ref's initial value is the first render's applyRotation, which is the one
+  // that's correct at mount -- the only moment this legitimately runs.
+  const applyRotationRef = useRef(applyRotation)
+  useEffect(() => { applyRotationRef.current = applyRotation }, [applyRotation])
+
   const setMeshRef = useCallback((instance: THREE.Mesh | null) => {
     meshRef.current = instance
-    if (instance) applyRotation(true) // fresh mesh only -- no live rotation to tween from yet
-  }, [applyRotation])
+    if (instance) applyRotationRef.current(true) // fresh mesh only -- no live rotation to tween from yet
+  }, [])
 
   useEffect(() => {
     // A click landing mid an in-flight, not-yet-settled transition (see

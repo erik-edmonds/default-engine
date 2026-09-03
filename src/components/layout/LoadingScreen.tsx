@@ -574,7 +574,10 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
           <div className="font-nunito tabular-nums text-xl sm:text-2xl text-white tracking-tight">
             {displayPercent}%
           </div>
-          <div className="font-nunito text-[10px] sm:text-xs uppercase tracking-[0.2em] mt-1" style={{ color: "#ffb37a" }}>
+          {/* Weight + tighter tracking for the same reason as the hint caption
+              and joystick label: Nunito at ~10px, all-caps, 0.2em apart and
+              weight 400 is indistinguishable from Helvetica. */}
+          <div className="font-nunito font-semibold text-[11px] sm:text-xs uppercase tracking-[0.08em] mt-1" style={{ color: "#ffb37a" }}>
             {statusFor(displayPercent)}
           </div>
         </div>
@@ -598,7 +601,7 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
             aria-label="Enter site"
             onClick={onEnter}
             disabled={!ready}
-            className="font-nunito uppercase tracking-[0.2em] text-sm sm:text-base text-white px-8 py-3"
+            className="font-nunito font-semibold uppercase tracking-[0.1em] text-sm sm:text-base text-white px-8 py-3"
             style={{
               cursor: ready ? "pointer" : "default",
               // No pill/border/glow left to frame this -- just the word

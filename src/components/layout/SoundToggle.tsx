@@ -18,6 +18,18 @@ const BAR_COLOR_BY_PHASE: Record<TimeOfDay, string> = {
   night: "#d25a1a",
 }
 
+// Per-track, not shared: tides.wav is mastered far hotter than waves.mp3, so
+// matching their gain made night blare against the day. Night is meant to sit
+// just perceptibly above day as a background bed, not draw attention, which
+// at these source levels means a much lower nominal number -- the two are not
+// comparable as raw gains.
+const AMBIENT_VOLUME = 0.35
+const NIGHT_AMBIENT_VOLUME = 0.05
+// Long enough to read as the tide coming in rather than a track change. The
+// visual transition into night is far longer (AUTO_TRANSITION_SECONDS), so
+// there's no risk of the audio outlasting the phase it belongs to.
+const CROSSFADE_MS = 4000
+
 const SIZE = 56
 // Per-bar (duration, delay) so the bars bounce out of sync with each other
 // -- an organic equalizer, not four bars moving in lockstep.
@@ -34,7 +46,7 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
 
   const [waves] = useState(() => new Howl({
     src: ["/sound/waves.mp3"],
-    volume: 0.35,
+    volume: AMBIENT_VOLUME,
     loop: true,
     preload: false,
     // Howler's default (Web Audio API) decoding has to fetch AND fully
@@ -45,19 +57,66 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
     html5: true,
   }))
 
+  // Night's ambient bed. Starts silent: whichever track isn't current sits at
+  // volume 0 rather than paused, so a crossfade can raise it from nothing
+  // without a play() click at the top of the fade.
+  const [tides] = useState(() => new Howl({
+    src: ["/sound/tides.wav"],
+    volume: 0,
+    loop: true,
+    preload: false,
+    // 12MB, same streaming reasoning as waves.mp3 above.
+    html5: true,
+  }))
+
+  // currentPhase (useTimeOfDayCycle) only flips once a transition has fully
+  // landed, so this goes true at the exact moment night arrives on screen --
+  // which is where the crossfade should start.
+  const isNight = currentPhase === "night"
+
   useEffect(() => {
-    if (enabled) {
-      if (waves.state() === "unloaded") waves.load()
-      waves.play()
-    } else {
-      waves.pause()
+    if (!enabled) {
+      // Guarded on playing(): pausing a Howl that was never started still
+      // makes Howler touch its underlying <audio> element, and with
+      // html5 streaming that tears down an in-flight range request --
+      // which Chrome reports as `net::ERR_ABORTED /sound/tides.wav` in the
+      // console. Nothing is actually broken by it, but it's noise, and
+      // there's no reason to pause a track that never began.
+      if (waves.playing()) waves.pause()
+      if (tides.playing()) tides.pause()
+      return
     }
-  }, [enabled, waves])
+
+    const [incoming, outgoing] = isNight ? [tides, waves] : [waves, tides]
+    const incomingVolume = isNight ? NIGHT_AMBIENT_VOLUME : AMBIENT_VOLUME
+
+    if (incoming.state() === "unloaded") incoming.load()
+    if (!incoming.playing()) incoming.play()
+    incoming.fade(incoming.volume(), incomingVolume, CROSSFADE_MS)
+
+    // Only fade the outgoing track if it's actually audible -- fading a
+    // stopped Howl from 0 to 0 is a no-op that still schedules a timer.
+    let stopOutgoing: ReturnType<typeof setTimeout> | undefined
+    if (outgoing.playing()) {
+      outgoing.fade(outgoing.volume(), 0, CROSSFADE_MS)
+      // Pause once silent rather than leaving a second stream decoding
+      // forever. Cleared below if the phase flips back mid-fade, so a
+      // fast dawn<->night bounce can't pause the track it just revived.
+      stopOutgoing = setTimeout(() => outgoing.pause(), CROSSFADE_MS)
+    }
+
+    return () => {
+      if (stopOutgoing) clearTimeout(stopOutgoing)
+    }
+  }, [enabled, isNight, waves, tides])
 
   // Same orphaned-instance risk Speaker.tsx has -- stop cleanly on unmount
   // rather than leaving a looping ambient track running with nothing left
   // to control it.
-  useEffect(() => () => { waves.stop() }, [waves])
+  useEffect(() => () => {
+    if (waves.playing()) waves.stop()
+    if (tides.playing()) tides.stop()
+  }, [waves, tides])
 
   const handleClick = () => {
     setEnabled((v) => !v)

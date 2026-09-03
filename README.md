@@ -1,12 +1,7 @@
 # TODO:
-- Sunflare
-- Shadows, hard and soft
 - Transition splash screen 
-- Fix joystick on rotate mode on mobile
 - Add ambient beach music based on day
-    - Night no seagulls
     - Day, people sounds?
-- Fix logs propertybinding
 
 # Small Tweaks needed
 - [x] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
@@ -40,8 +35,9 @@
 - [ ] Add frames on the islands
 - [x] Dot nav added
     - [x] Needs background removed
-    - [ ] Needs to be stylized
-    - [ ] Functionality needed
+    - [x] Needs to be stylized
+        - [x] Joystick used now
+    - [x] Functionality needed
 - [x] fix music
 - [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
     - [ ] Camera doesn't align properly when going up and not at home position
@@ -51,30 +47,30 @@
         - [x] Pokeball opens up 
         - [x] White light like pokemon coming out of ball
         - [x] Avatar disappears behind white like
-        - [ ] Dragonite appears as well, so when white light is gone, Dragonite is left 
+        - [x] Dragonite appears as well, so when white light is gone, Dragonite is left 
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
-- [x] Stylize up/down button
+- [ ] Stylize up/down button
     - [ ] Maybe text boxes?
 - [x] Add Dots over iteractive items
     - [x] On hover, have the outer ring pulse
     - [x] On hover, change color - 
     - [x] Add multiple dots on island and sky scene that the camera can move to?
     - [x] On rain from clouds, make screen appear wet as well
-        - [ ] Need to improve this some though, it shows up, but it's not transparent like rain.
-    - SEE: https://jordan-breton.com/
+        - [x] Need to improve this some though, it shows up, but it's not transparent like rain.
+            - SEE: https://jordan-breton.com/
 - [x] Create logo
 - [x] Bloom for sun and moon
     - [x] Bloom added but now texture doesn't show
 
 # Fix Lighting
-    - [ ] Add ambient occlusion
+    - [x] Add ambient occlusion
     - [ ] clouds in sky scene has no lights
-    - [ ] on night the island looks too bright. It doesn't look like natural lighting
-    - [ ] during day there is a strong glare on the lake to the right side
-    - [ ] evening is pretty good, but the background needs to be improved
+    - [x] on night the island looks too bright. It doesn't look like natural lighting
+    - [x] during day there is a strong glare on the lake to the right side
+    - [x] evening is pretty good, but the background needs to be improved
 
 # About 
-- [ ] Add lens flare in morning or evening
+- [x] Add lens flare in morning or evening
 
 # Portfolio
 - [ ] Connect to homepage. This should be a single page app
@@ -92,6 +88,7 @@
 # PERFORMANCE!!!
 - [x] Combine scene models (island, surfboard, ultraball, beach ball, mountain) into one scene
 - [ ] Optimize for mobile
+    - [ ] Fix joystick on rotate mode on mobile
 
 
 # Extras

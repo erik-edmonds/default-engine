@@ -35,7 +35,13 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Nunito is the page's typeface, so it's the inherited default rather than
+     something each element has to opt into with `font-nunito`. --font-nunito is
+     set on <html> by next/font (see layout.tsx) and already expands to
+     `"Nunito", "Nunito Fallback"` -- the second being the metric-matched local
+     face next/font generates to avoid layout shift -- so only the generic
+     end-of-chain fallbacks need adding here. */
+  font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
 }
 
 .ant-segmented-item:hover {

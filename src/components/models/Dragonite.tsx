@@ -3,12 +3,16 @@ import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 
+import { useShadows } from '@/helpers/useShadows'
+
 export interface DragoniteHandle {
   materialize: () => Promise<void>
 }
 
 export const Dragonite = forwardRef<DragoniteHandle, { [key: string]: any }>((props, ref) => {
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials } = useGLTF('/models/Avatars/dragonite.glb')
+  useShadows(group)
 
   const realMaterial = materials['Material.001'] as THREE.MeshStandardMaterial
 
@@ -54,7 +58,10 @@ export const Dragonite = forwardRef<DragoniteHandle, { [key: string]: any }>((pr
   })
 
   return (
-    <group {...props} dispose={null}>
+    // useShadows skips transparent materials, so only the real body below
+    // casts -- the whiteMaterial overlay used for the materialize effect
+    // doesn't throw a second, solid silhouette on top of it.
+    <group ref={group} {...props} dispose={null}>
       <skinnedMesh geometry={nodes.Mesh_0.geometry} material={realMaterial} skeleton={nodes.Mesh_0.skeleton} />
       <skinnedMesh geometry={nodes.Mesh_0.geometry} material={whiteMaterial} skeleton={nodes.Mesh_0.skeleton} />
       <primitive object={nodes.hips} />

@@ -31,7 +31,7 @@ export default function Frame({ id, name, author, bg = '#f0f0f0', width = WIDTH 
         {author}
       </Text>
       <mesh name={id} onDoubleClick={(e) => (e.stopPropagation(), setLocation('/item/' + e.object.name))} onPointerOver={(e) => hover(true)} onPointerOut={() => hover(false)}>
-        <roundedPlaneGeometry args={[width, height, 0.1]} />
+        <boxGeometry args={[width, height, 0.1]} />
         <MeshPortalMaterial ref={portal} events={params?.id === id} side={THREE.DoubleSide}>
           <color attach="background" args={[bg]} />
           {children}
