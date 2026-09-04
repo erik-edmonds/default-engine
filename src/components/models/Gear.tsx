@@ -15,12 +15,6 @@ export function Gear(props) {
         <mesh
           castShadow
           receiveShadow
-          geometry={nodes.Object_3.geometry}
-          material={materials.mat21}
-        />
-        <mesh
-          castShadow
-          receiveShadow
           geometry={nodes.Object_4.geometry}
           material={materials.mat22}
         />

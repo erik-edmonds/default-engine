@@ -107,6 +107,18 @@ export const rainRequest = atom(0)
 // server) and owns every wouter call; this atom is how the page asks it to act.
 export const portalExitRequest = atom(0)
 
+// True while CameraController is animating the camera (a hotspot flight, the
+// avatar zoom-in). Anything else that writes camera.rotation has to stand down
+// while this is set, or it fights the flight and wins.
+//
+// Specifically: drei's CameraShake captures camera.rotation once on mount and
+// then WRITES it every frame as baseline + offset. Mounted mid-flight -- which
+// is what happens when a click lands on both a hotspot ring and a cloud behind
+// it, firing thunder -- it overwrites flyTo's rotation slerp, and on unmount
+// leaves the camera holding a rotation captured partway through the flight.
+// The camera reaches the destination position looking the wrong way.
+export const cameraFlying = atom(false)
+
 // True while the LiDAR-scan title screen is up (page.tsx: sceneReady &&
 // !started). Favicon.tsx reads this to hide the home button during load --
 // it's rendered from layout.tsx, outside page.tsx's own component tree, so

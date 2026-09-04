@@ -160,6 +160,14 @@ export function CameraHotspot({
       <Billboard>
         <mesh
           ref={hitMeshRef}
+          // Tagged so other clickable things can tell a hotspot is under the
+          // same pointer and defer to it -- see Sky.tsx's Cloud. The rings are
+          // drawn over everything (depthTest false below), so a click that
+          // lands on one is aimed at it, whatever happens to be nearer in
+          // world space. r3f dispatches strictly by distance, so a nearer
+          // cloud would otherwise fire first and stopPropagation here comes
+          // too late to stop it.
+          userData={{ hotspot: true }}
           onClick={(e) => {
             e.stopPropagation()
             play("click")

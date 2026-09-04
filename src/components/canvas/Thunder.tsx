@@ -5,7 +5,7 @@ import { useAtomValue } from "jotai"
 import { CameraShake, type ShakeController } from "@react-three/drei"
 import gsap from "gsap"
 import * as THREE from "three"
-import { thunder } from "@/helpers/StateProvider"
+import { cameraFlying, thunder } from "@/helpers/StateProvider"
 
 // A strike is two flashes, not one: the leader stroke, then a return stroke
 // about two seconds later. Both the light and the shake key off these.
@@ -31,6 +31,7 @@ const FLASH_COLOR = "#dbe6ff"
 // strike is a whole-scene effect regardless of which cloud group fired it.
 export function Thunder() {
   const count = useAtomValue(thunder)
+  const flying = useAtomValue(cameraFlying)
   const ambientRef = useRef<THREE.AmbientLight>(null)
   const dirRef = useRef<THREE.DirectionalLight>(null)
   const shakeRef = useRef<ShakeController | undefined>(undefined)
@@ -119,7 +120,17 @@ export function Thunder() {
           to actually reach zero, means the camera lands back exactly where
           it started. (The old 1000ms window with decayRate 0.65 cut off at
           intensity 0.35, so every strike left a small permanent tilt.) */}
-      {striking && (
+      {/* `!flying` is load-bearing, not a nicety. CameraShake WRITES
+          camera.rotation every frame from a baseline it captured on mount, so
+          while a hotspot flight is animating that same rotation the shake wins
+          -- and when it unmounts it leaves the camera holding a rotation from
+          partway through the flight, i.e. at the right place looking the wrong
+          way. That's reachable from one click: the cloud behind a hotspot ring
+          fires thunder at the same moment the ring starts the flight.
+          Un-mounting mid-shake is safe: flyTo keeps slerping rotation every
+          frame afterwards, so any residual offset is corrected within a frame.
+          The flash itself is unaffected -- only the shake stands down. */}
+      {striking && !flying && (
         <CameraShake
           ref={shakeRef}
           intensity={1}

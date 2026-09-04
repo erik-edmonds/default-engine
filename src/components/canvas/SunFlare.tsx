@@ -20,29 +20,12 @@ import { sunState } from "@/helpers/sunTracker"
 // from 1.15 to 0.80, the flare dimmed by the same 30% on top of whatever is
 // set here. If you change that exposure again, expect to move this with it.
 //
-// Balanced against BOTH the wider glareSize below and FLARE_ORIGIN_PUSH: with
-// the origin pushed off-frame we only ever see the falloff's tail, never its
-// peak, so this runs hotter than it could if the centre were visible.
-const FLARE_GAIN = new THREE.Color(32, 17, 9)
+// Eased back now that the origin sits ON the sun again and glareSize is much
+// wider: a wide glare puts far more total light in frame at the same gain.
+// Profile at evening's exposure, in myUV units (half-width = 0.5):
+// centre blown (the sun's own core), ~0.6 at d=0.15, ~0.2 haze by d=0.5.
+const FLARE_GAIN = new THREE.Color(22, 12, 6)
 
-// How far past the sun to place the flare's origin, as a multiple of its
-// screen position from centre.
-//
-// The glare term is f0 = 1 / (dist * (16 / glareSize) + 0.2), which peaks at
-// 1/0.2 = 5.0 at the lens position REGARDLESS of glareSize -- there is always
-// a hot singularity exactly at the origin, and no amount of widening removes
-// it, only spreads the falloff around it. On screen that singularity reads as
-// a hard white star sprite pasted over the sun rather than light coming off
-// it.
-//
-// So the origin gets pushed just outside the frame while the sun disc itself
-// stays where it is. We then only ever see the smooth part of the falloff
-// spilling in from the edge -- a broad directional glow with no visible point
-// -- and the sun remains a sun. 1.35 puts evening's sun (NDC x ~ -0.86) at
-// ~-1.16: clear of the edge at every aspect ratio we render at, while staying
-// on the same line out from screen centre, so the glare still reads as coming
-// from the sun's direction and the ghost chain still lines up through frame.
-const FLARE_ORIGIN_PUSH = 1.35
 
 // Evening sun glare.
 //
@@ -71,30 +54,36 @@ export function SunFlare() {
       new LensFlareEffect({
         blendFunction: BlendFunction.NORMAL,
         enabled: true,
-        // Deliberately large. The glare's falloff is
-        //   f0 = 1 / (dist * (16 / glareSize) + 0.2)
-        // which peaks at 1/0.2 = 5.0 at the lens position NO MATTER what this
-        // is set to -- glareSize only controls how fast it decays from there.
-        // So a small value doesn't give a small glare, it gives the same hot
-        // centre with a steep falloff, i.e. a pinprick: all the light crammed
-        // into a few pixels, which reads as an artificial star sprite pasted
-        // over the sun rather than light blooming out of it.
+        // LensFlare() inside the shader is really two overlapping things, and
+        // they want opposite treatment here:
         //
-        // Widening spreads that same energy over a much larger area and drops
-        // the visible peak, so the origin dissolves into a broad soft glow.
-        // Total added light scales roughly linearly with this, so colorGain
-        // came down by about the same factor to keep the frame from hazing
-        // again (see FLARE_GAIN) -- the goal was to redistribute the glare,
-        // not add more of it.
-        glareSize: 0.85,
-        flareSize: 0.004,
-        starPoints: 6,
+        //  glare()     -- the broad soft round bloom, sized by glareSize.
+        //                 f0 = 1 / (dist * (16 / glareSize) + 0.2), so a
+        //                 larger value stretches the falloff outward. This is
+        //                 the part that should dominate.
+        //  drawflare() -- the star, sized by flareSize/flareShape and ending
+        //                 in pow(comp * expgrad, 8 + ...). That exponent is
+        //                 what makes it a hard pinpoint.
+        //
+        // Previously flareShape was 0.1 (10x the library's 0.01) and flareSize
+        // 0.004 (under half its 0.01), which sharpened and shrank the star --
+        // the exact opposite of the soft, wide sun glare wanted here. The star
+        // is now bigger and much blunter, and the round glare much wider, so
+        // the two read as one broad glow with soft rays rather than a sprite.
+        glareSize: 1.8,
+        flareSize: 0.015,
+        // 0 removes the star spikes entirely, and does so cleanly rather than
+        // by accident: in glare() the angular term becomes a constant
+        // (sin(0)*0.2 + 0.3), and in drawflare() `blades` collapses to 0 so
+        // its pow() reduces to a smooth radial falloff. Both become pure
+        // round glows. One side effect worth knowing: LensFlare()'s own `f0`
+        // streak resolves to exactly zero too (noise(0) is 0, so the whole
+        // term multiplies out), but it peaks at 0.06 -- immaterial next to
+        // the glare.
+        starPoints: 0,
         flareSpeed: 0.4,
-        flareShape: 0.1,
-        // Nudged up alongside the wider glare: a visible halo ring is what
-        // sells the whole thing as an optical artifact of the lens rather
-        // than a bright sprite, which further breaks up the single-point read.
-        haloScale: 0.6,
+        flareShape: 0.02,
+        haloScale: 0.5,
         ghostScale: 0.3,
         secondaryGhosts: true,
         aditionalStreaks: true,
@@ -142,9 +131,11 @@ export function SunFlare() {
     // from where the sun actually is -- most visible during a hotspot fly-to
     // that swings the camera around.
     opacity.value = ndc.z > 1 ? 1 : 1 - sunState.flare
-    // Pushed outward from screen centre so the glare's hot centre sits off
-    // frame -- see FLARE_ORIGIN_PUSH.
-    lensPosition.value.set(ndc.x * FLARE_ORIGIN_PUSH, ndc.y * FLARE_ORIGIN_PUSH)
+    // Exactly on the sun. An earlier version pushed this outward to hide the
+    // glare's hot centre, which is precisely what made the flare appear
+    // detached from the sun -- a separate starburst floating mid-frame while
+    // the sun bloomed somewhere else.
+    lensPosition.value.set(ndc.x, ndc.y)
   })
 
   return <primitive object={effect} dispose={null} />

@@ -41,7 +41,15 @@ function Cloud({ random, atom, color = new THREE.Color(), ...props }) {
         ref={ref}
         onPointerOver={(e) => (e.stopPropagation(), setHover(true))}
         onPointerOut={(e) => setHover(false)}
-        onClick={() => {
+        onClick={(e) => {
+          // Defer to a hotspot ring under the same pointer. The rings render
+          // over everything (depthTest false), so a click that lands on one is
+          // aimed at it -- but r3f dispatches handlers strictly nearest-first,
+          // and a cloud in front of a ring would otherwise fire too. Starting
+          // a storm the user didn't ask for is bad enough on its own; it also
+          // used to derail the hotspot flight, because the thunder it triggers
+          // shakes the camera mid-transition (see Thunder.tsx).
+          if (e.intersections.some((hit) => hit.object.userData?.hotspot)) return
           setRainRequest((c) => c + 1)
           setThunder((c) => c + 1)
         }}/>
