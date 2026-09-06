@@ -1,12 +1,27 @@
 import React, { useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { useGLTF, useAnimations } from '@react-three/drei'
+import { useGraph } from '@react-three/fiber'
+import { SkeletonUtils } from 'three-stdlib'
 
 import { useShadows } from '@/helpers/useShadows'
 
-export function PalmTree(props) {
+export function PalmTree({ windOffset = 0, ...props }) {
   const group = useRef<THREE.Group>(null)
-  const { nodes, materials, animations } = useGLTF('/models/palmtree.glb')
+  const { scene, materials, animations } = useGLTF('/models/palmtree.glb')
+  // Cloned per instance, for exactly the reason spelled out in Seagull.tsx:
+  // useGLTF caches `nodes` globally per URL, so three <PalmTree>s would each
+  // mount the SAME GLTF_created_2_rootJoint below -- and three.js detaches an
+  // Object3D from its old parent when it is re-added, so only the last palm
+  // mounted would be posed and the other two would collapse. Cloning
+  // (bone-remapping included) and rebuilding `nodes` from the clone gives each
+  // copy its own skeleton. Materials and geometry stay shared by reference,
+  // which is what keeps three palms cheap.
+  const clone = useMemo(() => SkeletonUtils.clone(scene), [scene])
+  // useGraph types every node as a bare Object3D, which drops the geometry and
+  // skeleton fields the JSX below reads. Narrowed here rather than left to
+  // spray twenty errors across this file the way MergedScene.tsx does.
+  const { nodes } = useGraph(clone) as unknown as { nodes: Record<string, THREE.SkinnedMesh> }
   // palmtree.glb holds eight separate armatures but a single 78-channel clip
   // covering all of them; the JSX below mounts only GLTF_created_2's, so 45 of
   // those channels have no node to bind to and each one warns
@@ -34,8 +49,16 @@ export function PalmTree(props) {
   const { actions } = useAnimations(windAnimations, group)
   useShadows(group)
   useEffect(() => {
-    actions["Wind"]?.reset().play()
-  }, [])
+    const wind = actions["Wind"]
+    if (!wind) return
+    wind.reset()
+    // Started part-way into the clip, so several palms in shot don't sway in
+    // lockstep -- which is the thing that gives away one asset placed three
+    // times. Cheaper and less fragile than varying timeScale, which would let
+    // them drift into and out of sync instead of just staying apart.
+    wind.time = windOffset % (wind.getClip().duration || 1)
+    wind.play()
+  }, [actions, windOffset])
   return (
     <group ref={group} {...props} dispose={null}>
         <group name="Sketchfab_model" rotation={[-Math.PI / 2, 0, 0]}>

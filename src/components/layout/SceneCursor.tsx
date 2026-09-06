@@ -13,6 +13,7 @@ import {
   subscribeCursorView,
   type CursorSpeedTier,
   type CursorState,
+  type CursorTargetType,
 } from "@/helpers/cursor"
 
 /** Elements that should put the cursor into its hover state without each
@@ -40,6 +41,27 @@ const TEXT_RECT_REFRESH_MS = 400
 // because the lit core is what makes it read as a lens rather than a sticker.
 const INK = "#12283a"
 const ACCENT = "#c2490d"
+/** The scene's props -- guitar, scuba gear, pokeball -- turn the cursor red. */
+const RED = "#b5231b"
+/** The camera hotspots turn it black. Near-black rather than pure #000, which
+ *  goes flat and dead next to the scene's warm light. */
+const BLACK = "#101519"
+
+/** The cursor is tinted by what it is engaged with, so the colour says what
+ *  kind of thing is under it before you read the shape. Only the linework takes
+ *  the tint -- brackets, chevrons, caret, orbits. The lens itself stays dark in
+ *  every state: it is the constant the tint is read against, and colouring it
+ *  turned the whole cursor into one red blob with nothing to contrast. */
+type Palette = { ink: string; body: string; edge: string; faces: string[] }
+const PALETTES: Record<string, Palette> = {
+  base: { ink: INK, body: "#1d3f5c", edge: "#0d2032", faces: ["#f2fbff", "#a9cfe8", "#5d89ab", "#27506f", "#3d6c8e", "#cfe6f7"] },
+  interactive: { ink: RED, body: "#5e1710", edge: "#4c1009", faces: ["#fff2ee", "#f4b6a5", "#d2705a", "#8c2618", "#ac4029", "#ffd7cb"] },
+  cameraHotspot: { ink: BLACK, body: "#1a2126", edge: "#141a1f", faces: ["#f6f8f9", "#c4cbd0", "#7d888f", "#272f35", "#495359", "#dfe4e7"] },
+  project: { ink: ACCENT, body: "#5c2c08", edge: "#4a2406", faces: ["#fff5ea", "#f6cda2", "#d68b45", "#8a4610", "#ad621d", "#ffe4c4"] },
+}
+const paletteFor = (target: CursorTargetType | null) => PALETTES[target ?? "base"] ?? PALETTES.base
+/** The lens is drawn from this whatever the cursor is engaged with. */
+const GEM = PALETTES.base
 /** A crisp white outline around every dark stroke, plus a soft glow.
  *
  *  Four 1px offset shadows, not one blurred one: a soft glow alone was not
@@ -57,7 +79,8 @@ const HALO = [
   "drop-shadow(0 0 5px rgba(255,255,255,0.45))",
 ].join(" ")
 
-const STROKE = { fill: "none", stroke: INK, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const
+const strokeOf = (color: string) =>
+  ({ fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }) as const
 
 /** Corner tracking brackets, at a given half-extent. */
 function Brackets({ r, color = INK }: { r: number; color?: string }) {
@@ -78,7 +101,7 @@ function Brackets({ r, color = INK }: { r: number; color?: string }) {
  *  viewBox, `transform-origin: center` resolves in user space in Chrome and
  *  threw the spinning gem ~80px off the cursor. An explicit rotate() about
  *  (0,0) has no such ambiguity. */
-function Gem({ spin, open }: { spin: number; open: number }) {
+function Gem({ spin, open, palette }: { spin: number; open: number; palette: Palette }) {
   const R = 20
   const p = (n: number, radius: number) => {
     const a = (Math.PI / 3) * n - Math.PI / 2
@@ -86,12 +109,12 @@ function Gem({ spin, open }: { spin: number; open: number }) {
   }
   const outer = Array.from({ length: 6 }, (_, i) => p(i, R))
   const inner = Array.from({ length: 6 }, (_, i) => p(i, R * 0.5))
-  const faces = ["#f2fbff", "#a9cfe8", "#5d89ab", "#27506f", "#3d6c8e", "#cfe6f7"]
+  const faces = palette.faces
 
   return (
     <g data-part="gem" transform={`rotate(${spin})`}>
       {/* Solid body, so the lens is never see-through where the blades open. */}
-      <polygon points={outer.map((q) => q.join(",")).join(" ")} fill="#1d3f5c" />
+      <polygon points={outer.map((q) => q.join(",")).join(" ")} fill={palette.body} />
       {outer.map((q, i) => {
         const n = outer[(i + 1) % 6]
         const qi = inner[i]
@@ -101,7 +124,7 @@ function Gem({ spin, open }: { spin: number; open: number }) {
             key={i}
             points={`${q.join(",")} ${n.join(",")} ${ni.join(",")} ${qi.join(",")}`}
             fill={faces[i]}
-            stroke="#0d2032"
+            stroke={palette.edge}
             strokeWidth={0.6}
           />
         )
@@ -111,21 +134,21 @@ function Gem({ spin, open }: { spin: number; open: number }) {
         {inner.map((q, i) => {
           const n = inner[(i + 1) % 6]
           return (
-            <polygon key={i} points={`${q.join(",")} ${n.join(",")} 0,0`} fill={faces[(i + 3) % 6]} stroke="#0d2032" strokeWidth={0.5} />
+            <polygon key={i} points={`${q.join(",")} ${n.join(",")} 0,0`} fill={faces[(i + 3) % 6]} stroke={palette.edge} strokeWidth={0.5} />
           )
         })}
       </g>
-      <polygon points={outer.map((q) => q.join(",")).join(" ")} fill="none" stroke={INK} strokeWidth={1.6} />
+      <polygon points={outer.map((q) => q.join(",")).join(" ")} fill="none" stroke={palette.ink} strokeWidth={1.6} />
     </g>
   )
 }
 
 /** The bright centre point. Present in every state that isn't text. */
-function Core({ r = 3 }: { r?: number }) {
+function Core({ r = 3, color = INK }: { r?: number; color?: string }) {
   return (
     <>
       <circle data-part="core" cx={0} cy={0} r={r * 3} fill="rgba(255,255,255,0.35)" />
-      <circle cx={0} cy={0} r={r} fill="#ffffff" stroke={INK} strokeWidth={1} />
+      <circle cx={0} cy={0} r={r} fill="#ffffff" stroke={color} strokeWidth={1} />
     </>
   )
 }
@@ -134,7 +157,7 @@ function Core({ r = 3 }: { r?: number }) {
  *  rate. Deliberately NOT a closed circle -- closed rings read as the camera
  *  hotspot markers already in the scene, where these should read as electrons
  *  round a nucleus. */
-function Orbit({ r, sweep, spin, width = 2 }: { r: number; sweep: number; spin: number; width?: number }) {
+function Orbit({ r, sweep, spin, width = 2, color = INK }: { r: number; sweep: number; spin: number; width?: number; color?: string }) {
   const circumference = 2 * Math.PI * r
   return (
     <circle
@@ -143,7 +166,7 @@ function Orbit({ r, sweep, spin, width = 2 }: { r: number; sweep: number; spin: 
       cy={0}
       r={r}
       fill="none"
-      stroke={INK}
+      stroke={color}
       strokeWidth={width}
       strokeLinecap="round"
       // One visible arc of `sweep` degrees, the rest gap.
@@ -159,9 +182,25 @@ export function SceneCursor() {
   const nodeRef = useRef<HTMLDivElement>(null)
   const trailRef = useRef<(HTMLDivElement | null)[]>([])
   const domHoverToken = useRef({})
-  const [view, setView] = useState<{ state: CursorState; tier: CursorSpeedTier }>({ state: "idle", tier: "slow" })
+  const [view, setView] = useState<{ state: CursorState; tier: CursorSpeedTier; target: CursorTargetType | null }>({
+    state: "idle",
+    tier: "slow",
+    target: null,
+  })
   /** Free-running angle for the orbits and the gem's idle rotation. */
   const [spin, setSpin] = useState(0)
+  /** Nothing is drawn, and the OS pointer is not hidden, until a real mouse or
+   *  pen has actually moved.
+   *
+   *  useCoarsePointer -- which is what gates this component's mount in
+   *  page.tsx -- has to start `false` so the server and the client's first
+   *  render agree, and is only corrected in an effect. On a phone that leaves
+   *  one committed render where the cursor is mounted, and since the loading
+   *  screen is on top of everything at that moment, that is exactly where it
+   *  showed. Waiting for a fine pointer event closes it from this side too: a
+   *  touch device never produces one, so the cursor never appears there at all,
+   *  whatever the media query says. */
+  const [pointerIsFine, setPointerIsFine] = useState(false)
 
   useEffect(() => {
     cursorNode.current = nodeRef.current
@@ -175,7 +214,9 @@ export function SceneCursor() {
   // Which artwork to draw comes from the driver, not from CSS. See the note on
   // publishCursorView in helpers/cursor.ts for why.
   useEffect(() => {
-    subscribeCursorView((v) => setView((prev) => (prev.state === v.state && prev.tier === v.tier ? prev : v)))
+    subscribeCursorView((v) =>
+      setView((prev) => (prev.state === v.state && prev.tier === v.tier && prev.target === v.target ? prev : v)),
+    )
     return () => subscribeCursorView(null)
   }, [])
 
@@ -199,16 +240,36 @@ export function SceneCursor() {
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  // Hide the OS pointer for as long as this is mounted. On <html> as well as
-  // <body>: `cursor` does not propagate from body up to the viewport.
+  // A real mouse or pen, seen once, is what switches this component on. Touch
+  // pointer events -- which phones fire on every tap and drag -- deliberately
+  // do not count.
   useEffect(() => {
+    if (pointerIsFine) return
+    const onFine = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return
+      setPointerIsFine(true)
+    }
+    const capture = { capture: true, passive: true } as const
+    window.addEventListener("pointermove", onFine, capture)
+    window.addEventListener("pointerdown", onFine, capture)
+    return () => {
+      window.removeEventListener("pointermove", onFine, capture)
+      window.removeEventListener("pointerdown", onFine, capture)
+    }
+  }, [pointerIsFine])
+
+  // Hide the OS pointer for as long as this is mounted AND a mouse is in play.
+  // On <html> as well as <body>: `cursor` does not propagate from body up to
+  // the viewport.
+  useEffect(() => {
+    if (!pointerIsFine) return
     document.documentElement.classList.add("custom-cursor")
     document.body.classList.add("custom-cursor")
     return () => {
       document.documentElement.classList.remove("custom-cursor")
       document.body.classList.remove("custom-cursor")
     }
-  }, [])
+  }, [pointerIsFine])
 
   useEffect(() => {
     let lastTime = performance.now()
@@ -216,6 +277,7 @@ export function SceneCursor() {
     let rectsMeasuredAt = 0
 
     const onMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return
       const now = performance.now()
       const dt = Math.max((now - lastTime) / 1000, 0.001)
       lastTime = now
@@ -310,8 +372,12 @@ export function SceneCursor() {
     }
   }, [])
 
-  const { state, tier } = view
+  const { state, tier, target } = view
   const moving = state === "scan"
+  // Colour follows the engaged target: red over the scene's props, black over
+  // the camera hotspots, the warm accent over a portal, dark navy otherwise.
+  const palette = paletteFor(target)
+  const ink = palette.ink
   // Only the movement state gets a trail, and only at its slowest band -- the
   // sheet asks for lines behind a slow cursor, rings around a faster one.
   const showTrail = moving && tier === "slow"
@@ -334,7 +400,7 @@ export function SceneCursor() {
             zIndex: 2147482999,
             pointerEvents: "none",
             opacity: 0,
-            display: showTrail ? "block" : "none",
+            display: showTrail && pointerIsFine ? "block" : "none",
             willChange: "transform, opacity",
           }}
         >
@@ -352,7 +418,14 @@ export function SceneCursor() {
         // Above everything, including app/loading.tsx's full-screen panel.
         // Never interactive: a cursor that can swallow its own click would be
         // worse than no cursor.
-        style={{ position: "fixed", left: 0, top: 0, zIndex: 2147483000, pointerEvents: "none" }}
+        style={{
+          position: "fixed",
+          left: 0,
+          top: 0,
+          zIndex: 2147483000,
+          pointerEvents: "none",
+          display: pointerIsFine ? "block" : "none",
+        }}
       >
         {/* Zero-size box, so the transform the driver writes lands the centre
             of the artwork exactly on the cursor point. */}
@@ -371,18 +444,18 @@ export function SceneCursor() {
                     Each on its own radius, with its own rate, and one turning
                     against the others so they never read as a single rigid
                     object. */}
-                <Orbit r={17} sweep={120} spin={spin * 2.2} />
-                <Orbit r={26} sweep={85} spin={-spin * 1.6 + 40} />
-                {tier === "fast" && <Orbit r={34} sweep={55} spin={spin * 1.1 + 200} width={1.6} />}
-                <Core r={3.4} />
+                <Orbit r={17} sweep={120} spin={spin * 2.2} color={ink} />
+                <Orbit r={26} sweep={85} spin={-spin * 1.6 + 40} color={ink} />
+                {tier === "fast" && <Orbit r={34} sweep={55} spin={spin * 1.1 + 200} width={1.6} color={ink} />}
+                <Core r={3.4} color={ink} />
               </>
             )}
 
             {/* 06 TEXT -- brackets and a caret, no gem. */}
             {state === "text" && (
               <>
-                <Brackets r={16} />
-                <line data-part="caret" x1={0} y1={-11} x2={0} y2={11} stroke={INK} strokeWidth={2.4} strokeLinecap="round" />
+                <Brackets r={16} color={ink} />
+                <line data-part="caret" x1={0} y1={-11} x2={0} y2={11} stroke={ink} strokeWidth={2.4} strokeLinecap="round" />
               </>
             )}
 
@@ -390,7 +463,7 @@ export function SceneCursor() {
             {state === "projectFocus" && (
               <>
                 <Brackets r={34} color={ACCENT} />
-                <g data-part="box" style={{ ...STROKE, stroke: ACCENT }}>
+                <g data-part="box" style={strokeOf(ACCENT)}>
                   <path d="M-16,-4 L4,-16 L24,-4 L24,16 L4,28 L-16,16 Z" opacity={0.9} />
                   <path d="M-16,-4 L4,8 L24,-4" />
                   <path d="M4,8 L4,28" />
@@ -404,23 +477,27 @@ export function SceneCursor() {
               // of the set, and it fires constantly while approaching any
               // magnet, so it dominated the screen.
               <g transform="scale(0.72)">
-                <g data-part="chevrons" style={STROKE}>
+                <g data-part="chevrons" style={strokeOf(ink)}>
                   <path d="M-7,-30 L0,-37 L7,-30" />
                   <path d="M-7,30 L0,37 L7,30" />
                   <path d="M-30,-7 L-37,0 L-30,7" />
                   <path d="M30,-7 L37,0 L30,7" />
                 </g>
-                <Gem spin={spin * 0.35} open={0.7} />
-                <Core />
+                <Gem spin={spin * 0.35} open={0.7} palette={GEM} />
+                <Core color={ink} />
               </g>
             )}
 
             {/* 01 IDLE / 02 HOVER / 08 LOCKED -- gem inside brackets. */}
             {(state === "idle" || state === "hover" || state === "locked") && (
               <>
-                <Brackets r={state === "locked" ? 24 : 28} color={state === "locked" ? ACCENT : INK} />
-                <Gem spin={state === "locked" ? 0 : spin * 0.25} open={state === "locked" ? 1 : state === "hover" ? 0.35 : 0} />
-                <Core />
+                <Brackets r={state === "locked" ? 24 : 28} color={ink} />
+                <Gem
+                  spin={state === "locked" ? 0 : spin * 0.25}
+                  open={state === "locked" ? 1 : state === "hover" ? 0.35 : 0}
+                  palette={GEM}
+                />
+                <Core color={ink} />
               </>
             )}
           </svg>

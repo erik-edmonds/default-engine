@@ -192,15 +192,15 @@ export const pointerState = {
 // perfectly current. So the state machine ran correctly and set the attribute,
 // and none of the visuals it named ever reached the browser. Artwork chosen in
 // JS cannot fail that way: if the component is current, so is what it draws.
-type CursorViewListener = (view: { state: CursorState; tier: CursorSpeedTier }) => void
+type CursorViewListener = (view: { state: CursorState; tier: CursorSpeedTier; target: CursorTargetType | null }) => void
 let cursorViewListener: CursorViewListener | null = null
 
 export function subscribeCursorView(fn: CursorViewListener | null) {
   cursorViewListener = fn
 }
 
-export function publishCursorView(state: CursorState, tier: CursorSpeedTier) {
-  cursorViewListener?.({ state, tier })
+export function publishCursorView(state: CursorState, tier: CursorSpeedTier, target: CursorTargetType | null) {
+  cursorViewListener?.({ state, tier, target })
 }
 
 /** The target the cursor is currently locked onto, or null. Published by

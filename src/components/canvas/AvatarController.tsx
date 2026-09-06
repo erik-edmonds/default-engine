@@ -1,7 +1,7 @@
 "use client"
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, Suspense } from "react"
-import type { Group } from "three"
+import type { Group, Mesh } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
@@ -338,9 +338,27 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   // meshes don't exist yet when an effect keyed on `modelKind` would run --
   // they arrive in a later commit, already raycastable. Re-applying after
   // every commit costs one walk of a small subtree and can't miss that.
+  //
+  // The same walk turns shadows on. Every other model in the scene sets
+  // castShadow per-mesh in its own gltfjsx file (Gear, Campfire, Desk...), but
+  // the avatar's three variants didn't, so the subject of the whole scene was
+  // the one thing the key light passed straight through -- casting nothing and
+  // catching nothing. Flipping it here rather than in three model files keeps
+  // it true across the base/dragonite/scuba swap.
   useEffect(() => {
     group.current?.traverse((child) => {
       child.raycast = () => {}
+
+      const mesh = child as Mesh
+      if (!mesh.isMesh) return
+      if (mesh.castShadow && mesh.receiveShadow) return
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      // receiveShadow is part of the program cache key, so a material that
+      // already compiled without it needs recompiling -- otherwise the flag is
+      // set and nothing changes on screen. Only on the commit that flips it.
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of materials) if (material) material.needsUpdate = true
     })
   })
 

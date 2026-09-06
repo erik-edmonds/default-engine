@@ -82,8 +82,21 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                 <group position={[10, 0, 10]}>
                     <Clouds data={surface} range={15} />
                 </group>
-                <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
             </Bvh>
+            {/* Outside the Bvh above, which exists for the cloud groups. A
+                bounds tree is built once at mount, and these are skinned
+                meshes whose pose changes every frame -- so it bought the palm
+                nothing when there was one, and would build three trees now.
+                Nothing raycasts them: no pointer handlers, not a cursor
+                surface, not a magnetic target.
+
+                One asset, three copies -- PalmTree clones its skeleton per
+                instance (see the note in PalmTree.tsx), and windOffset keeps
+                them from swaying in lockstep. The two below the original are
+                placeholders: move them wherever you want them. */}
+            <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
+            <PalmTree scale={0.55} position={[3.5,-6,3.5]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
+            <PalmTree scale={0.72} position={[-6,-6,2]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
             <Waterfall />
             {/* Both mounted once for the whole scene, not per-Clouds-group --
                 a strike and a downpour are whole-scene events regardless of

@@ -8,10 +8,16 @@ import gsap from "gsap"
 
 import { tweenDuration } from "@/helpers/motion"
 import { cameraFlying } from "@/helpers/StateProvider"
+import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
 
 gsap.ticker.lagSmoothing(0)
 const AVATAR_POSITION = new THREE.Vector3(-1.3, -0.65, 1)
 const ZOOM_IN_DISTANCE = 8
+
+// The arrival dolly: how far back along its own view axis the camera starts,
+// and how much higher, before settling onto the island framing.
+const INTRO_PULLBACK = 7
+const INTRO_LIFT = 1
 
 export interface CameraControllerHandle {
   zoomIn: () => Promise<void>
@@ -19,6 +25,7 @@ export interface CameraControllerHandle {
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
   flyTo: (position: THREE.Vector3, rotation: THREE.Euler, duration?: number) => Promise<void>
+  intro: (duration?: number) => Promise<void>
 }
 
 export const CameraController = forwardRef<CameraControllerHandle>((_props, ref) => {
@@ -28,7 +35,13 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
   // earlier one is still running), and the first to finish must not report
   // "done" on behalf of the one still going.
   const activeFlights = useRef(0)
+  // Held so a real flight can supersede it. Both tween camera.position, and
+  // gsap's default overwrite:false would let them fight -- the hotspot rings
+  // become clickable slightly before the arrival dolly has finished.
+  const introTween = useRef<gsap.core.Tween | null>(null)
   const beginFlight = () => {
+    introTween.current?.kill()
+    introTween.current = null
     activeFlights.current += 1
     setCameraFlying(true)
   }
@@ -90,6 +103,46 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
       }),
     beginSkyJourney: () => {},
     setSkyOffset: () => {},
+    // The arrival move, fired at the same moment as the loading screen's
+    // burst() rather than after it -- the snap to the wide start below happens
+    // while the plate is still opaque, so what you see as it dissolves is a
+    // camera already settling instead of a static frame.
+    //
+    // Position only. A rotation tween here would have to be unwound by
+    // flyTo's quaternion slerp the moment you click a hotspot, for no visual
+    // gain at this distance.
+    //
+    // Deliberately does NOT call beginFlight(): cameraFlying gates hint
+    // sequencing and Thunder, and an arrival is not a journey.
+    intro: (duration = 2.8) =>
+      new Promise<void>((resolve) => {
+        const forward = new THREE.Vector3(0, 0, -1).applyEuler(ISLAND_CAMERA_ROTATION)
+        camera.position
+          .copy(ISLAND_CAMERA_POSITION)
+          .addScaledVector(forward, -INTRO_PULLBACK)
+          .setY(ISLAND_CAMERA_POSITION.y + INTRO_LIFT)
+        camera.rotation.copy(ISLAND_CAMERA_ROTATION)
+        syncOrbitTarget(camera.rotation)
+
+        introTween.current = gsap.to(camera.position, {
+          x: ISLAND_CAMERA_POSITION.x,
+          y: ISLAND_CAMERA_POSITION.y,
+          z: ISLAND_CAMERA_POSITION.z,
+          duration: tweenDuration(duration),
+          // Decelerating rather than symmetric: this should read as arriving
+          // somewhere, not as a camera being moved.
+          ease: "power2.out",
+          onUpdate: () => syncOrbitTarget(camera.rotation),
+          // Resolved on interrupt as well as completion, so an early hotspot
+          // click can never leave handleEnter awaiting a promise that will
+          // now never settle.
+          onInterrupt: () => resolve(),
+          onComplete: () => {
+            introTween.current = null
+            resolve()
+          },
+        })
+      }),
     flyTo: (position, rotation, duration = 2.5) =>
       new Promise<void>((resolve) => {
         beginFlight()

@@ -4,6 +4,7 @@ import * as THREE from "three";
 import dynamic from "next/dynamic";
 import { Suspense, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
 import { Gltf, Preload, useGLTF, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, Noise, ToneMapping } from "@react-three/postprocessing";
@@ -28,6 +29,7 @@ import { CursorDriver } from "@/components/canvas/CursorDriver";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
+import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
@@ -46,6 +48,8 @@ const OrbitCube = dynamic(() => import("@/components/layout/HUD").then((mod) => 
   ssr: false,
 });
 const STAMP_DURATION_MS = 420;
+// Where the bloom lands once the arrival has ramped it up from 0.
+const BLOOM_INTENSITY = 0.85;
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
   { threshold: 75, text: "Digital Nomad", align: "left" },
@@ -200,7 +204,22 @@ export default function Page() {
   // inert (see CameraHotspot below); clicking Enter runs LoadingScreen's
   // burst() dissolve, which only flips `started` once it resolves.
   const [started, setStarted] = useState(false);
+  // How far through the arrival the reveal has got. The world used to arrive
+  // in the single commit where `started` flipped -- bloom, the four hotspot
+  // rings, the name, the HUD, all at once -- so the plate dissolved smoothly
+  // and then everything popped. Each stage is a beat of that same arrival:
+  // 1 the name stamps, 2 the HUD, 3 the hotspot rings.
+  const [revealStage, setRevealStage] = useState(0);
+  // Flips on the click, before burst() has even started -- `started` is 420ms
+  // later. Only <Bloom> uses it, so its shader compile is paid while the black
+  // plate still covers the screen instead of on a bare frame.
+  const [entering, setEntering] = useState(false);
   const loadingScreenRef = useRef<LoadingScreenHandle>(null);
+  // The Bloom effect instance, ramped by gsap rather than by React state --
+  // driving intensity through state would re-render this component and the
+  // whole canvas tree every frame across the one second where smoothness
+  // matters most.
+  const bloomRef = useRef<{ intensity: number } | null>(null);
   // Re-entrancy guard for handleEnter: set synchronously before any await,
   // so a second click during burst() can't fire a second burst.
   const startingRef = useRef(false);
@@ -283,6 +302,7 @@ export default function Page() {
   const handleEnter = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
+    setEntering(true);
     // A real user gesture -- flips sound on here (not before) so every
     // gated Howl (SoundToggle's waves.mp3, Speaker's music.mp3, Sky.tsx's
     // rain.wav) can start playing with no autoplay restriction to work
@@ -290,11 +310,35 @@ export default function Page() {
     // is included, not silently swallowed by the switch still being off.
     setSfxEnabled(true);
     playSfx("click");
+    // Started alongside the burst, not after it: intro() snaps the camera to
+    // its pulled-back start immediately, and doing that while the plate is
+    // still opaque is what makes the dissolve reveal a moving camera rather
+    // than a static frame that then starts moving.
+    const settled = cameraControllerRef.current?.intro();
     // `started` (which wakes the hotspots/UI back up) only flips once the
     // burst/dissolve animation has actually finished.
     await loadingScreenRef.current?.burst();
     setStarted(true);
+    await settled;
   }, [playSfx, setSfxEnabled]);
+
+  // The staggered reveal. gsap rather than a setTimeout chain so it matches
+  // burst()'s idiom and cleans itself up on unmount; tweenDuration collapses
+  // the whole sequence to near-instant under prefers-reduced-motion.
+  useEffect(() => {
+    if (!started) return;
+    // Ramp the bloom in over the same window instead of popping it. The effect
+    // is already mounted (at intensity 0, from the click), so its shader
+    // compile happened under the opaque plate rather than on a bare screen.
+    if (bloomRef.current) {
+      gsap.to(bloomRef.current, { intensity: BLOOM_INTENSITY, duration: tweenDuration(1.6), ease: "power2.out" });
+    }
+    const timeline = gsap.timeline();
+    timeline.call(() => setRevealStage(1), undefined, tweenDuration(0.5));
+    timeline.call(() => setRevealStage(2), undefined, tweenDuration(0.9));
+    timeline.call(() => setRevealStage(3), undefined, tweenDuration(1.4));
+    return () => { timeline.kill(); };
+  }, [started]);
 
   useEffect(() => {
     router.prefetch("/portfolio");
@@ -304,11 +348,16 @@ export default function Page() {
 
   useEffect(() => { resetTo(getTimeOfDay()); }, [resetTo]);
 
+  // Keyed to the reveal, not to sceneReady. The <h1>'s animate-stamp used to
+  // play the moment loading finished -- underneath the loading screen, where
+  // nobody could see it -- so by the time you entered, the name could only
+  // fade in flat. Both it and the tagline that follows it now land on the
+  // first beat of the arrival.
   useEffect(() => {
-    if (!sceneReady) return;
+    if (revealStage < 1) return;
     const timer = setTimeout(() => setNameStamped(true), STAMP_DURATION_MS);
     return () => clearTimeout(timer);
-  }, [sceneReady]);
+  }, [revealStage]);
 
   const triggerRain = useCallback(() => setRainTriggered(true), []);
   useEffect(() => {
@@ -443,10 +492,10 @@ export default function Page() {
   // labels reuse ANCHORS' existing copy for the same landmarks rather than
   // inventing new strings.
   const JOYSTICK_DIRECTIONS = {
-    up: { id: "moon-island", label: "Donate", onSelect: handleMoonIslandHotspotClick },
+    up: { id: "upper", label: "Contact", onSelect: handleUpperIslandHotspotClick },
     down: { id: "home", label: "Home", onSelect: handleHomeHotspotClick },
     left: { id: "left-tree", label: "Models", onSelect: handleLeftTreeHotspotClick },
-    right: { id: "upper", label: "Contact", onSelect: handleUpperIslandHotspotClick },
+    right: { id: "moon-island", label: "Donate", onSelect: handleMoonIslandHotspotClick },
   };
 
   const handleUpClick = async () => {
@@ -509,9 +558,9 @@ export default function Page() {
   return (
     <NavigationProvider>
       <div className="relative h-screen w-screen overflow-hidden">
-        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${!started ? "invisible" : "visible"}`}>
+        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-opacity duration-300 ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}>
           <div className="relative">
-            {sceneReady && <h1 data-cursor="text" className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-[#d25a1a]">Erik Edmonds</h1>}
+            {revealStage >= 1 && <h1 data-cursor="text" className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-[#d25a1a]">Erik Edmonds</h1>}
             {nameStamped && <p data-cursor="text" className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-[#d25a1a]">Data Scientist</p>}
           </div>
         </div>
@@ -519,7 +568,7 @@ export default function Page() {
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
-        <div className={`flex flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && !started ? "invisible opacity-0" : "visible opacity-100"}`}>
+        <div className={`flex flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}>
           <SoundToggle currentPhase={currentPhase} />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
@@ -578,7 +627,13 @@ export default function Page() {
                 mipmapBlur was explicitly false, which forces postprocessing's
                 deprecated half-resolution Kawase path -- true is both wider and
                 cheaper. */}
-            {started ? <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.3} intensity={0.85} radius={0.7} levels={7} /> : <></>}
+            {/* A CALLBACK ref, not an object ref. <Bloom> is a plain function
+                component whose wrapper memoises on `JSON.stringify(props)`, and
+                in React 19 `ref` arrives as an ordinary prop -- so an object ref
+                gets stringified the moment it holds the effect, whose
+                parent/children cycle throws and takes the whole canvas down.
+                JSON.stringify drops function values, so a callback is safe. */}
+            {entering ? <Bloom ref={(effect: unknown) => { bloomRef.current = effect as { intensity: number } | null }} mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.3} intensity={0} radius={0.7} levels={7} /> : <></>}
             {/* Last, and the single biggest change to how this scene reads.
                 <EffectComposer> pins renderer.toneMapping to NoToneMapping
                 while it's mounted, and nothing was putting a curve back -- so
@@ -611,7 +666,7 @@ export default function Page() {
                   once on a narrow mobile viewport anyway. HotspotJoystick
                   (mounted below, outside the Canvas) is the touch-facing
                   replacement. */}
-              {sceneReady && started && !isCoarsePointer && <>
+              {sceneReady && revealStage >= 3 && !isCoarsePointer && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
                 <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
@@ -649,7 +704,7 @@ export default function Page() {
               ))}
             </group>
             {/* dragged && rotate && <Mouse /> */}
-            {/* */}<OrbitControls />
+            {/* */}
             <CameraController ref={cameraControllerRef} />
             {/* Inside the Canvas on purpose -- it owns every wouter call, and
                 wouter reads `location` at render, which would break this
@@ -671,7 +726,7 @@ export default function Page() {
                 outside the canvas (SceneCursor, below). Desktop only -- there
                 is no pointer to replace on a touch device, which is also why
                 the hotspot rings and InteractionHint are gated this way. */}
-            {!isCoarsePointer && <CursorDriver />}
+            {started && !isCoarsePointer && <CursorDriver />}
             <Preload all />
           </Suspense>}
         </Canvas>
@@ -686,7 +741,12 @@ export default function Page() {
             point at is reachable by touch too, and the copy adapts to the
             gesture that actually works there (see HINTS). */}
         <SceneHint />
-        {!isCoarsePointer && <SceneCursor />}
+        {/* Not before entering: the loading screen is ordinary chrome with a
+            button to press, so it keeps the ordinary OS pointer. The custom
+            cursor is part of the scene and arrives with it. Unmounted rather
+            than hidden, so SceneCursor's own cleanup puts the OS pointer back
+            and the driver does no per-frame work while the plate is up. */}
+        {started && !isCoarsePointer && <SceneCursor />}
         {rainTriggered && <RainScene />}
       </div>
     </NavigationProvider>

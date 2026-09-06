@@ -33,6 +33,7 @@ import {
   pointerState,
   magneticFalloff,
   type CursorSpeedTier,
+  type CursorTargetType,
   type CursorState,
   type MagneticTarget,
 } from "@/helpers/cursor"
@@ -77,6 +78,7 @@ export function CursorDriver() {
   const historyHead = useRef(0)
   const lastState = useRef<CursorState | "">("")
   const lastTier = useRef<CursorSpeedTier | "">("")
+  const lastTarget = useRef<CursorTargetType | null | "">("")
   /** movedAt as of the previous frame, so a pointermove that arrived since
    *  then counts as motion however long the frame took. */
   const lastMoveSeen = useRef(0)
@@ -306,14 +308,22 @@ export function CursorDriver() {
 
     const tier: CursorSpeedTier = speed > SPEED_FAST ? "fast" : speed > SPEED_MEDIUM ? "medium" : "slow"
 
-    if (state !== lastState.current || tier !== lastTier.current) {
+    // What the cursor is engaged with, used to tint it. Taken from the magnetic
+    // target rather than from the hover registry on purpose: DOM chrome reports
+    // itself as "interactive" too, and the corner buttons should not turn the
+    // cursor the colour reserved for the scene's props.
+    const target: CursorTargetType | null = best ? best.type : null
+
+    if (state !== lastState.current || tier !== lastTier.current || target !== lastTarget.current) {
       lastState.current = state
       lastTier.current = tier
-      // The attribute stays for styling hooks and for tests to read; the
+      lastTarget.current = target
+      // The attributes stay for styling hooks and for tests to read; the
       // publish is what actually decides which artwork React draws.
       el.dataset.cursorState = state
       el.dataset.cursorTier = tier
-      publishCursorView(state, tier)
+      el.dataset.cursorTarget = target ?? "none"
+      publishCursorView(state, tier, target)
     }
     if (el.dataset.cursorPressed !== (pointer.down ? "true" : "false")) {
       el.dataset.cursorPressed = pointer.down ? "true" : "false"
