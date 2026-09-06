@@ -73,8 +73,17 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
 
   const handlePointerUp = () => {
     if (activeDirection) {
-      play("click")
-      directions[activeDirection].onSelect()
+      // Committing to the direction you're already parked in is a no-op
+      // journey: flyToHotspot would whoosh and re-fly the camera to the spot
+      // it's already at. Bounce it instead -- boing reads as "nothing that
+      // way", and skipping onSelect is what keeps the whoosh from playing
+      // over the top of it.
+      if (directions[activeDirection].id === currentId) {
+        play("boing")
+      } else {
+        play("click")
+        directions[activeDirection].onSelect()
+      }
     }
     setDragging(false)
     setStickOffset({ x: 0, y: 0 })

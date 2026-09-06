@@ -1,10 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useAtom } from "jotai"
+import { useAtom, useAtomValue } from "jotai"
 import { Howl } from "howler"
-import { sfxEnabled } from "@/helpers/StateProvider"
-import { useSfx } from "@/helpers/useSfx"
+import { sfxEnabled, soundOffNudge } from "@/helpers/StateProvider"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 
 // Same per-phase language as the logo (Icon.tsx's Favicon, via
@@ -31,6 +30,10 @@ const NIGHT_AMBIENT_VOLUME = 0.05
 const CROSSFADE_MS = 4000
 
 const SIZE = 56
+// Short and sharp: long enough to read four words, gone before it becomes
+// something to dismiss.
+const NUDGE_VISIBLE_MS = 2600
+const ACCENT = "#d25a1a"
 // Per-bar (duration, delay) so the bars bounce out of sync with each other
 // -- an organic equalizer, not four bars moving in lockstep.
 const BARS = [
@@ -42,7 +45,6 @@ const BARS = [
 
 export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay }) {
   const [enabled, setEnabled] = useAtom(sfxEnabled)
-  const play = useSfx()
 
   const [waves] = useState(() => new Howl({
     src: ["/sound/waves.mp3"],
@@ -118,6 +120,24 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
     if (tides.playing()) tides.stop()
   }, [waves, tides])
 
+  // Something audible-only was activated while muted. Keyed on the counter, so
+  // a second attempt while the callout is still up restarts it rather than
+  // being swallowed.
+  const nudgeCount = useAtomValue(soundOffNudge)
+  const [nudging, setNudging] = useState(false)
+  useEffect(() => {
+    if (nudgeCount === 0) return
+    setNudging(true)
+    const timer = setTimeout(() => setNudging(false), NUDGE_VISIBLE_MS)
+    return () => clearTimeout(timer)
+  }, [nudgeCount])
+
+  // Turning sound on is the thing the callout was asking for -- retract it
+  // immediately rather than leaving it nagging about a solved problem.
+  useEffect(() => {
+    if (enabled) setNudging(false)
+  }, [enabled])
+
   const handleClick = () => {
     setEnabled((v) => !v)
   }
@@ -126,10 +146,14 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
     <button
       type="button"
       onClick={handleClick}
-      onMouseEnter={() => play("click")}
+      // No hover sound -- see Icon.tsx. Doubly odd on this control, which is
+      // the one that decides whether sounds play at all.
       aria-label={enabled ? "Turn sound off" : "Turn sound on"}
       aria-pressed={enabled}
       style={{
+        // Anchors the callout below, which is positioned against this button
+        // so it tracks the icon rather than a guessed screen offset.
+        position: "relative",
         width: SIZE,
         height: SIZE,
         borderRadius: 9999,
@@ -165,6 +189,36 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
           }}
         />
       ))}
+
+      {/* The "you need this control" callout. Hangs off the button itself,
+          below and right-aligned to it, so it always sits under the sound
+          icon wherever the top-right cluster ends up. Same flat accent chip
+          as HotspotJoystick's direction readout -- solid #d25a1a rather than
+          the scene hints' black glass, because this one is a correction
+          rather than an invitation and should read as louder than they do. */}
+      <span
+        className="font-nunito sound-nudge"
+        aria-hidden="true"
+        data-shown={nudging ? "true" : "false"}
+        style={{
+          position: "absolute",
+          top: "100%",
+          right: 0,
+          marginTop: 10,
+          whiteSpace: "nowrap",
+          padding: "6px 14px",
+          borderRadius: 2,
+          background: ACCENT,
+          color: "#fff",
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          pointerEvents: "none",
+        }}
+      >
+        Turn on sound first!
+      </span>
     </button>
   )
 }

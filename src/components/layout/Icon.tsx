@@ -2,14 +2,12 @@
 import { themes } from "@/helpers/Interfaces";
 import { useAppState, inSkyJourney, goHomeRequest, titleScreenActive } from "@/helpers/StateProvider";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useSfx } from "@/helpers/useSfx";
 import Link from "next/link";
 export function Favicon() {
   const { theme } = useAppState()
   const journeyActive = useAtomValue(inSkyJourney)
   const titleActive = useAtomValue(titleScreenActive)
   const requestGoHome = useSetAtom(goHomeRequest)
-  const play = useSfx()
 
   return (
     <Link
@@ -21,7 +19,9 @@ export function Favicon() {
           requestGoHome((n) => n + 1)
         }
       }}
-      onMouseEnter={() => play("click")}
+      // No hover sound. The click cue is reserved for things in the 3D scene
+      // (hotspot rings and the clickable props); chrome that's on screen the
+      // whole time chirping as the pointer crosses it is noise.
       style={{
         visibility: titleActive ? "hidden" : "visible",
         opacity: titleActive ? 0 : 1,

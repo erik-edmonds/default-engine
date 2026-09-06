@@ -1,7 +1,7 @@
 # TODO:
-- Transition splash screen 
-- Add ambient beach music based on day
-    - Day, people sounds?
+- [ ] Transition splash screen 
+- [ ] Add ambient beach music based on day
+    - [ ] Day, people sounds?
 
 # Small Tweaks needed
 - [x] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start
@@ -32,7 +32,7 @@
     - [x] transition finished, but need an object to interact with to make it change.
         - [x] Object added, needs to be stylized, feels a bit boring.
             - [x] A cube that rotates, each face is a setting 
-- [ ] Add frames on the islands
+- [x] Add frames on the islands
 - [x] Dot nav added
     - [x] Needs background removed
     - [x] Needs to be stylized

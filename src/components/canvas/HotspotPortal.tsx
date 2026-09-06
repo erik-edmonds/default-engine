@@ -26,7 +26,7 @@ const FRAME_COLOR = "black"
 // so the carved frame can be built to match the portal it surrounds; if those
 // defaults ever change, these follow.
 const PORTAL_WIDTH = 1.5
-const PORTAL_HEIGHT = 1.61803398875 * 1.5
+export const PORTAL_HEIGHT = 1.61803398875 * 1.5
 
 /** Distance in front of a viewpoint at which its portal stands. At fov 45 a
  *  ~2.43-tall portal covers roughly two-thirds of frame height here: dominant
@@ -105,15 +105,19 @@ export interface HotspotPortalProps {
   name: string
   author: string
   bg?: string
+  /** Whether this portal can be opened right now -- true only once the camera
+   *  is actually at the hotspot it stands in front of. The portal is always
+   *  visible either way; this only controls whether it answers the pointer. */
+  interactive?: boolean
   /** The portal's contents, e.g. <Gltf src="/models/tea.glb" />. */
   children: ReactNode
 }
 
-export function HotspotPortal({ position, rotation, id, name, author, bg, children }: HotspotPortalProps) {
+export function HotspotPortal({ position, rotation, id, name, author, bg, interactive = true, children }: HotspotPortalProps) {
   return (
     <group position={position} rotation={rotation}>
       <CarvedFrame width={PORTAL_WIDTH} height={PORTAL_HEIGHT} />
-      <Frame id={id} name={name} author={author} bg={bg}>
+      <Frame id={id} name={name} author={author} bg={bg} interactive={interactive}>
         {children}
       </Frame>
     </group>

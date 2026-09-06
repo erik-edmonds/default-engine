@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, type RefObject } from "react"
 import * as THREE from "three"
-import { useAtomValue } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import { useLocation, useRoute } from "wouter"
 
-import { portalExitRequest } from "@/helpers/StateProvider"
+import { openPortalId, portalExitRequest } from "@/helpers/StateProvider"
 import type { CameraControllerHandle } from "@/components/canvas/CameraController"
 
 // Keeps the camera in step with the portals' own routing.
@@ -48,8 +48,18 @@ export function PortalRouteSync({
   const [, setLocation] = useLocation()
   const [, route] = useRoute("/item/:id")
   const exitRequest = useAtomValue(portalExitRequest)
+  const setOpenPortalId = useSetAtom(openPortalId)
 
   const enteredId = route?.id ?? null
+
+  // Mirror the route out to an atom. The route stays the source of truth; this
+  // is purely so code outside <Canvas> -- which can't call wouter at all, see
+  // the note above -- can tell whether a portal is open. Currently that's the
+  // hint director.
+  useEffect(() => {
+    setOpenPortalId(enteredId)
+    return () => setOpenPortalId(null)
+  }, [enteredId, setOpenPortalId])
   const lastEnteredId = useRef<string | null>(null)
   // Set when something else (a ring click, the home button) closes the portal
   // on its way elsewhere, so the exit flight below doesn't fight the flight

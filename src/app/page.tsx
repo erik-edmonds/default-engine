@@ -20,8 +20,12 @@ import { type TimeOfDay } from "@/components/canvas/environmentPresets";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
-import { HotspotPortal, portalTransformFor } from "@/components/canvas/HotspotPortal";
+import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/canvas/HotspotPortal";
 import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
+import { HintAnchor } from "@/components/canvas/HintAnchor";
+import { SceneHint } from "@/components/layout/SceneHint";
+import { useHintDirector } from "@/helpers/useHintDirector";
+import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
@@ -157,6 +161,19 @@ const HOTSPOT_VIEWPOINTS: Record<string, { position: THREE.Vector3; rotation: TH
   home: { position: HOME_VIEWPOINT_POSITION, rotation: HOME_VIEWPOINT_ROTATION },
 };
 
+// Where the "double-click to enter" caption pins itself at each portal-bearing
+// hotspot: on the axis of the portal, tucked just under its bottom edge. Below
+// rather than on it, because the portal is the subject and covers most of the
+// frame -- a caption over the middle of it would read as part of the artwork
+// inside. `home` is absent on purpose: it has no portal, so the hint has
+// nothing to point at there and simply never fires.
+const PORTAL_HINT_TARGETS: Record<string, THREE.Vector3> = Object.fromEntries(
+  HOTSPOT_PORTALS.map((portal) => [
+    portal.hotspotId,
+    portal.position.clone().setY(portal.position.y - PORTAL_HEIGHT / 2 - 0.3),
+  ]),
+);
+
 export default function Page() {
   const router = useRouter();
   const { setTheme } = useAppState();
@@ -236,13 +253,12 @@ export default function Page() {
   // interaction (a hotspot, the Poke Ball, or the Gear), or after an ~8s
   // timeout below if the user hasn't touched anything yet.
   const [hasInteracted, setHasInteracted] = useState(false);
-  // Fixed initial value (SSR-safe), corrected on the client -- same pattern
-  // as getTimeOfDay() above. Gates the heaviest postprocessing passes, which
-  // are the single biggest mobile GPU-performance risk in this scene.
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
-  useEffect(() => {
-    setIsCoarsePointer(window.matchMedia("(pointer: coarse)").matches);
-  }, []);
+  // SSR-safe (fixed on the first render, corrected in an effect) -- same
+  // pattern as getTimeOfDay() above. Gates the heaviest postprocessing passes,
+  // which are the single biggest mobile GPU-performance risk in this scene.
+  // Lifted into a shared hook because Card.tsx needs the same answer to decide
+  // between double-click and press-and-hold portal entry.
+  const isCoarsePointer = useCoarsePointer();
   const isRaining = useAtomValue(raining);
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
@@ -314,6 +330,20 @@ export default function Page() {
     window.addEventListener("pointermove", dismiss, opts);
     return () => window.removeEventListener("pointermove", dismiss, opts);
   }, [started]);
+
+  // Contextual hints, picked up where InteractionHint leaves off: nudges
+  // toward the guitar and the clouds once the user has gone quiet without
+  // finding them, then how to open a portal on arrival and how to leave one
+  // from inside. At most one on screen at a time, each at most once per load.
+  // It infers what's already been discovered from atoms that exist anyway
+  // (musicEnabled, rainRequest, openPortalId), so nothing in the scene has to
+  // report to it.
+  useHintDirector({
+    started,
+    hasInteracted,
+    currentHotspot: hotspotNav.current,
+    portalTargets: PORTAL_HINT_TARGETS,
+  });
 
   useEffect(() => {
     const SKY_JOURNEY_DISTANCE = 600;
@@ -604,6 +634,13 @@ export default function Page() {
                   name={portal.name}
                   author={portal.author}
                   bg={portal.bg}
+                  // Openable only from its own hotspot. The portals are
+                  // permanently in the scene, so several are in shot from
+                  // home -- and entering one from there put the camera inside
+                  // a portal while hotspotNav still said "home", so on exit
+                  // the flight landed at that hotspot's viewpoint with its
+                  // own marker still showing, right in front of you.
+                  interactive={hotspotNav.current === portal.hotspotId}
                 >
                   <Gltf src={portal.src} scale={portal.modelScale} position={portal.modelPosition} />
                 </HotspotPortal>
@@ -622,6 +659,10 @@ export default function Page() {
               onEnter={() => playSfx("whoosh")}
             />
             <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
+            {/* Same split as NavigationProjector above: the projection needs
+                the camera so it lives in here, while the thing it positions is
+                a DOM node outside the canvas (SceneHint, below). */}
+            <HintAnchor />
             <Preload all />
           </Suspense>}
         </Canvas>
@@ -632,6 +673,10 @@ export default function Page() {
           <LoadingScreen ref={loadingScreenRef} progress={progress} isCoarsePointer={isCoarsePointer} onEnter={handleEnter} />
         )}
         {!isCoarsePointer && <InteractionHint visible={started} dismissed={hasInteracted} />}
+        {/* Not gated on pointer type, unlike InteractionHint: everything these
+            point at is reachable by touch too, and the copy adapts to the
+            gesture that actually works there (see HINTS). */}
+        <SceneHint />
         {rainTriggered && <RainScene />}
       </div>
     </NavigationProvider>

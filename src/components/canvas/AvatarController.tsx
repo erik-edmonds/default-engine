@@ -326,6 +326,24 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     group.current.rotation.y = pose.rotY
   })
 
+  // The avatar is the subject of the scene, not a control: nothing happens
+  // when you click it, so it shouldn't answer the pointer at all. Done by
+  // walking the subtree rather than by props because these are gltfjsx
+  // components whose meshes aren't reachable from here -- and re-run on
+  // `modelKind` because the base/dragonite/scuba swap mounts a whole new
+  // model that would otherwise come back raycastable.
+  //
+  // Deliberately no dependency array. The models load through useGLTF inside
+  // the <Suspense> below, so on a fresh mount (and on every form swap) their
+  // meshes don't exist yet when an effect keyed on `modelKind` would run --
+  // they arrive in a later commit, already raycastable. Re-applying after
+  // every commit costs one walk of a small subtree and can't miss that.
+  useEffect(() => {
+    group.current?.traverse((child) => {
+      child.raycast = () => {}
+    })
+  })
+
   return (
     <group ref={group} position={BASE_POSITION} rotation={BASE_ROTATION}>
       <Suspense fallback={null}>

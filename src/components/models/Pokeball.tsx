@@ -158,8 +158,16 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
     // release beam and its glow cone -- both additive, both meshes -- don't
     // throw solid silhouettes across the sand.
     <group ref={rootRef} onPointerOver={() => set(true)} onPointerOut={() => set(false)} {...props}>
+      {/* raycast disabled on all three release visuals below. They're
+          additive VFX, but they still sit in the scene graph inside this
+          group's onPointerOver -- and the sparkle <points> in particular
+          defaults to a 1-unit raycast threshold with all its particles
+          stacked on BEAM_LOCAL_TARGET, which lands (scale 2) essentially on
+          top of the avatar. That's what made the avatar show a pointer
+          cursor and read as clickable, when nothing there does anything. */}
       <mesh
         ref={beamRef}
+        raycast={() => null}
         geometry={coreGeometry}
         position={[0, 0, 0]}
         rotation={BEAM_LOCAL_ROTATION}
@@ -176,6 +184,7 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
       </mesh>
       <mesh
         ref={beamGlowRef}
+        raycast={() => null}
         geometry={glowGeometry}
         position={[0, 0, 0]}
         rotation={BEAM_LOCAL_ROTATION}
@@ -192,7 +201,7 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
       </mesh>
 
       {/* Sparkle particles at the beam's target end, by the avatar */}
-      <points ref={particlesRef} position={BEAM_LOCAL_TARGET}>
+      <points ref={particlesRef} raycast={() => null} position={BEAM_LOCAL_TARGET}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[initialPointsArray, 3]} />
         </bufferGeometry>

@@ -2,8 +2,8 @@ import React, { useRef, useEffect, useState } from 'react'
 import * as THREE from "three"
 import { useGLTF, useCursor } from '@react-three/drei'
 import { Howl } from "howler"
-import { useAtom, useAtomValue } from 'jotai'
-import { musicEnabled, sfxEnabled } from '@/helpers/StateProvider'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { musicEnabled, sfxEnabled, soundOffNudge } from '@/helpers/StateProvider'
 import { useShadows } from '@/helpers/useShadows'
 
 export function Guitar(props) {
@@ -12,6 +12,7 @@ export function Guitar(props) {
   // audible -- see the comment on musicEnabled in StateProvider.tsx.
   const [sound, setSound] = useAtom(musicEnabled);
   const masterOn = useAtomValue(sfxEnabled);
+  const nudgeSoundOff = useSetAtom(soundOffNudge);
   const [hovered, setHover] = useState(false)
   const { nodes, materials } = useGLTF('/models/guitarra.glb')
   const group = useRef<THREE.Group>(null)
@@ -55,8 +56,25 @@ export function Guitar(props) {
       ref={group}
       {...props}
       dispose={null}
-      onClick={() => setSound(!sound)}
-      onPointerOver={() => setHover(true)}
+      onClick={(e) => {
+        // r3f dispatches a click to EVERY interactive object the ray crosses,
+        // nearest first -- not just the front-most one. So without this, a
+        // click aimed at anything that happens to line up with the guitar
+        // toggles the music too, and pops the "turn on sound" callout for a
+        // click the user never aimed here. Only act when the guitar is what
+        // was actually hit first.
+        if (e.intersections[0]?.eventObject !== e.eventObject) return
+        e.stopPropagation()
+        setSound(!sound)
+        // Everything this prop does is audible, so with the master switch off
+        // clicking it looks broken -- the intent is recorded and nothing
+        // happens. Point at the control that fixes it. Only on the way ON:
+        // clicking to turn music off while muted needs no explanation.
+        if (!masterOn && !sound) nudgeSoundOff((n) => n + 1)
+      }}
+      // Same nearest-hit rule for the cursor, so the pointer only promises the
+      // guitar where clicking it will actually do something.
+      onPointerOver={(e) => setHover(e.intersections[0]?.eventObject === e.eventObject)}
       onPointerOut={() => setHover(false)}
     >
       <group rotation={[-Math.PI / 2, 0, 0]}>

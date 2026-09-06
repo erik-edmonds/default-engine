@@ -7,6 +7,15 @@ import { raining } from "@/helpers/StateProvider";
 export default function RainScene() {
   const isRaining = useAtomValue(raining);
 
+  // Two patches live in public/scripts/raindrop.js, both commented there:
+  //  - premultipliedAlpha:false on its WebGL context. Its shader's blend()
+  //    divides the colour back out by alpha, so it emits STRAIGHT alpha, but
+  //    the context defaulted to premultiplied -- the compositor then drew each
+  //    droplet's soft antialiased edge at full strength rather than scaled by
+  //    its alpha. That was the hard white outline round every drop, brightest
+  //    exactly where the drop was most transparent.
+  //  - the renderer instance and its foreground canvas stashed on window, for
+  //    the live-scene refresh below.
   useEffect(() => {
     if (document.querySelector("script[data-original-raindrop]")) return;
 

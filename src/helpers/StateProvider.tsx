@@ -107,6 +107,17 @@ export const rainRequest = atom(0)
 // server) and owns every wouter call; this atom is how the page asks it to act.
 export const portalExitRequest = atom(0)
 
+// The id of the portal currently open ("/item/:id"), or null. The route itself
+// is the source of truth and stays that way -- this is a read-only mirror of
+// it, published by PortalRouteSync for the benefit of code that can't call
+// wouter. Same reason as titleScreenActive above: wouter reads `location` at
+// render, so every wouter call is confined to inside <Canvas>, and anything
+// outside it that needs to know whether a portal is open has to be told.
+// Currently that's the hint director, which shows "double-click to enter"
+// only until the first portal is opened and "click home to exit" only while
+// one is.
+export const openPortalId = atom<string | null>(null)
+
 // True while CameraController is animating the camera (a hotspot flight, the
 // avatar zoom-in). Anything else that writes camera.rotation has to stand down
 // while this is set, or it fights the flight and wins.
@@ -140,3 +151,11 @@ export const sfxEnabled = atom(false)
 // the same way an app's own volume survives your system output being
 // muted and unmuted.
 export const musicEnabled = atom(false)
+
+// Incrementing counter -- bumped when something whose whole effect is audible
+// (the guitar) is activated while the master switch above is off. SoundToggle
+// reads it and pops a short callout on itself, because it is the control that
+// fixes the problem. A counter, not a boolean, for the same reason as
+// rainRequest: clicking again while the callout is already up has to restart
+// its timer, and re-setting a true boolean is a no-op React bails out of.
+export const soundOffNudge = atom(0)

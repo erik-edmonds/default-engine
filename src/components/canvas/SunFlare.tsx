@@ -70,7 +70,7 @@ export function SunFlare() {
         // the exact opposite of the soft, wide sun glare wanted here. The star
         // is now bigger and much blunter, and the round glare much wider, so
         // the two read as one broad glow with soft rays rather than a sprite.
-        glareSize: 1.8,
+        glareSize: 0.8,
         flareSize: 0.015,
         // 0 removes the star spikes entirely, and does so cleanly rather than
         // by accident: in glare() the angular term becomes a constant

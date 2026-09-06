@@ -180,3 +180,89 @@ body {
     transform: scaleY(0.7);
   }
 }
+
+/* SoundToggle's "Turn on sound first!" callout. Sharp on the way in (a short
+   overshoot popping out of the icon it hangs from, hence the top-right
+   transform origin) and a plain quick fade on the way out -- it's a
+   correction, so it should land, not drift in. */
+@keyframes sound-nudge-pop {
+  0% { transform: translateY(-4px) scale(0.94); }
+  55% { transform: translateY(0) scale(1.06); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+.sound-nudge {
+  opacity: 0;
+  transform-origin: top right;
+  transform: translateY(-4px) scale(0.94);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.sound-nudge[data-shown="true"] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: sound-nudge-pop 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sound-nudge,
+  .sound-nudge[data-shown="true"] {
+    transform: none;
+    animation: none;
+  }
+}
+
+/* SceneHint's marker -- the same sonar breath CameraHotspot's rings use on
+   hover, running continuously here because a hint has to catch an eye that
+   isn't already on it. Scale only (no width/height), so it can't reflow the
+   caption sitting beside it. */
+@keyframes hint-marker-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.55); opacity: 1; }
+}
+
+.hint-marker-ring {
+  animation: hint-marker-breathe 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint-marker-ring {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+/* With a marker, the caption hangs off its point, and flips to the marker's
+   left near the right edge of the viewport where a right-hand caption would
+   run off frame (HintAnchor sets data-hint-side each frame from the projected
+   x). Without one, the caption IS the hint and sits on the point itself. */
+.hint-label {
+  position: absolute;
+  top: 0;
+  left: 18px;
+  transform: translateY(-50%);
+}
+
+[data-hint-side="left"] .hint-label {
+  left: auto;
+  right: 18px;
+}
+
+/* Markerless + world-anchored (the portal's "double-click to enter"): centred
+   on the anchor, which sits just under the portal frame. The portal is always
+   dead centre of frame at its viewpoint, so there's no edge to flip away
+   from and the side rules above are overridden outright. */
+[data-hint-marker="false"][data-hint-anchor="world"] .hint-label {
+  left: 0;
+  right: auto;
+  transform: translate(-50%, -50%);
+}
+
+/* Markerless + screen-anchored (the home button's "click home to exit"):
+   starts at the anchor and is centred on its line, so it reads level with the
+   button rather than hanging below it. */
+[data-hint-marker="false"][data-hint-anchor="screen"] .hint-label {
+  left: 0;
+  right: auto;
+  transform: translateY(-50%);
+}
