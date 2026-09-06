@@ -24,6 +24,8 @@ import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/c
 import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import { HintAnchor } from "@/components/canvas/HintAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
+import { CursorDriver } from "@/components/canvas/CursorDriver";
+import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import RainScene from "@/components/canvas/RainScene";
@@ -509,8 +511,8 @@ export default function Page() {
       <div className="relative h-screen w-screen overflow-hidden">
         <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-all duration-300 ${!started ? "invisible" : "visible"}`}>
           <div className="relative">
-            {sceneReady && <h1 className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-[#d25a1a]">Erik Edmonds</h1>}
-            {nameStamped && <p className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-[#d25a1a]">Data Scientist</p>}
+            {sceneReady && <h1 data-cursor="text" className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-[#d25a1a]">Erik Edmonds</h1>}
+            {nameStamped && <p data-cursor="text" className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-[#d25a1a]">Data Scientist</p>}
           </div>
         </div>
         <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
@@ -647,6 +649,7 @@ export default function Page() {
               ))}
             </group>
             {/* dragged && rotate && <Mouse /> */}
+            {/* */}<OrbitControls />
             <CameraController ref={cameraControllerRef} />
             {/* Inside the Canvas on purpose -- it owns every wouter call, and
                 wouter reads `location` at render, which would break this
@@ -663,6 +666,12 @@ export default function Page() {
                 the camera so it lives in here, while the thing it positions is
                 a DOM node outside the canvas (SceneHint, below). */}
             <HintAnchor />
+            {/* Same split as the projectors above: the driver needs the camera
+                so it lives in here, while the thing it positions is a DOM node
+                outside the canvas (SceneCursor, below). Desktop only -- there
+                is no pointer to replace on a touch device, which is also why
+                the hotspot rings and InteractionHint are gated this way. */}
+            {!isCoarsePointer && <CursorDriver />}
             <Preload all />
           </Suspense>}
         </Canvas>
@@ -677,6 +686,7 @@ export default function Page() {
             point at is reachable by touch too, and the copy adapts to the
             gesture that actually works there (see HINTS). */}
         <SceneHint />
+        {!isCoarsePointer && <SceneCursor />}
         {rainTriggered && <RainScene />}
       </div>
     </NavigationProvider>

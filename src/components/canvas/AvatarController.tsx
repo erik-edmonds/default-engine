@@ -10,7 +10,7 @@ import { Avatar } from "@/components/models/Avatar"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
 import { Scuba } from "@/components/models/Scuba"
 
-const BASE_POSITION: [number, number, number] = [-1.3, -0.65, 1]
+const BASE_POSITION: [number, number, number] = [-1.3, -1.9, 1]
 const BASE_ROTATION: [number, number, number] = [0, 0, 0]
 
 const KEYFRAMES: { at: number; x: number; rotY: number }[] = [

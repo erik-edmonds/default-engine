@@ -1,9 +1,15 @@
 import * as THREE from 'three'
 import React, { useRef, useEffect, useState, useMemo } from 'react'
-import { useGLTF, useAnimations, useCursor } from '@react-three/drei'
+import { useGLTF, useAnimations } from '@react-three/drei'
+import { useCursorHover } from '@/helpers/useCursorHover'
 import { useFrame } from '@react-three/fiber'
 
 import { useShadows } from '@/helpers/useShadows'
+import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
+
+/** Same as the other props: noticed, not captured by. */
+const PROP_MAGNETIC_STRENGTH = 0.8
+const PROP_MAGNETIC_RADIUS = 110
 
 const BEAM_LOCAL_TARGET: [number, number, number] = [1.0430, 0.4250, -0.3359]
 const BEAM_LOCAL_LENGTH = 1.1753
@@ -137,8 +143,31 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
     }
   })
 
-  useCursor(hovered)
+  useCursorHover(hovered)
   useShadows(rootRef)
+
+  // Magnetic target on the ball group, not the root: the root also contains
+  // the release beam and the sparkle cloud, which sit out by the avatar, so
+  // its world origin is not where the ball appears.
+  const clickRef = useRef(() => setClicked((c) => !c))
+  clickRef.current = () => setClicked((c) => !c)
+  const magnet = useRef<MagneticTarget | null>(null)
+  useEffect(() => {
+    if (!ballGroupRef.current) return
+    const target: MagneticTarget = {
+      object: ballGroupRef.current,
+      type: 'interactive',
+      strength: PROP_MAGNETIC_STRENGTH,
+      radius: PROP_MAGNETIC_RADIUS,
+      snapRadius: MAGNETIC_SNAP_RADIUS * 0.7,
+      // Once released, clicking it again does nothing useful -- stop pulling.
+      isEnabled: () => !click,
+      activate: () => clickRef.current(),
+    }
+    magnet.current = target
+    return registerMagneticTarget(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [click])
 
   const initialPointsArray = useMemo(() => new Float32Array(particleCount * 3), [])
 
@@ -214,7 +243,15 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
         />
       </points>
 
-      <group ref={ballGroupRef} onClick={() => setClicked(!click)} position={[0, 0, 0]}>
+      <group
+        ref={ballGroupRef}
+        onClick={() => {
+          // Registry-routed so the direct and assisted clicks share a debounce.
+          if (magnet.current) activateTarget(magnet.current)
+          else clickRef.current()
+        }}
+        position={[0, 0, 0]}
+      >
         <group name="Sketchfab_Scene">
           <group name="Sketchfab_model" rotation={[-Math.PI / 2, 0, 0]} scale={0.001}>
             <group name="5faf20c088894b0fa9f561ff1aaac8f1fbx" rotation={[Math.PI / 2, 0, 0]}>

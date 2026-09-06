@@ -1,18 +1,15 @@
 "use client"
 
-import { useState } from 'react'
-import { useCursor, MeshDistortMaterial } from '@react-three/drei'
-import { useRouter } from 'next/navigation'
+import { MeshDistortMaterial } from '@react-three/drei'
 
+// The waterfall foam (Foam.tsx mounts four of these). It has no click handler
+// and never did, but it used to raise a pointer cursor on hover -- a promise
+// of interactivity it can't keep. Harmless-ish with a native cursor; with the
+// custom one it would open the lens and read as a target, so the hover is gone
+// entirely rather than being migrated.
 export const Blob = ({ distort, speed,  ...props }) => {
-  const router = useRouter()
-  const [hovered, hover] = useState(false)
-  useCursor(hovered)
   return (
-    <mesh
-      onPointerOver={() => hover(true)}
-      onPointerOut={() => hover(false)}
-      {...props}>
+    <mesh {...props}>
       <sphereGeometry args={[1, 24, 8]} scale={[1.5, 0.5, 1.5]} />
       
       <MeshDistortMaterial 

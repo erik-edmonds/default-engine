@@ -6,6 +6,7 @@ import { useFrame } from "@react-three/fiber"
 import { Billboard } from "@react-three/drei"
 import gsap from "gsap"
 import { useSfx } from "@/helpers/useSfx"
+import { MAGNETIC_RADIUS, MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, setCursorHover, type MagneticTarget } from "@/helpers/cursor"
 
 const BOB_AMPLITUDE = 0.12
 const BOB_SPEED = 0.9
@@ -23,6 +24,10 @@ const PULSE_DURATION = 1.6
 const PULSE_SETTLE_DURATION = 0.25
 
 const ENTRANCE_DURATION = 0.2
+
+/** Hotspots pull a little harder than an ordinary prop: they're the scene's
+ *  navigation, and helping the pointer find them is the whole point. */
+const HOTSPOT_MAGNETIC_STRENGTH = 1.2
 
 export function CameraHotspot({
   position,
@@ -59,6 +64,47 @@ export function CameraHotspot({
   const frustum = useMemo(() => new THREE.Frustum(), [])
   const frustumMatrix = useMemo(() => new THREE.Matrix4(), [])
   const worldPos = useMemo(() => new THREE.Vector3(), [])
+
+  // Latest props, read by the magnetic target below without re-registering it
+  // every time they change. `hidden` in particular flips often.
+  const latest = useRef({ hidden, onClick, play })
+  latest.current = { hidden, onClick, play }
+  // Stable identity for this marker's hover report. Several things can be
+  // hovered at once, so the cursor's hover registry is keyed rather than a
+  // single flag.
+  const hoverToken = useMemo(() => ({}), [])
+  useEffect(() => () => setCursorHover(hoverToken, null), [hoverToken])
+
+  // Register as a magnetic target. The object handed over is the bobbing
+  // group, not the prop position -- CursorDriver reads getWorldPosition() every
+  // frame, so the cursor tracks the marker's actual bob rather than drifting
+  // off it.
+  const magnet = useRef<MagneticTarget | null>(null)
+  useEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    const target: MagneticTarget = {
+      object: group,
+      type: "cameraHotspot",
+      strength: HOTSPOT_MAGNETIC_STRENGTH,
+      radius: MAGNETIC_RADIUS,
+      snapRadius: MAGNETIC_SNAP_RADIUS,
+      // Checked per frame rather than by unregistering, because a marker is
+      // hidden and shown constantly as you move between hotspots. The driver
+      // also verifies visibility up the parent chain, which covers the
+      // entrance tween where the hit mesh exists but isn't shown yet.
+      isEnabled: () => !latest.current.hidden,
+      // The sound lives here rather than in the click handler so an assisted
+      // click (fired by the cursor while locked, with the true pointer off the
+      // marker) is not silently different from a direct one.
+      activate: () => {
+        latest.current.play("click")
+        latest.current.onClick()
+      },
+    }
+    magnet.current = target
+    return registerMagneticTarget(target)
+  }, [])
 
   useFrame((state) => {
     const group = groupRef.current
@@ -111,7 +157,7 @@ export function CameraHotspot({
       if (hovered) setHovered(false)
       ringMaterialRef.current?.color.copy(IDLE_COLOR)
       dotMaterialRef.current?.color.copy(IDLE_COLOR)
-      document.body.style.cursor = "auto"
+      setCursorHover(hoverToken, null)
       return
     }
 
@@ -170,8 +216,15 @@ export function CameraHotspot({
           userData={{ hotspot: true }}
           onClick={(e) => {
             e.stopPropagation()
-            play("click")
-            onClick()
+            // Through the registry, not straight to onClick: the cursor fires
+            // the same target when it's locked on but the true pointer is off
+            // to one side, and activateTarget debounces so a click that lands
+            // on both paths still only navigates once.
+            if (magnet.current) activateTarget(magnet.current)
+            else {
+              play("click")
+              onClick()
+            }
           }}
           onPointerOver={(e) => {
             e.stopPropagation()
@@ -179,13 +232,13 @@ export function CameraHotspot({
             ringMaterialRef.current?.color.copy(HOVER_COLOR)
             dotMaterialRef.current?.color.copy(HOVER_COLOR)
             play("click")
-            document.body.style.cursor = "pointer"
+            setCursorHover(hoverToken, "cameraHotspot")
           }}
           onPointerOut={() => {
             setHovered(false)
             ringMaterialRef.current?.color.copy(IDLE_COLOR)
             dotMaterialRef.current?.color.copy(IDLE_COLOR)
-            document.body.style.cursor = "auto"
+            setCursorHover(hoverToken, null)
           }}
         >
           <circleGeometry args={[0.5, 40]} />

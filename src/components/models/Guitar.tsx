@@ -1,10 +1,19 @@
 import React, { useRef, useEffect, useState } from 'react'
 import * as THREE from "three"
-import { useGLTF, useCursor } from '@react-three/drei'
+import { useGLTF } from '@react-three/drei'
+import { useCursorHover } from '@/helpers/useCursorHover'
 import { Howl } from "howler"
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { musicEnabled, sfxEnabled, soundOffNudge } from '@/helpers/StateProvider'
 import { useShadows } from '@/helpers/useShadows'
+import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
+
+/** Props pull less than navigation targets -- they're discoveries, not the
+ *  route through the scene, so the cursor should notice them without being
+ *  captured by them. The guitar is also small on screen, which is exactly the
+ *  case magnetism helps with. */
+const PROP_MAGNETIC_STRENGTH = 0.8
+const PROP_MAGNETIC_RADIUS = 110
 
 export function Guitar(props) {
   // `sound` is this prop's own intent ("I want music playing"); the master
@@ -27,7 +36,36 @@ export function Guitar(props) {
     html5: true,
   }))
 
-  useCursor(hovered)
+  useCursorHover(hovered)
+
+  // What a click on the guitar does, in one place so the direct click and the
+  // cursor's assisted click can't drift apart. Held in a ref so the magnetic
+  // target registers once rather than re-registering on every `sound` change.
+  const activateRef = useRef<() => void>(() => {})
+  activateRef.current = () => {
+    setSound(!sound)
+    // Everything this prop does is audible, so with the master switch off
+    // clicking it looks broken -- the intent is recorded and nothing happens.
+    // Point at the control that fixes it. Only on the way ON: clicking to turn
+    // music off while muted needs no explanation.
+    if (!masterOn && !sound) nudgeSoundOff((n) => n + 1)
+  }
+
+  const magnet = useRef<MagneticTarget | null>(null)
+  useEffect(() => {
+    if (!group.current) return
+    const target: MagneticTarget = {
+      object: group.current,
+      type: 'interactive',
+      strength: PROP_MAGNETIC_STRENGTH,
+      radius: PROP_MAGNETIC_RADIUS,
+      snapRadius: MAGNETIC_SNAP_RADIUS * 0.7,
+      isEnabled: () => true,
+      activate: () => activateRef.current(),
+    }
+    magnet.current = target
+    return registerMagneticTarget(target)
+  }, [])
   useEffect(() => {
     if (sound && masterOn) {
       if (song.state() === "unloaded") song.load()
@@ -65,12 +103,10 @@ export function Guitar(props) {
         // was actually hit first.
         if (e.intersections[0]?.eventObject !== e.eventObject) return
         e.stopPropagation()
-        setSound(!sound)
-        // Everything this prop does is audible, so with the master switch off
-        // clicking it looks broken -- the intent is recorded and nothing
-        // happens. Point at the control that fixes it. Only on the way ON:
-        // clicking to turn music off while muted needs no explanation.
-        if (!masterOn && !sound) nudgeSoundOff((n) => n + 1)
+        // Through the registry so this and the cursor's assisted click share
+        // one debounce -- a click that satisfies both must still toggle once.
+        if (magnet.current) activateTarget(magnet.current)
+        else activateRef.current()
       }}
       // Same nearest-hit rule for the cursor, so the pointer only promises the
       // guitar where clicking it will actually do something.

@@ -1,12 +1,19 @@
 import * as THREE from 'three'
 import {  useCallback, useEffect, useRef, useState } from 'react'
 import { useFrame, extend, type ThreeEvent } from '@react-three/fiber'
-import { useCursor, MeshPortalMaterial, Text} from '@react-three/drei'
+import { MeshPortalMaterial, Text} from '@react-three/drei'
 import { useRoute, useLocation } from 'wouter'
 import { easing, geometry } from 'maath'
 import { suspend } from 'suspend-react'
 import { LONG_PRESS_MS, LONG_PRESS_SLOP_PX } from '@/helpers/hints'
 import { useCoarsePointer } from '@/helpers/useCoarsePointer'
+import { useCursorHover } from '@/helpers/useCursorHover'
+import { MAGNETIC_RADIUS, MAGNETIC_SNAP_RADIUS, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
+
+/** Portals are the strongest focus target in the scene -- "focus here" rather
+ *  than a hotspot's "look here" -- so they reach further and hold harder. */
+const PORTAL_MAGNETIC_STRENGTH = 1.35
+const PORTAL_MAGNETIC_RADIUS = MAGNETIC_RADIUS * 1.25
 
 extend({ RoundedPlaneGeometry: geometry.RoundedPlaneGeometry })
 const regular = import('@pmndrs/assets/fonts/inter_regular.woff')
@@ -26,8 +33,31 @@ export default function Frame({ id, name, author, bg = '#f0f0f0', width = WIDTH 
   const [, params] = useRoute('/item/:id')
   const [hovered, hover] = useState(false)
   const coarse = useCoarsePointer()
-  useCursor(hovered)
+  useCursorHover(hovered, 'project')
   useFrame((state, dt) => easing.damp(portal.current, 'blend', params?.id === id ? 1 : 0, 0.2, dt))
+
+  // Magnetic target, gated on the same `interactive` flag as the handlers. A
+  // portal you can't open must not pull the cursor toward it -- from home,
+  // three of these are in shot and none of them are enterable.
+  const groupRef = useRef(null)
+  const latest = useRef({ interactive, id })
+  latest.current = { interactive, id }
+  useEffect(() => {
+    const node = groupRef.current
+    if (!node) return
+    const target: MagneticTarget = {
+      object: node,
+      type: 'project',
+      strength: PORTAL_MAGNETIC_STRENGTH,
+      radius: PORTAL_MAGNETIC_RADIUS,
+      snapRadius: MAGNETIC_SNAP_RADIUS,
+      isEnabled: () => latest.current.interactive,
+      // Entering is a double-click/long-press gesture, so a single assisted
+      // click deliberately does nothing here -- the magnetism helps you aim at
+      // the portal, it doesn't lower the bar for entering one.
+    }
+    return registerMagneticTarget(target)
+  }, [])
 
   // Touch entry. `dblclick` is what onDoubleClick listens for, and touch
   // browsers fire it inconsistently -- iOS Safari in particular spends
@@ -73,7 +103,7 @@ export default function Frame({ id, name, author, bg = '#f0f0f0', width = WIDTH 
     : {}
 
   return (
-    <group {...props}>
+    <group ref={groupRef} {...props}>
       <Text font={suspend(medium).default} fontSize={0.3} anchorY="top" anchorX="left" lineHeight={0.8} position={[-0.375, 0.715, 0.01]} material-toneMapped={false}>
         {name}
       </Text>

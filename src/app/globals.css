@@ -266,3 +266,64 @@ body {
   right: auto;
   transform: translateY(-50%);
 }
+
+/* ------------------------------------------------------------------ *
+ * Custom cursor (SceneCursor.tsx + CursorDriver.tsx)
+ *
+ * Only two things live here now: hiding the OS pointer, and the scale/opacity
+ * the driver drives per frame. Every state's ARTWORK -- which shapes exist for
+ * idle vs movement vs text vs project focus -- is rendered in React instead.
+ *
+ * That split is deliberate. This project's dev server has repeatedly served a
+ * half-stale globals.css: one fetch carried the old bracket opacity AND the new
+ * one, with the movement-state rules missing entirely, while the JS bundle was
+ * perfectly current. Anything that decides what the cursor LOOKS like cannot
+ * live somewhere that can silently go stale, or the state machine runs
+ * correctly and every state still draws the same thing.
+ *
+ * Hiding the pointer stays here because it is a single rule that has been
+ * serving correctly, and it needs to apply to elements React does not own. The
+ * class goes on BOTH <html> and <body>: `cursor` does not propagate from body
+ * up to the viewport, so a body-only rule leaves the native arrow over any
+ * pixel whose hit target resolves to the root. `!important` beats the inline
+ * `body.style.cursor` that a couple of drei call sites still set.
+ * ------------------------------------------------------------------ */
+html.custom-cursor,
+html.custom-cursor body,
+html.custom-cursor * {
+  cursor: none !important;
+}
+
+/* Continuous inputs, written by CursorDriver each frame:
+   --cursor-depth  0..1  0 = far/open sky, 1 = right up against the camera
+   --cursor-attract 0..1 how strongly a magnet is pulling
+   Declared here so the cursor renders sanely before the driver's first frame. */
+.scene-cursor {
+  --cursor-depth: 0.5;
+  --cursor-attract: 0;
+  --cursor-scale: calc(0.47 + var(--cursor-depth) * 0.33 + var(--cursor-attract) * 0.18);
+  --cursor-opacity: calc(0.72 + var(--cursor-depth) * 0.18 + var(--cursor-attract) * 0.1);
+  will-change: transform;
+  opacity: var(--cursor-opacity);
+}
+
+.scene-cursor-inner {
+  transform: scale(var(--cursor-scale));
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A press is a brief squeeze on whatever state is showing, not a state of its
+   own -- nothing in this scene drags. */
+.scene-cursor[data-cursor-pressed="true"] .scene-cursor-inner {
+  transform: scale(calc(var(--cursor-scale) * 0.86));
+  transition-duration: 0.09s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-cursor-inner {
+    transition-duration: 0.01ms;
+  }
+  .scene-cursor-ghost {
+    display: none !important;
+  }
+}
