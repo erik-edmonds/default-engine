@@ -12,8 +12,8 @@ import {
 
 /** Same reasoning as the guitar's: a prop the cursor should notice without
  *  being captured by. */
-const PROP_MAGNETIC_STRENGTH = 0.8
-const PROP_MAGNETIC_RADIUS = 110
+const PROP_MAGNETIC_STRENGTH = 1.05
+const PROP_MAGNETIC_RADIUS = 155
 
 import { Clouds } from "@/components/canvas/Sky"
 import { Speaker } from "@/components/models/Speaker"
@@ -55,7 +55,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
             type: "interactive",
             strength: PROP_MAGNETIC_STRENGTH,
             radius: PROP_MAGNETIC_RADIUS,
-            snapRadius: MAGNETIC_SNAP_RADIUS * 0.7,
+            snapRadius: MAGNETIC_SNAP_RADIUS,
             isEnabled: () => true,
             activate: () => downclickRef.current(),
         }

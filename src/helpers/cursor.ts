@@ -61,12 +61,13 @@ export interface MagneticTarget {
 
 /** Default screen-space influence radius. Beyond this a target exerts nothing. */
 export const MAGNETIC_RADIUS = 180
-/** Enter LOCK inside this. */
-export const MAGNETIC_SNAP_RADIUS = 45
+/** Enter LOCK inside this. Roughly half an inch on a typical display, which
+ *  is the distance at which a magnet should visibly grab. */
+export const MAGNETIC_SNAP_RADIUS = 62
 /** ...and leave it only past this. The gap is hysteresis: without it the state
  *  chatters between ATTRACT and LOCK whenever the pointer sits on the boundary,
  *  which reads as a flickering cursor. */
-export const MAGNETIC_RELEASE_RADIUS = 72
+export const MAGNETIC_RELEASE_RADIUS = 96
 
 /** Type priority. Distance still dominates the score, so a distant portal
  *  can't pull the cursor off a nearby hotspot -- priority only breaks ties
@@ -104,18 +105,46 @@ export const VELOCITY_DECAY = 5
  *  in the last frame or two, it's moving. */
 export const MOTION_WINDOW_MS = 140
 
-/** THREE.MathUtils.damp lambdas. Higher is snappier. Magnetic movement is
- *  deliberately heavier than free movement -- that lag IS the feeling of being
- *  pulled. */
+/** THREE.MathUtils.damp lambdas. Higher is snappier.
+ *
+ *  The approach keeps a little weight -- that lag is what reads as being drawn
+ *  in. The LOCK does not. It used to be the slowest number here (8, against 26
+ *  for ordinary movement), which at 60fps meant a third of a second to cover
+ *  the last few pixels: the cursor oozed toward the target instead of grabbing
+ *  it, and by the time it arrived the pointer had usually moved on. That is
+ *  what "the magnets barely pull" actually was. A snap has to be faster than
+ *  free movement, not slower. */
 export const FREE_DAMPING = 26
-export const MAGNETIC_DAMPING = 13
-export const LOCK_DAMPING = 8
+export const MAGNETIC_DAMPING = 19
+export const LOCK_DAMPING = 45
 
-/** How much of the way to the target the cursor may be pulled at full
- *  attraction. Deliberately short of 1: even locked, the cursor keeps a little
- *  offset toward the real pointer, so it never feels like the site seized the
- *  mouse. */
-export const MAX_ATTRACTION = 0.82
+/** The attraction figure ramps asymmetrically: engaging fast so the grab is
+ *  immediate, releasing slowly so letting go still feels elastic rather than
+ *  like the cursor was dropped. */
+/** How much attraction counts as "closing in on something" for the INTERACTIVE
+ *  state, as opposed to merely being somewhere inside a field.
+ *
+ *  This was 0.04, which was fine when the fields were narrow and weak. Now
+ *  that they are wide enough to feel, 0.04 is true across most of the screen,
+ *  and it sits above the movement test in the state chain -- so the scan state
+ *  became unreachable and every sweep of the mouse drew the interactive
+ *  cursor. 0.35 is roughly the outer third of a hotspot's field: far enough
+ *  out that ordinary movement still reads as movement, close enough in that
+ *  the approach to a target announces itself before the lock takes over. */
+export const INTERACTIVE_ATTRACTION = 0.35
+
+export const ATTRACTION_ENGAGE_DAMPING = 34
+export const ATTRACTION_RELEASE_DAMPING = 9
+
+/** How much of the way to the target the cursor may be pulled while merely
+ *  leaning toward it, before the lock engages. */
+export const MAX_ATTRACTION = 0.8
+
+/** ...and once LOCKED, effectively all the way. A magnet that stops 18% short
+ *  of the thing it grabbed does not read as a magnet -- it reads as drift.
+ *  The small remainder keeps a trace of the real pointer so the cursor still
+ *  leans in the direction you are pushing while stuck to the target. */
+export const LOCK_ATTRACTION = 0.97
 
 /** A click can arrive at the same target twice -- once from r3f's own handler
  *  and once from the cursor's assisted click. Second one inside this window is
@@ -302,13 +331,20 @@ export function isTreeVisible(object: THREE.Object3D): boolean {
  *
  *  This is the single number that decides whether the magnetism reads as help
  *  or as interference, so it is worth stating what it buys. A smoothstep --
- *  the obvious choice, and what this used to be -- is already at 0.74 by the
- *  halfway point, which at a 180px radius meant the cursor sat ~73px off the
- *  true pointer while still 90px from its target. That is not subconscious;
- *  that is the page moving your mouse. At the 4th power the same halfway point
- *  gives 0.20, so the field is a barely-perceptible lean until you are
- *  genuinely closing in, then firms up quickly over the last third. */
-const ATTRACTION_CURVE = 4
+ *  the obvious choice -- is 0.74 by the halfway point, which at a 180px radius
+ *  put the cursor ~73px off the true pointer while still 90px from its target:
+ *  the page moving your mouse.
+ *
+ *  The 4th power that replaced it over-corrected badly. It leaves 0.20 at the
+ *  halfway point and under 0.02 at 120px, so outside about 40px there is
+ *  nothing to feel at all -- measured on the live scene, the pull at 48px was
+ *  under 1px on most targets. That is the "there is no magnetism" report, and
+ *  it was right.
+ *
+ *  1.7 sits between them: gentle in the outer half (0.31 at the midpoint, so
+ *  no hijacking) but climbing steeply enough through the last 60px that the
+ *  approach to a target is unmistakable, with LOCK taking over from there. */
+const ATTRACTION_CURVE = 1.7
 
 /** Attraction falloff between `outer` (no pull) and `inner` (full pull).
  *  Returns 0 at or beyond `outer`, 1 at or inside `inner`. Written out because

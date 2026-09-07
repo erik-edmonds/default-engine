@@ -134,7 +134,15 @@ export const cameraFlying = atom(false)
 // !started). Favicon.tsx reads this to hide the home button during load --
 // it's rendered from layout.tsx, outside page.tsx's own component tree, so
 // local state there can't reach it directly.
-export const titleScreenActive = atom(false)
+// Defaults to TRUE -- hidden -- because the failure is asymmetric. page.tsx
+// corrects this in an effect, but an effect cannot run before the first paint,
+// so a `false` default meant the home button was painted over the loading
+// screen for the whole window between first render and hydration. That window
+// is invisible on a warm dev server and seconds long on a real cold load.
+// Starting hidden makes the worst case "appears a frame late" instead of
+// "sits on top of the loading screen". Icon.tsx scopes this to the island
+// route so the other pages still get their way home.
+export const titleScreenActive = atom(true)
 
 // Master sound switch (SoundToggle.tsx) -- gates every sound in the app,
 // music included. Off during the loading screen; page.tsx's handleEnter

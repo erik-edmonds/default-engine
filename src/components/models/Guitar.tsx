@@ -12,8 +12,8 @@ import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type Magn
  *  route through the scene, so the cursor should notice them without being
  *  captured by them. The guitar is also small on screen, which is exactly the
  *  case magnetism helps with. */
-const PROP_MAGNETIC_STRENGTH = 0.8
-const PROP_MAGNETIC_RADIUS = 110
+const PROP_MAGNETIC_STRENGTH = 1.05
+const PROP_MAGNETIC_RADIUS = 155
 
 export function Guitar(props) {
   // `sound` is this prop's own intent ("I want music playing"); the master
@@ -59,7 +59,7 @@ export function Guitar(props) {
       type: 'interactive',
       strength: PROP_MAGNETIC_STRENGTH,
       radius: PROP_MAGNETIC_RADIUS,
-      snapRadius: MAGNETIC_SNAP_RADIUS * 0.7,
+      snapRadius: MAGNETIC_SNAP_RADIUS,
       isEnabled: () => true,
       activate: () => activateRef.current(),
     }

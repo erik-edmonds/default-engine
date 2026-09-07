@@ -45,14 +45,7 @@ next-env.d.ts
 
 # orphaned assets, unreferenced by any rendered component in src/ -- kept on
 # disk locally, not shipped to git/Vercel
-# The Base/ folder is orphaned source art EXCEPT for base.glb, which is the
-# default avatar the scene actually loads. Git will not descend into an
-# excluded directory, so each level has to exclude its *contents* rather than
-# itself for the negation on the last line to be reachable.
-/public/models/Base/*
-!/public/models/Base/GLB/
-/public/models/Base/GLB/*
-!/public/models/Base/GLB/base.glb
+/public/models/Base/
 /public/models/cube.glb
 /public/models/tornado.glb
 /public/models/ditto.glb

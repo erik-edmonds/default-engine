@@ -5,6 +5,9 @@ import * as THREE from "three"
 import { useFrame, useThree } from "@react-three/fiber"
 
 import {
+  ATTRACTION_ENGAGE_DAMPING,
+  INTERACTIVE_ATTRACTION,
+  ATTRACTION_RELEASE_DAMPING,
   DEPTH_FAR,
   DEPTH_NEAR,
   DEPTH_SCAN_INTERVAL_FRAMES,
@@ -14,6 +17,7 @@ import {
   MAGNETIC_DAMPING,
   MAGNETIC_RELEASE_RADIUS,
   MAX_ATTRACTION,
+  LOCK_ATTRACTION,
   MIN_VELOCITY_FACTOR,
   MOTION_WINDOW_MS,
   SPEED_FAST,
@@ -174,7 +178,17 @@ export function CursorDriver() {
     } else if (locked.current) {
       // Hysteresis: leave the lock only well outside the radius that entered
       // it, or the state flickers whenever the pointer rests on the boundary.
-      if (bestDistance > Math.max(MAGNETIC_RELEASE_RADIUS, best.snapRadius * 1.6)) {
+      //
+      // Speed breaks it too. Attraction already yields to a fast pointer via
+      // velocityFactor, but that only applied before the lock engaged -- once
+      // locked, the cursor held on at any speed. With the wider snap radius
+      // that turns a flick past a hotspot into the cursor hanging back and
+      // snapping after you, which is exactly the "it took my mouse" feeling
+      // the escape hatch exists to prevent.
+      if (
+        bestDistance > Math.max(MAGNETIC_RELEASE_RADIUS, best.snapRadius * 1.6) ||
+        speed > ESCAPE_SPEED
+      ) {
         locked.current = false
       }
     } else if (bestDistance < best.snapRadius) {
@@ -199,19 +213,27 @@ export function CursorDriver() {
       )
       // A lock holds regardless of speed, otherwise flicking the mouse while
       // locked would tear the cursor off something it is deliberately holding.
-      targetAttraction = THREE.MathUtils.clamp(
-        proximity * best.strength * (locked.current ? 1 : velocityFactor),
-        0,
-        1,
-      ) * MAX_ATTRACTION
+      // Locked is a different regime, not just more of the same lean: it
+      // ignores the falloff and pins the cursor to the target, which is what
+      // makes it read as a magnet grabbing rather than the cursor drifting.
+      targetAttraction = locked.current
+        ? LOCK_ATTRACTION
+        : THREE.MathUtils.clamp(proximity * best.strength * velocityFactor, 0, 1) * MAX_ATTRACTION
 
       goalX = THREE.MathUtils.lerp(pointer.x, bestX, targetAttraction)
       goalY = THREE.MathUtils.lerp(pointer.y, bestY, targetAttraction)
     }
 
     // Damp the attraction figure itself too, so entering and leaving a field
-    // ramps rather than steps -- this is the "elastic" release.
-    attraction.current = THREE.MathUtils.damp(attraction.current, targetAttraction, 10, dt)
+    // ramps rather than steps. Asymmetric on purpose: grabbing is fast,
+    // letting go is elastic. A symmetric ramp made even a correct lock arrive
+    // late, which read as no magnetism at all.
+    attraction.current = THREE.MathUtils.damp(
+      attraction.current,
+      targetAttraction,
+      targetAttraction > attraction.current ? ATTRACTION_ENGAGE_DAMPING : ATTRACTION_RELEASE_DAMPING,
+      dt,
+    )
 
     const lambda = locked.current
       ? LOCK_DAMPING
@@ -277,7 +299,7 @@ export function CursorDriver() {
     if (locked.current && best?.type === "project") state = "projectFocus"
     else if (locked.current) state = "locked"
     else if (hover === "project") state = "projectFocus"
-    else if (attraction.current > 0.04) state = "interactive"
+    else if (attraction.current > INTERACTIVE_ATTRACTION) state = "interactive"
     else if (hover) state = hover === "cameraHotspot" ? "interactive" : "hover"
     // Text sits below the magnets -- a caret over something you could actually
     // fly to would be the wrong promise -- but above movement, since reading

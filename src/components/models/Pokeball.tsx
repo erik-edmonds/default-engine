@@ -8,8 +8,8 @@ import { useShadows } from '@/helpers/useShadows'
 import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
 
 /** Same as the other props: noticed, not captured by. */
-const PROP_MAGNETIC_STRENGTH = 0.8
-const PROP_MAGNETIC_RADIUS = 110
+const PROP_MAGNETIC_STRENGTH = 1.05
+const PROP_MAGNETIC_RADIUS = 155
 
 const BEAM_LOCAL_TARGET: [number, number, number] = [1.0430, 0.4250, -0.3359]
 const BEAM_LOCAL_LENGTH = 1.1753
@@ -159,7 +159,7 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
       type: 'interactive',
       strength: PROP_MAGNETIC_STRENGTH,
       radius: PROP_MAGNETIC_RADIUS,
-      snapRadius: MAGNETIC_SNAP_RADIUS * 0.7,
+      snapRadius: MAGNETIC_SNAP_RADIUS,
       // Once released, clicking it again does nothing useful -- stop pulling.
       isEnabled: () => !click,
       activate: () => clickRef.current(),

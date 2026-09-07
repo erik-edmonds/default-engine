@@ -3,10 +3,17 @@ import { themes } from "@/helpers/Interfaces";
 import { useAppState, inSkyJourney, goHomeRequest, titleScreenActive } from "@/helpers/StateProvider";
 import { useAtomValue, useSetAtom } from "jotai";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 export function Favicon() {
   const { theme } = useAppState()
   const journeyActive = useAtomValue(inSkyJourney)
   const titleActive = useAtomValue(titleScreenActive)
+  // titleScreenActive now defaults to true so the button is never painted over
+  // the loading screen. Only the island route has a title screen, though --
+  // /portfolio and the project pages have no way home without this button, and
+  // nothing there ever clears the atom.
+  const onIslandRoute = usePathname() === "/"
+  const hidden = onIslandRoute && titleActive
   const requestGoHome = useSetAtom(goHomeRequest)
 
   return (
@@ -23,8 +30,8 @@ export function Favicon() {
       // (hotspot rings and the clickable props); chrome that's on screen the
       // whole time chirping as the pointer crosses it is noise.
       style={{
-        visibility: titleActive ? "hidden" : "visible",
-        opacity: titleActive ? 0 : 1,
+        visibility: hidden ? "hidden" : "visible",
+        opacity: hidden ? 0 : 1,
         transition: "opacity 0.3s ease",
       }}
     >

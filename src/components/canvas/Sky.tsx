@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import { Instances, Instance, useGLTF } from '@react-three/drei'
 import { useSetAtom } from 'jotai'
 import { rainRequest, thunder } from '@/helpers/StateProvider'
+import { MAGNETIC_SNAP_RADIUS, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
 import { registerHintCloud, unregisterHintCloud } from '@/helpers/hints'
 
 // Just the cloud instancer now. The rain lifecycle (hold/fade timers, the
@@ -28,6 +29,12 @@ export function Clouds({ data, range }) {
   )
 }
 
+/** Clouds sit far back, so their on-screen size is small; a slightly tighter
+ *  field than the island props keeps them from competing with the hotspot
+ *  rings that often share the sky with them. */
+const CLOUD_MAGNETIC_STRENGTH = 1
+const CLOUD_MAGNETIC_RADIUS = 140
+
 function Cloud({ random, atom, color = new THREE.Color(), hintTarget = false, ...props }) {
   const ref = useRef()
   const [hovered, setHover] = useState(false)
@@ -49,6 +56,31 @@ function Cloud({ random, atom, color = new THREE.Color(), hintTarget = false, ..
     registerHintCloud(node)
     return () => unregisterHintCloud(node)
   }, [hintTarget])
+
+  // A cloud is hover-highlighted and click-to-rain, so it is exactly the kind
+  // of thing the cursor should be drawn to -- but it was the one interactive
+  // object in the scene with no magnet at all. Registered on the <Instance>
+  // for the same reason the hint system is: the bob is written onto the
+  // instance's own position, so that is where the cloud actually is on screen.
+  const rainRef = useRef({ setRainRequest, setThunder })
+  rainRef.current = { setRainRequest, setThunder }
+  useEffect(() => {
+    const node = ref.current as THREE.Object3D | undefined
+    if (!node) return
+    const target: MagneticTarget = {
+      object: node,
+      type: 'interactive',
+      strength: CLOUD_MAGNETIC_STRENGTH,
+      radius: CLOUD_MAGNETIC_RADIUS,
+      snapRadius: MAGNETIC_SNAP_RADIUS,
+      isEnabled: () => true,
+      activate: () => {
+        rainRef.current.setRainRequest((c) => c + 1)
+        rainRef.current.setThunder((c) => c + 1)
+      },
+    }
+    return registerMagneticTarget(target)
+  }, [])
 
   useFrame((state) => {
     const t = state.clock.getElapsedTime() + random * 10000
