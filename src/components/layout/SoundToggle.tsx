@@ -17,7 +17,7 @@ const BAR_COLOR_BY_PHASE: Record<TimeOfDay, string> = {
   night: "#d25a1a",
 }
 
-// Per-track, not shared: tides.wav is mastered far hotter than waves.mp3, so
+// Per-track, not shared: tides.mp3 is mastered far hotter than waves.mp3, so
 // matching their gain made night blare against the day. Night is meant to sit
 // just perceptibly above day as a background bed, not draw attention, which
 // at these source levels means a much lower nominal number -- the two are not
@@ -63,7 +63,7 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
   // volume 0 rather than paused, so a crossfade can raise it from nothing
   // without a play() click at the top of the fade.
   const [tides] = useState(() => new Howl({
-    src: ["/sound/tides.wav"],
+    src: ["/sound/tides.mp3"],
     volume: 0,
     loop: true,
     preload: false,
@@ -81,7 +81,7 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
       // Guarded on playing(): pausing a Howl that was never started still
       // makes Howler touch its underlying <audio> element, and with
       // html5 streaming that tears down an in-flight range request --
-      // which Chrome reports as `net::ERR_ABORTED /sound/tides.wav` in the
+      // which Chrome reports as `net::ERR_ABORTED /sound/tides.mp3` in the
       // console. Nothing is actually broken by it, but it's noise, and
       // there's no reason to pause a track that never began.
       if (waves.playing()) waves.pause()

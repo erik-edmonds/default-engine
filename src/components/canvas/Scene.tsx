@@ -75,12 +75,18 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
 
     return (
         <>
+            {/* Sliced to what actually draws. `range` only clamps the DRAW
+                count -- every entry still mounted a <Cloud> with its own
+                useFrame, and drei's <Instances> loop decomposes/composes a
+                matrix for all of them regardless. Two 1000-entry arrays were
+                paying ~4,000 callbacks and 2,000 matrix rebuilds per frame so
+                that 20 clouds could appear. */}
             <Bvh firstHitOnly>
                 <group position={[20, 15, -20]}>
-                    <Clouds data={data} range={5} />
+                    <Clouds data={data.slice(0, 5)} range={5} />
                 </group>
                 <group position={[10, 0, 10]}>
-                    <Clouds data={surface} range={15} />
+                    <Clouds data={surface.slice(0, 15)} range={15} />
                 </group>
             </Bvh>
             {/* Outside the Bvh above, which exists for the cloud groups. A
@@ -95,8 +101,8 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                 them from swaying in lockstep. The two below the original are
                 placeholders: move them wherever you want them. */}
             <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
-            <PalmTree scale={0.55} position={[3.5,-6,3.5]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
-            <PalmTree scale={0.72} position={[-6,-6,2]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
+            <PalmTree scale={0.55} position={[-7,-3.5,-4.5]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
+            <PalmTree scale={0.72} position={[7,-6,0]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
             <Waterfall />
             {/* Both mounted once for the whole scene, not per-Clouds-group --
                 a strike and a downpour are whole-scene events regardless of

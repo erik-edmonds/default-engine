@@ -45,6 +45,17 @@ const SITE_DESCRIPTION =
   "Erik Edmonds — data scientist, digital nomad, and Pokémon trainer at heart. An interactive 3D portfolio.";
 
 export const metadata: Metadata = {
+  // Without this, the relative OG/Twitter image URLs below resolve against
+  // whatever host served the page -- the per-deployment vercel.app domain
+  // rather than the canonical one -- so shared links cited a URL that changes
+  // on every deploy. VERCEL_PROJECT_PRODUCTION_URL is the stable production
+  // host; the localhost fallback keeps dev builds warning-free.
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3000"),
+  ),
   title: "Erik Edmonds | Data Scientist",
   description: SITE_DESCRIPTION,
   icons: {
@@ -69,6 +80,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Matches the scene's clear colour, so mobile browser chrome blends into the
+  // loading screen instead of framing it in white.
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({children,}: Readonly<{children: React.ReactNode;}>) {

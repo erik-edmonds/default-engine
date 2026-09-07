@@ -40,7 +40,7 @@ export function RainController() {
   const [fading, setFading] = useState(false)
 
   const [rainSound] = useState(() => new Howl({
-    src: ['/sound/rain.wav'],
+    src: ['/sound/rain.mp3'],
     volume: RAIN_SOUND_VOLUME,
     preload: false,
     // Deliberately NOT html5:true (unlike waves.mp3/music.mp3) -- that mode

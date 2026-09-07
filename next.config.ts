@@ -12,6 +12,19 @@ const nextConfig: NextConfig = {
   // lint` and the `eslint` config option were removed in 16.0.0 -- so no
   // equivalent flag is needed for lint.)
   typescript: { ignoreBuildErrors: true },
+
+  // Nothing was setting Cache-Control on public/, so Next served the models,
+  // audio and the raindrop bundle as max-age=0 and every one of them was
+  // revalidated on every visit. These are content-addressed by hand (a changed
+  // model gets a new filename or a ?v= query), so they can be immutable.
+  async headers() {
+    return [
+      {
+        source: "/:dir(models|sound|scripts|water|cubemap|images)/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

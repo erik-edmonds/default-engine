@@ -6,8 +6,8 @@ import { Suspense, useCallback, useEffect, useRef, useState, useTransition } fro
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
-import { Gltf, Preload, useGLTF, useProgress } from "@react-three/drei";
-import { Bloom, EffectComposer, N8AO, Noise, ToneMapping } from "@react-three/postprocessing";
+import { AdaptiveDpr, Gltf, OrbitControls, PerformanceMonitor, Preload, useGLTF, useProgress } from "@react-three/drei";
+import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest } from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
@@ -26,6 +26,7 @@ import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import { HintAnchor } from "@/components/canvas/HintAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
 import { CursorDriver } from "@/components/canvas/CursorDriver";
+import { RainRefraction } from "@/components/canvas/RainRefraction";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
@@ -33,20 +34,14 @@ import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
-import { NavigationProjector, NavigationProvider } from "@/components/layout/Navigation";
+import { NavigationProvider } from "@/components/layout/Navigation";
 import { HotspotJoystick } from "@/components/layout/HotspotJoystick";
 import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
 import { InteractionHint } from "@/components/layout/InteractionHint";
-import { Mouse } from "@/helpers/CameraHelpers";
 import { Anchor } from "@/helpers/Interfaces";
 
 // Debug
-import { CameraTracker } from "@/helpers/CameraHelpers"
-import { OrbitControls } from "@react-three/drei";
 
-const OrbitCube = dynamic(() => import("@/components/layout/HUD").then((mod) => mod.ViewCube), {
-  ssr: false,
-});
 const STAMP_DURATION_MS = 420;
 // Where the bloom lands once the arrival has ramped it up from 0.
 const BLOOM_INTENSITY = 0.85;
@@ -210,6 +205,8 @@ export default function Page() {
   // and then everything popped. Each stage is a beat of that same arrival:
   // 1 the name stamps, 2 the HUD, 3 the hotspot rings.
   const [revealStage, setRevealStage] = useState(0);
+  // Upper bound on device pixel ratio, walked by PerformanceMonitor below.
+  const [dprCeiling, setDprCeiling] = useState(2);
   // Flips on the click, before burst() has even started -- `started` is 420ms
   // later. Only <Bloom> uses it, so its shader compile is paid while the black
   // plate still covers the screen instead of on a bare frame.
@@ -305,7 +302,7 @@ export default function Page() {
     setEntering(true);
     // A real user gesture -- flips sound on here (not before) so every
     // gated Howl (SoundToggle's waves.mp3, Speaker's music.mp3, Sky.tsx's
-    // rain.wav) can start playing with no autoplay restriction to work
+    // rain.mp3) can start playing with no autoplay restriction to work
     // around. Set before playSfx("click") so the Enter click's own sound
     // is included, not silently swallowed by the switch still being off.
     setSfxEnabled(true);
@@ -609,9 +606,19 @@ export default function Page() {
             setDragged(true)
           }}
           onPointerUp={() => setDragged(false)}
-          gl={{ preserveDrawingBuffer: true }} dpr={[1, 2]} style={{ width: "100vw", height: "100vh" }}>
+          dpr={[1, dprCeiling]} style={{ width: "100vw", height: "100vh" }}>
+          {/* No runtime quality adaptation existed: a 2019 integrated GPU got the
+              same composer, AO and shadow map as an M4 Max. PerformanceMonitor
+              watches the real frame rate and walks dpr down a step at a time;
+              AdaptiveDpr drops resolution while the camera is moving and
+              restores it when things settle. */}
+          <PerformanceMonitor
+            onDecline={() => setDprCeiling((d) => Math.max(1, +(d - 0.25).toFixed(2)))}
+            onIncline={() => setDprCeiling((d) => Math.min(2, +(d + 0.25).toFixed(2)))}
+          />
+          <AdaptiveDpr pixelated />
           <EffectComposer>
-            <N8AO aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
+            <N8AO halfRes aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
             {/* Before Bloom, so the flare's hot core blooms like any other
                 highlight rather than sitting flat on top of the image. */}
             <SunFlare />
@@ -703,8 +710,6 @@ export default function Page() {
                 </HotspotPortal>
               ))}
             </group>
-            {/* dragged && rotate && <Mouse /> */}
-            {/* */}
             <CameraController ref={cameraControllerRef} />
             {/* Inside the Canvas on purpose -- it owns every wouter call, and
                 wouter reads `location` at render, which would break this
@@ -716,7 +721,6 @@ export default function Page() {
               enterInset={PORTAL_ENTER_INSET}
               onEnter={() => playSfx("whoosh")}
             />
-            <NavigationProjector anchors={ANCHORS} onActiveChange={setActive} />
             {/* Same split as NavigationProjector above: the projection needs
                 the camera so it lives in here, while the thing it positions is
                 a DOM node outside the canvas (SceneHint, below). */}
@@ -726,6 +730,9 @@ export default function Page() {
                 outside the canvas (SceneCursor, below). Desktop only -- there
                 is no pointer to replace on a touch device, which is also why
                 the hotspot rings and InteractionHint are gated this way. */}
+            {/* Inside the Canvas so the drawing-buffer copy happens in the frame
+                loop rather than from a timer -- see RainRefraction.tsx. */}
+            <RainRefraction />
             {started && !isCoarsePointer && <CursorDriver />}
             <Preload all />
           </Suspense>}
