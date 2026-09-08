@@ -9,6 +9,9 @@ import {
   ARRIVAL_SETTLE_MS,
   DISCOVER_IDLE_MS,
   GUITAR_HINT_POSITION,
+  POKEBALL_HINT_POSITION,
+  GEAR_HINT_POSITION,
+  DISCOVER_REARM_IDLE_MS,
   HINT_ABANDON_MS,
   HINT_MAX_VISIBLE_MS,
   HINT_MIN_VISIBLE_MS,
@@ -25,7 +28,11 @@ import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 /** Priority order, highest first. Only one hint is ever on screen; a
  *  higher-priority one may take the slot from a lower one, but only once the
  *  lower one has served its minimum visible time. */
-const PRIORITY: HintId[] = ["portalExit", "portalEnter", "guitar", "clouds"]
+// Discovery order is deliberate: the guitar and the clouds change something
+// in place, while the Poke Ball and the gear replace the entire page. Telling
+// a first-time visitor to leave the island is the wrong opening suggestion, so
+// those two come last.
+const PRIORITY: HintId[] = ["portalExit", "portalEnter", "guitar", "clouds", "pokeball", "scuba"]
 
 const EVALUATE_INTERVAL_MS = 400
 
@@ -38,6 +45,12 @@ export interface HintDirectorInput {
   hasInteracted: boolean
   /** hotspotNav.current from page.tsx. */
   currentHotspot: string
+  /** Whether the Poke Ball has been opened and the gear used. Unlike the
+   *  guitar and the clouds there is no existing atom that says so -- the
+   *  props report to a single callback each and nothing else -- and
+   *  hasInteracted is far too coarse, since every hotspot flight sets it. */
+  pokeballUsed: boolean
+  scubaUsed: boolean
   /** Where each portal-bearing hotspot's hint should pin itself, keyed by
    *  hotspot id. Hotspots with no portal (home) are simply absent. */
   portalTargets: Record<string, THREE.Vector3>
@@ -54,7 +67,7 @@ export interface HintDirectorInput {
 // Runs on an interval rather than purely on dependency changes because most of
 // the conditions are *elapsed time* (idle for long enough, arrived long enough
 // ago) and nothing re-renders when time passes.
-export function useHintDirector({ started, hasInteracted, currentHotspot, portalTargets }: HintDirectorInput) {
+export function useHintDirector({ started, hasInteracted, currentHotspot, pokeballUsed, scubaUsed, portalTargets }: HintDirectorInput) {
   const setActive = useSetAtom(activeHint)
   const musicOn = useAtomValue(musicEnabled)
   const rainCount = useAtomValue(rainRequest)
@@ -80,6 +93,8 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
   const done = useRef<Record<HintId, boolean>>({
     guitar: false,
     clouds: false,
+    pokeball: false,
+    scuba: false,
     portalEnter: false,
     portalExit: false,
   })
@@ -106,6 +121,12 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
     if (rainCount > 0) done.current.clouds = true
   }, [rainCount])
   useEffect(() => {
+    if (pokeballUsed) done.current.pokeball = true
+  }, [pokeballUsed])
+  useEffect(() => {
+    if (scubaUsed) done.current.scuba = true
+  }, [scubaUsed])
+  useEffect(() => {
     if (openPortal !== null) {
       done.current.portalEnter = true
       if (enteredAt.current === null) enteredAt.current = performance.now()
@@ -122,7 +143,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
   // portal, or the first pointer move that dismisses InteractionHint.
   useEffect(() => {
     idleSince.current = performance.now()
-  }, [musicOn, rainCount, currentHotspot, openPortal, introFinished, started])
+  }, [musicOn, rainCount, pokeballUsed, scubaUsed, currentHotspot, openPortal, introFinished, started])
 
   // Flight edges. A hotspot hint waits for the camera to actually land.
   useEffect(() => {
@@ -156,11 +177,19 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
         // only while nothing else is going on, and only after a real idle
         // stretch.
         case "guitar":
-        case "clouds": {
+        case "clouds":
+        case "pokeball":
+        case "scuba": {
           if (!state.introFinished || state.currentHotspot !== "home") return null
           if (state.flying || state.openPortal !== null) return null
-          if (now - idleSince.current < DISCOVER_IDLE_MS) return null
+          // The first nudge waits out a full idle stretch; later ones re-arm
+          // sooner, or with four discovery hints sharing one slot the last two
+          // would never be reached. See DISCOVER_REARM_IDLE_MS.
+          const idleNeeded = spent.current.size > 0 ? DISCOVER_REARM_IDLE_MS : DISCOVER_IDLE_MS
+          if (now - idleSince.current < idleNeeded) return null
           if (id === "guitar") return { id, target: { kind: "world", position: GUITAR_HINT_POSITION } }
+          if (id === "pokeball") return { id, target: { kind: "world", position: POKEBALL_HINT_POSITION } }
+          if (id === "scuba") return { id, target: { kind: "world", position: GEAR_HINT_POSITION } }
           // Cloud positions are randomised per load, so there may be no cloud
           // in frame to point at. Spending the hint on one that's off-screen
           // would burn it silently.

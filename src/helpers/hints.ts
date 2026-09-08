@@ -11,7 +11,7 @@ import { atom } from "jotai"
 // before any of these can fire. These are contextual nudges toward specific
 // objects, at most one on screen at a time.
 
-export type HintId = "guitar" | "clouds" | "portalEnter" | "portalExit"
+export type HintId = "guitar" | "clouds" | "pokeball" | "scuba" | "portalEnter" | "portalExit"
 
 /** Where a hint pins itself.
  *
@@ -48,6 +48,11 @@ export interface ActiveHint {
 export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boolean }> = {
   guitar: { fine: "Play the guitar", coarse: "Play the guitar", marker: true },
   clouds: { fine: "Make it rain", coarse: "Make it rain", marker: true },
+  // The two interactions that replace the whole page, and the two that had no
+  // onboarding at all. Both get a marker: they are small props in a busy
+  // scene, the same problem the guitar and clouds hints solve.
+  pokeball: { fine: "Open the Poké Ball", coarse: "Open the Poké Ball", marker: true },
+  scuba: { fine: "Take a dive", coarse: "Take a dive", marker: true },
   portalEnter: { fine: "Double-click to enter", coarse: "Press and hold to enter", marker: false },
   portalExit: { fine: "Click home to exit", coarse: "Tap home to exit", marker: false },
 }
@@ -57,6 +62,12 @@ export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boole
  *  marker is lifted a little so the label sits above the instrument rather
  *  than over it. */
 export const GUITAR_HINT_POSITION = new THREE.Vector3(0.1, -0.35, 1)
+
+/** Same lift as the guitar's, over the props' own world positions --
+ *  Scene.tsx mounts the Poke Ball at [-3.25, -1.5, 0] and the gear at
+ *  [-3, -1.8, 5], both inside an untransformed group. */
+export const POKEBALL_HINT_POSITION = new THREE.Vector3(-3.25, -0.95, 0)
+export const GEAR_HINT_POSITION = new THREE.Vector3(-3, -1.15, 5)
 
 /** Where the portalExit caption starts: immediately to the right of the 56px
  *  home logo and vertically centred on it, so it reads as a label *for* the
@@ -69,6 +80,13 @@ export const HOME_BUTTON_HINT_ANCHOR = { left: 88, top: 48 } as const
 // discovery nudge appears. Nudging someone who is already busy is the
 // disruption worth avoiding, so this is an idle gate, not a timer from load.
 export const DISCOVER_IDLE_MS = 10000
+/** ...and how long once a discovery hint has already been shown. There are
+ *  four of these now, only one may be on screen at a time, and retiring one
+ *  resets the idle clock -- so at a flat 10s a visitor realistically sees one
+ *  or two and the rest may as well not exist. A shorter re-arm keeps the
+ *  first nudge unhurried while letting a lingering visitor actually reach the
+ *  later ones. */
+export const DISCOVER_REARM_IDLE_MS = 6000
 /** Floor, so a hint satisfied almost immediately still reads as deliberate
  *  rather than as a flicker. Matches InteractionHint's own MIN_VISIBLE_MS. */
 export const HINT_MIN_VISIBLE_MS = 2000

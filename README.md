@@ -1,5 +1,5 @@
 # TODO:
-- [ ] Transition splash screen 
+- [x] Transition splash screen 
 - [ ] Add ambient beach music based on day
     - [ ] Day, people sounds?
 
@@ -11,13 +11,13 @@
 
 # ANIMATIONS!!!
 - [ ] Models are all rigged, but no animations are created ..
-- [ ] Animations to create
-    - [ ] Idle base avatar
-    - [ ] Spin base avatar
-    - [ ] Walking scuba avatar
-    - [ ] Jumping scuba avatar
-    - [ ] Flying up dragonite avatar
-    - [ ] Floating in air dragonite avatar
+    - [ ] Animations to create
+        - [ ] Idle base avatar
+        - [ ] Spin base avatar
+        - [ ] Walking scuba avatar
+        - [ ] Jumping scuba avatar
+        - [ ] Flying up dragonite avatar
+        - [ ] Floating in air dragonite avatar
 
 # Splash
 - [x] Logo, that fills with color on percentage loaded
@@ -49,8 +49,6 @@
         - [x] Avatar disappears behind white like
         - [x] Dragonite appears as well, so when white light is gone, Dragonite is left 
 - [x] scroll/click down to go in water, turn to scuba and jump into water. Dive into y experiences
-- [ ] Stylize up/down button
-    - [ ] Maybe text boxes?
 - [x] Add Dots over iteractive items
     - [x] On hover, have the outer ring pulse
     - [x] On hover, change color - 
@@ -97,7 +95,7 @@
     - [ ] Moon different shape based on time of month (full, half, crescent, etc)
         - This can be acheived with a light that is positioned based on date. Use the Earth in between to give the shadows.
 - [ ] Accesibility
-- [ ] Languages
-    - [ ] Spanish
-    - [ ] German
-    - [ ] French
+    - [ ] Languages
+        - [ ] Spanish
+        - [ ] German
+        - [ ] French

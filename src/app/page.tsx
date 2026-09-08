@@ -30,6 +30,7 @@ import { RainRefraction } from "@/components/canvas/RainRefraction";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
+import { useShortViewport } from "@/helpers/useShortViewport";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -45,6 +46,9 @@ import { Anchor } from "@/helpers/Interfaces";
 const STAMP_DURATION_MS = 420;
 // Where the bloom lands once the arrival has ramped it up from 0.
 const BLOOM_INTENSITY = 0.85;
+/** How long the ring labels stay up when the markers first appear. Long enough
+ *  to read four short words, short enough not to become permanent chrome. */
+const LABEL_INTRO_MS = 3500;
 
 const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
   { threshold: 75, text: "Digital Nomad", align: "left" },
@@ -88,6 +92,18 @@ const ANCHORS: Anchor[] = [
   ];
 
 const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
+
+/** One label per hotspot id, read by BOTH the 3D ring markers and the mobile
+ *  joystick, so the two can never disagree about where something goes.
+ *  Deliberately not ANCHORS below: that array is dead code whose ids
+ *  ("models"/"donate"/"contact") don't match hotspotNav's, and whose `home`
+ *  position disagrees with HOME_HOTSPOT_POSITION. */
+const HOTSPOT_LABELS: Record<string, string> = {
+  home: "Home",
+  "left-tree": "Models",
+  "moon-island": "Donate",
+  upper: "Contact",
+};
 const HOME_VIEWPOINT_POSITION = ISLAND_CAMERA_POSITION;
 const HOME_VIEWPOINT_ROTATION = ISLAND_CAMERA_ROTATION;
 
@@ -205,6 +221,14 @@ export default function Page() {
   // and then everything popped. Each stage is a beat of that same arrival:
   // 1 the name stamps, 2 the HUD, 3 the hotspot rings.
   const [revealStage, setRevealStage] = useState(0);
+  /** All four ring labels show together for a beat when the markers appear,
+   *  then go hover-only. One clock here rather than four inside the markers,
+   *  so they cannot drift apart. */
+  const [labelsIntro, setLabelsIntro] = useState(false);
+  /** Neither prop publishes a "used it" signal of its own, and hasInteracted
+   *  is set by every hotspot flight, so it cannot stand in for these. */
+  const [pokeballUsed, setPokeballUsed] = useState(false);
+  const [scubaUsed, setScubaUsed] = useState(false);
   // Upper bound on device pixel ratio, walked by PerformanceMonitor below.
   const [dprCeiling, setDprCeiling] = useState(2);
   // Flips on the click, before burst() has even started -- `started` is 420ms
@@ -277,6 +301,7 @@ export default function Page() {
   // Lifted into a shared hook because Card.tsx needs the same answer to decide
   // between double-click and press-and-hold portal entry.
   const isCoarsePointer = useCoarsePointer();
+  const isShortViewport = useShortViewport();
   const isRaining = useAtomValue(raining);
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
@@ -390,8 +415,19 @@ export default function Page() {
     started,
     hasInteracted,
     currentHotspot: hotspotNav.current,
+    pokeballUsed,
+    scubaUsed,
     portalTargets: PORTAL_HINT_TARGETS,
   });
+
+  // The markers mount at revealStage 3; hold their labels open long enough to
+  // read all four, then let them go hover-only.
+  useEffect(() => {
+    if (revealStage < 3) return;
+    setLabelsIntro(true);
+    const timer = setTimeout(() => setLabelsIntro(false), LABEL_INTRO_MS);
+    return () => clearTimeout(timer);
+  }, [revealStage]);
 
   useEffect(() => {
     const SKY_JOURNEY_DISTANCE = 600;
@@ -489,10 +525,10 @@ export default function Page() {
   // labels reuse ANCHORS' existing copy for the same landmarks rather than
   // inventing new strings.
   const JOYSTICK_DIRECTIONS = {
-    up: { id: "upper", label: "Contact", onSelect: handleUpperIslandHotspotClick },
-    down: { id: "home", label: "Home", onSelect: handleHomeHotspotClick },
-    left: { id: "left-tree", label: "Models", onSelect: handleLeftTreeHotspotClick },
-    right: { id: "moon-island", label: "Donate", onSelect: handleMoonIslandHotspotClick },
+    up: { id: "upper", label: HOTSPOT_LABELS.upper, onSelect: handleUpperIslandHotspotClick },
+    down: { id: "home", label: HOTSPOT_LABELS.home, onSelect: handleHomeHotspotClick },
+    left: { id: "left-tree", label: HOTSPOT_LABELS["left-tree"], onSelect: handleLeftTreeHotspotClick },
+    right: { id: "moon-island", label: HOTSPOT_LABELS["moon-island"], onSelect: handleMoonIslandHotspotClick },
   };
 
   const handleUpClick = async () => {
@@ -511,11 +547,13 @@ export default function Page() {
   };
 
   const handleDragoniteRelease = () => {
+    setPokeballUsed(true);
     setMotion(true);
     handleUpClick();
   };
 
   const handleDownClick = async () => {
+    setScubaUsed(true);
     setHasInteracted(true);
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
@@ -554,14 +592,14 @@ export default function Page() {
 
   return (
     <NavigationProvider>
-      <div className="relative h-screen w-screen overflow-hidden">
-        <div className={`pointer-events-none absolute bottom-10 left-10 z-10 transition-opacity duration-300 ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}>
+      <div className="relative h-[100dvh] w-screen overflow-hidden">
+        <div className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${isShortViewport ? "bottom-4 left-4" : "bottom-10 left-10"} ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}>
           <div className="relative">
-            {revealStage >= 1 && <h1 data-cursor="text" className="animate-stamp font-nunito text-4xl sm:text-5xl md:text-6xl uppercase tracking-tight text-[#d25a1a]">Erik Edmonds</h1>}
-            {nameStamped && <p data-cursor="text" className="font-nunito text-xl sm:text-2xl md:text-3xl font-normal text-[#d25a1a]">Data Scientist</p>}
+            {revealStage >= 1 && <h1 data-cursor="text" className={`scene-type animate-stamp font-nunito uppercase ${isShortViewport ? "text-3xl" : "text-4xl sm:text-5xl md:text-6xl"} tracking-tight text-[#d25a1a]`}>Erik Edmonds</h1>}
+            {nameStamped && <p data-cursor="text" className={`scene-type font-nunito font-semibold text-[#d25a1a] ${isShortViewport ? "text-base" : "text-xl sm:text-2xl md:text-3xl"}`}>Data Scientist</p>}
           </div>
         </div>
-        <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
+        <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 scene-type text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
@@ -586,11 +624,12 @@ export default function Page() {
             complementary: rings show exactly when the joystick doesn't.
             Desktop keeps only the 3D rings, unchanged. */}
         {isCoarsePointer && (
-          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-10">
+          <div className={`absolute z-10 ${isShortViewport ? "bottom-4 right-4" : "bottom-28 left-1/2 -translate-x-1/2"}`}>
             <HotspotJoystick
               directions={JOYSTICK_DIRECTIONS}
               currentId={hotspotNav.current}
               visible={sceneReady && started && !motion && !isInSkyJourneyValue}
+              compact={isShortViewport}
             />
           </div>
         )}
@@ -606,7 +645,7 @@ export default function Page() {
             setDragged(true)
           }}
           onPointerUp={() => setDragged(false)}
-          dpr={[1, dprCeiling]} style={{ width: "100vw", height: "100vh" }}>
+          dpr={[1, dprCeiling]} style={{ width: "100vw", height: "100dvh" }}>
           {/* No runtime quality adaptation existed: a 2019 integrated GPU got the
               same composer, AO and shadow map as an M4 Max. PerformanceMonitor
               watches the real frame rate and walks dpr down a step at a time;
@@ -675,10 +714,10 @@ export default function Page() {
                   replacement. */}
               {sceneReady && revealStage >= 3 && !isCoarsePointer && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
-                <CameraHotspot position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
-                <CameraHotspot position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
-                <CameraHotspot position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} hidden={isHotspotHidden("moon-island")} pendingOffscreen={isHotspotPendingOffscreen("moon-island")} onOffscreen={() => handleHotspotOffscreen("moon-island")} />
-                <CameraHotspot position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} hidden={isHotspotHidden("home")} pendingOffscreen={isHotspotPendingOffscreen("home")} onOffscreen={() => handleHotspotOffscreen("home")} />
+                <CameraHotspot label={HOTSPOT_LABELS["upper"]} labelsIntro={labelsIntro} position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
+                <CameraHotspot label={HOTSPOT_LABELS["left-tree"]} labelsIntro={labelsIntro} position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
+                <CameraHotspot label={HOTSPOT_LABELS["moon-island"]} labelsIntro={labelsIntro} position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} hidden={isHotspotHidden("moon-island")} pendingOffscreen={isHotspotPendingOffscreen("moon-island")} onOffscreen={() => handleHotspotOffscreen("moon-island")} />
+                <CameraHotspot label={HOTSPOT_LABELS["home"]} labelsIntro={labelsIntro} position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} hidden={isHotspotHidden("home")} pendingOffscreen={isHotspotPendingOffscreen("home")} onOffscreen={() => handleHotspotOffscreen("home")} />
               </>}
               {/* Outside the ring-marker gate above: the portals are real
                   objects standing in the world, not overlay markers, so they

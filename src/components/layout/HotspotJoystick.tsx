@@ -7,6 +7,12 @@ const BASE_SIZE = 112 // px, glass puck diameter
 const STICK_SIZE = 46 // px, knob diameter
 const DEAD_ZONE = 16 // px of drag before a direction is considered "chosen"
 const MAX_STICK_DISPLACEMENT = 24 // px, how far the knob can travel from center
+
+/** Everything scales by one factor in compact mode, so the drag distances stay
+ *  proportional to the puck and the control feels identical -- only smaller.
+ *  Shrinking the puck while leaving a 24px throw would make a small stick feel
+ *  loose, and leaving the 16px dead zone would make it feel dead. */
+const COMPACT_SCALE = 0.75
 const ACCENT = "#d25a1a" // the site's base accent, used flat (no gradient/shading)
 
 type Direction = "up" | "down" | "left" | "right"
@@ -25,6 +31,8 @@ interface HotspotJoystickProps {
    *  nowhere to go that way. */
   currentId: string
   visible: boolean
+  /** Short viewports -- a phone held sideways. See useShortViewport. */
+  compact?: boolean
 }
 
 /* ------------------------------------------------------------------ *
@@ -41,7 +49,12 @@ interface HotspotJoystickProps {
  * active at that moment.
  * ------------------------------------------------------------------ */
 
-export function HotspotJoystick({ directions, currentId, visible }: HotspotJoystickProps) {
+export function HotspotJoystick({ directions, currentId, visible, compact = false }: HotspotJoystickProps) {
+  const scale = compact ? COMPACT_SCALE : 1
+  const baseSize = Math.round(BASE_SIZE * scale)
+  const stickSize = Math.round(STICK_SIZE * scale)
+  const deadZone = DEAD_ZONE * scale
+  const maxDisplacement = MAX_STICK_DISPLACEMENT * scale
   const play = useSfx()
   const [dragging, setDragging] = useState(false)
   const [stickOffset, setStickOffset] = useState({ x: 0, y: 0 })
@@ -59,11 +72,11 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
     const dx = e.clientX - startRef.current.x
     const dy = e.clientY - startRef.current.y
     const dist = Math.hypot(dx, dy)
-    const clamped = Math.min(dist, MAX_STICK_DISPLACEMENT)
+    const clamped = Math.min(dist, maxDisplacement)
     const angle = Math.atan2(dy, dx)
     setStickOffset({ x: Math.cos(angle) * clamped, y: Math.sin(angle) * clamped })
     setActiveDirection(
-      dist < DEAD_ZONE
+      dist < deadZone
         ? null
         : Math.abs(dx) > Math.abs(dy)
           ? dx > 0 ? "right" : "left"
@@ -100,8 +113,8 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
       onPointerCancel={handlePointerUp}
       style={{
         position: "relative",
-        width: BASE_SIZE,
-        height: BASE_SIZE,
+        width: baseSize,
+        height: baseSize,
         borderRadius: "9999px",
         background: "rgba(255,255,255,0.08)",
         backdropFilter: "blur(6px)",
@@ -155,8 +168,8 @@ export function HotspotJoystick({ directions, currentId, visible }: HotspotJoyst
           position: "absolute",
           left: "50%",
           top: "50%",
-          width: STICK_SIZE,
-          height: STICK_SIZE,
+          width: stickSize,
+          height: stickSize,
           borderRadius: "9999px",
           background: ACCENT,
           boxShadow: "0 0 14px 2px rgba(210,90,26,0.5)",

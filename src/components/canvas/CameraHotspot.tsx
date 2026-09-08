@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
-import { Billboard } from "@react-three/drei"
+import { Billboard, Text } from "@react-three/drei"
+import { suspend } from "suspend-react"
 import gsap from "gsap"
 import { useSfx } from "@/helpers/useSfx"
 import { MAGNETIC_RADIUS, MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, setCursorHover, type MagneticTarget } from "@/helpers/cursor"
@@ -25,17 +26,41 @@ const PULSE_SETTLE_DURATION = 0.25
 
 const ENTRANCE_DURATION = 0.2
 
+/** Same font the portal captions load, so nothing new crosses the wire --
+ *  Card.tsx already resolves this module-level promise. */
+const labelFont = import("@pmndrs/assets/fonts/inter_medium.woff")
+
+const LABEL_SIZE = 0.19
+/** Below the ring, clear of its 0.44 outer radius. */
+const LABEL_OFFSET_Y = -0.78
+/** White type sits at about 1.07:1 on this scene's near-white horizon, so the
+ *  label carries its own dark contour -- the 3D equivalent of the scrim behind
+ *  the DOM hint captions. */
+const LABEL_OUTLINE_WIDTH = 0.016
+const LABEL_OUTLINE_COLOR = "#0b1b25"
+/** How fast the label fades in and out. Damping, not a tween: it has to be
+ *  interruptible mid-fade when the pointer leaves during the intro. */
+const LABEL_FADE_LAMBDA = 12
+
 /** Hotspots pull a little harder than an ordinary prop: they're the scene's
  *  navigation, and helping the pointer find them is the whole point. */
 const HOTSPOT_MAGNETIC_STRENGTH = 1.2
 
 export function CameraHotspot({
+  label,
+  labelsIntro,
   position,
   onClick,
   hidden,
   pendingOffscreen,
   onOffscreen,
 }: {
+  /** Where this ring goes -- "Contact", "Models", "Donate", "Home". */
+  label: string
+  /** All four labels show together for a beat when the markers first appear,
+   *  so the map can be read once without hunting; after that they are
+   *  hover-only. Driven from page.tsx so the four stay in sync. */
+  labelsIntro: boolean
   position: [number, number, number]
   onClick: () => void
   /** True whenever this marker must not be shown: it's the hotspot the
@@ -54,6 +79,7 @@ export function CameraHotspot({
   const ringMeshRef = useRef<THREE.Mesh>(null)
   const ringMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
   const dotMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
+  const labelRef = useRef<THREE.Mesh>(null)
   const [hovered, setHovered] = useState(false)
   const seed = useMemo(() => Math.random() * Math.PI * 2, [])
   const play = useSfx()
@@ -106,10 +132,28 @@ export function CameraHotspot({
     return registerMagneticTarget(target)
   }, [])
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const group = groupRef.current
     if (!group) return
     group.position.y = position[1] + Math.sin(state.clock.elapsedTime * BOB_SPEED + seed) * BOB_AMPLITUDE
+
+    // The label shows while the pointer is on the ring, and once more when the
+    // markers first appear so the map can be read without hunting for it.
+    // troika's Text carries an ARRAY of materials (fill + outline), so
+    // material.opacity is not a thing here -- fillOpacity/outlineOpacity are
+    // the properties it actually reads, and it applies them per frame without
+    // needing a sync().
+    const labelMesh = labelRef.current as unknown as
+      | { fillOpacity: number; outlineOpacity: number; visible: boolean }
+      | null
+    if (labelMesh) {
+      const wanted = hovered || labelsIntro ? 1 : 0
+      const next = THREE.MathUtils.damp(labelMesh.fillOpacity ?? 0, wanted, LABEL_FADE_LAMBDA, delta)
+      labelMesh.fillOpacity = next
+      labelMesh.outlineOpacity = next
+      // A fully faded label still costs a draw call.
+      labelMesh.visible = next > 0.01
+    }
 
     if (pendingOffscreen && !reportedOffscreenRef.current) {
       frustumMatrix.multiplyMatrices(state.camera.projectionMatrix, state.camera.matrixWorldInverse)
@@ -249,6 +293,16 @@ export function CameraHotspot({
             between them and the camera -- markers are waypoints, not
             physical objects, so they shouldn't be able to hide behind a
             rock or island the way a real object would. */}
+        {/* A soft dark disc behind the ring and dot. They are pure white with
+            toneMapped={false}, and the day horizon is #eaf7ff -- about 1.07:1,
+            so on the skyline the markers all but vanish. This gives them
+            something to sit on without changing how they read against the
+            island. Drawn first, at a lower renderOrder, so the white geometry
+            still lands on top. */}
+        <mesh raycast={() => null} renderOrder={998}>
+          <circleGeometry args={[0.52, 40]} />
+          <meshBasicMaterial color="#0b1b25" transparent opacity={0.22} toneMapped={false} depthWrite={false} depthTest={false} />
+        </mesh>
         <mesh ref={ringMeshRef} raycast={() => null} renderOrder={999}>
           <ringGeometry args={[0.43, 0.44, 40]} />
           <meshBasicMaterial ref={ringMaterialRef} color="white" transparent opacity={0.85} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
@@ -257,6 +311,35 @@ export function CameraHotspot({
           <circleGeometry args={[0.16, 40]} />
           <meshBasicMaterial ref={dotMaterialRef} color="white" transparent toneMapped={false} side={THREE.DoubleSide} depthWrite={false} depthTest={false} />
         </mesh>
+        {/* raycast disabled for the same reason as the ring, but with a sharper
+            consequence: the label overlaps the hit circle, so a pointer moving
+            onto the text would fire the circle's onPointerOut and clear
+            `hovered` -- the label would switch itself off the moment you
+            looked at it. depthTest matches the marker too, or the label alone
+            would be swallowed by the island while the ring in front of it
+            floats. */}
+        <Text
+          ref={labelRef}
+          raycast={() => null}
+          renderOrder={1000}
+          font={(suspend(labelFont) as { default: string }).default}
+          fontSize={LABEL_SIZE}
+          position={[0, LABEL_OFFSET_Y, 0]}
+          anchorX="center"
+          anchorY="middle"
+          letterSpacing={0.08}
+          color="white"
+          outlineWidth={LABEL_OUTLINE_WIDTH}
+          outlineColor={LABEL_OUTLINE_COLOR}
+          fillOpacity={0}
+          outlineOpacity={0}
+          material-transparent
+          material-depthTest={false}
+          material-depthWrite={false}
+          material-toneMapped={false}
+        >
+          {label.toUpperCase()}
+        </Text>
       </Billboard>
     </group>
   )

@@ -327,3 +327,21 @@ html.custom-cursor * {
     display: none !important;
   }
 }
+
+/* Type drawn straight onto the 3D scene.
+ *
+ * The name and tagline are #d25a1a with nothing behind them, which measures
+ * 3.75:1 on the day sky and 2.31:1 over the shallow turquoise water they
+ * actually sit above -- under even the 3:1 large-text floor. The sky-journey
+ * cue is plain white over a #eaf7ff horizon, about 1.07:1.
+ *
+ * Two passes rather than one: the tight offset shadow gives the glyph edges
+ * definition against a busy low-poly background, and the wide soft one darkens
+ * the area behind the text enough to separate it from a bright sky. A scrim
+ * would measure better still, but it boxes in type that is deliberately naked,
+ * and this keeps the hero looking the way it was designed to. */
+.scene-type {
+  text-shadow:
+    0 1px 2px rgba(8, 20, 28, 0.55),
+    0 2px 14px rgba(8, 20, 28, 0.4);
+}
