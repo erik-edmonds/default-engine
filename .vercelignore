@@ -1,0 +1,64 @@
+# Mirrors .gitignore so a CLI deploy uploads exactly what git tracks.
+# Vercel's ignore handling does NOT honour '!' negation the way git does,
+# so nothing here may rely on it -- an asset the app needs must live at a
+# path that is simply not excluded. That is why base.glb now sits in
+# public/models/Avatars/ rather than inside the ignored Base/ folder.
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# reference material (large video files, not project source)
+/sources
+
+# orphaned assets, unreferenced by any rendered component in src/ -- kept on
+# disk locally, not shipped to git/Vercel
+/public/models/Base/
+/public/models/cube.glb
+/public/models/tornado.glb
+/public/models/ditto.glb
+/public/water/blue.png
+/public/water/moss.png
+/public/water/tiles.jpg
+/public/water/tiles_bw.png
+/public/water/tiles_full.png
+/public/water/tiles_gray_white.png
+/public/water/worn.png

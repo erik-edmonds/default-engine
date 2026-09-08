@@ -3,7 +3,7 @@ import { useGLTF, useAnimations } from '@react-three/drei'
 
 export function Avatar(props) {
   const group = useRef()
-  const { nodes, materials, animations } = useGLTF('/models/Base/GLB/base.glb')
+  const { nodes, materials, animations } = useGLTF('/models/Avatars/base.glb')
   animations[0].name = "Idle"
   const { actions } = useAnimations(animations, group)
   useEffect(() => {
@@ -24,4 +24,4 @@ export function Avatar(props) {
   )
 }
 
-useGLTF.preload('/models/Base/GLB/base.glb')
+useGLTF.preload('/models/Avatars/base.glb')
