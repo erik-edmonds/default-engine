@@ -62,6 +62,11 @@ export const metadata: Metadata = {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
     ],
+    // Declared explicitly rather than left to the app-dir file convention:
+    // once `icons` is set here, Next stops auto-detecting apple-icon.* and the
+    // tag simply never renders. Without it iOS falls back to a screenshot or
+    // to /favicon.ico -- which is how a stale mark ends up on a home screen.
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
     title: "Erik Edmonds | Data Scientist",
@@ -83,6 +88,11 @@ export const viewport: Viewport = {
   // Matches the scene's clear colour, so mobile browser chrome blends into the
   // loading screen instead of framing it in white.
   themeColor: "#0a0a0a",
+  // Lets the scene paint into the notch and the home-indicator strip, and is
+  // the prerequisite for env(safe-area-inset-*) being anything but 0px --
+  // without it the insets the chrome now offsets itself by are all zero and
+  // the padding silently does nothing.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({children,}: Readonly<{children: React.ReactNode;}>) {
@@ -93,7 +103,18 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
       className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} ${arima.variable} ${raleway.variable} ${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <AppStateProvider>
-          <div className="absolute z-50 top-5 left-5">
+          {/* fixed, not absolute: this sits outside page.tsx's wrapper and has
+              no positioned ancestor, so on a scrollable document it would be
+              the one piece of chrome that slid away with the scroll. Offsets
+              fold in the safe-area insets, which resolve to 0px on hardware
+              without a notch. */}
+          <div
+            className="fixed z-50"
+            style={{
+              top: "calc(1.25rem + var(--safe-top))",
+              left: "calc(1.25rem + var(--safe-left))",
+            }}
+          >
             <Favicon/>
           </div>
           <Suspense fallback={<Loading/>}>

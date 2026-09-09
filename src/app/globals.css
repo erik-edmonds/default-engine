@@ -345,3 +345,18 @@ html.custom-cursor * {
     0 1px 2px rgba(8, 20, 28, 0.55),
     0 2px 14px rgba(8, 20, 28, 0.4);
 }
+
+/* Safe-area insets, exposed as custom properties so the pinned chrome can fold
+ * them into its own offsets with calc().
+ *
+ * These are 0px unless the viewport meta carries viewport-fit=cover (set in
+ * layout.tsx), so on any device without a notch or a home indicator every
+ * offset below resolves to exactly the value it had before. The fallbacks
+ * matter for browsers that do not know env() at all -- without them the whole
+ * calc() would be invalid and the element would fall back to `auto`. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}

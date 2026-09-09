@@ -39,13 +39,22 @@ const DESKTOP_DOT_BLUR = 3 // down from an earlier 6 -- crisper dots, since the 
 // (true-distance) connections read as long, crossing lines; once particles
 // land inside the box, clamping becomes a no-op and the graph naturally
 // tightens into an accurate nearest-neighbor mesh tracing the logo.
-const NEIGHBOR_COUNT = 3
+/** Edges per particle. The selection below is a generic k-nearest insertion,
+ *  so this genuinely controls how dense the mesh looks -- it used to be a
+ *  hand-unrolled best-of-three and the constant was decorative. Line drawing
+ *  is still 3 stroke() calls regardless of k. */
+const NEIGHBOR_COUNT = 6
 const CONNECTION_GRID_SIZE = 24
 const CONNECTION_GRID_MIN = -0.2
 const CONNECTION_GRID_MAX = 1.2
 const NEIGHBOR_REBUILD_INTERVAL_MS = 90
-const LINE_TIER_THRESH = [0.05, 0.15] // normalized-space distance breakpoints
-const LINE_TIER_ALPHA = [0.5, 0.25, 0.1]
+// Widened along with NEIGHBOR_COUNT. More neighbours alone barely reads once
+// the cloud has converged -- the extra edges are short and land on top of ones
+// already drawn from the other endpoint. Pushing the breakpoints out moves a
+// larger share of edges into the brighter tiers, which is what actually makes
+// the web look denser.
+const LINE_TIER_THRESH = [0.07, 0.2] // normalized-space distance breakpoints
+const LINE_TIER_ALPHA = [0.5, 0.28, 0.14] // the long tier carries more of the web now
 const LINE_TIER_WIDTH = [1.1, 0.8, 0.6] // css px
 
 const STATUS_WORDS: { at: number; text: string }[] = [
@@ -199,9 +208,13 @@ function findNeighbors(particles: Particles, conn: ConnectionState, eased: numbe
     const cxi = clampCellIndex(nxi, G)
     const cyi = clampCellIndex(nyi, G)
 
-    let b0i = -1, b0d = Infinity
-    let b1i = -1, b1d = Infinity
-    let b2i = -1, b2d = Infinity
+    // k-nearest by insertion, kept sorted nearest-first. Written straight into
+    // the output arrays so there is no per-particle allocation.
+    const base = i * NEIGHBOR_COUNT
+    for (let k = 0; k < NEIGHBOR_COUNT; k++) {
+      conn.neighborIndex[base + k] = -1
+      conn.neighborDistSq[base + k] = Infinity
+    }
 
     for (let dcy = -1; dcy <= 1; dcy++) {
       const ccy = cyi + dcy
@@ -220,19 +233,20 @@ function findNeighbors(particles: Particles, conn: ConnectionState, eased: numbe
           const dx = nxi - nxj
           const dy = nyi - nyj
           const d = dx * dx + dy * dy
-          if (d < b2d) {
-            if (d < b0d) { b2i = b1i; b2d = b1d; b1i = b0i; b1d = b0d; b0i = j; b0d = d }
-            else if (d < b1d) { b2i = b1i; b2d = b1d; b1i = j; b1d = d }
-            else { b2i = j; b2d = d }
+          if (d < conn.neighborDistSq[base + NEIGHBOR_COUNT - 1]) {
+            let k = NEIGHBOR_COUNT - 1
+            while (k > 0 && conn.neighborDistSq[base + k - 1] > d) {
+              conn.neighborDistSq[base + k] = conn.neighborDistSq[base + k - 1]
+              conn.neighborIndex[base + k] = conn.neighborIndex[base + k - 1]
+              k--
+            }
+            conn.neighborDistSq[base + k] = d
+            conn.neighborIndex[base + k] = j
           }
         }
       }
     }
 
-    const base = i * NEIGHBOR_COUNT
-    conn.neighborIndex[base] = b0i; conn.neighborDistSq[base] = b0d
-    conn.neighborIndex[base + 1] = b1i; conn.neighborDistSq[base + 1] = b1d
-    conn.neighborIndex[base + 2] = b2i; conn.neighborDistSq[base + 2] = b2d
   }
 }
 

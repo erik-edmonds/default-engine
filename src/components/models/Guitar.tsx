@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import * as THREE from "three"
 import { useGLTF } from '@react-three/drei'
 import { useCursorHover } from '@/helpers/useCursorHover'
+import { useCoarsePointer } from '@/helpers/useCoarsePointer'
 import { Howl } from "howler"
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { musicEnabled, sfxEnabled, soundOffNudge } from '@/helpers/StateProvider'
@@ -15,6 +16,12 @@ import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type Magn
 const PROP_MAGNETIC_STRENGTH = 1.05
 const PROP_MAGNETIC_RADIUS = 155
 
+/** Radius of the invisible touch target, in the group's own space -- the
+ *  outer group carries scale 0.25, so this is 0.8 world units across. Sized to
+ *  be comfortably larger than the instrument without reaching the avatar
+ *  (1.4 units away) or the Poke Ball. */
+const TOUCH_HIT_RADIUS = 3.2
+
 export function Guitar(props) {
   // `sound` is this prop's own intent ("I want music playing"); the master
   // switch (SoundToggle.tsx) independently gates whether that's actually
@@ -23,11 +30,17 @@ export function Guitar(props) {
   const masterOn = useAtomValue(sfxEnabled);
   const nudgeSoundOff = useSetAtom(soundOffNudge);
   const [hovered, setHover] = useState(false)
+  const coarse = useCoarsePointer()
   const { nodes, materials } = useGLTF('/models/guitarra.glb')
   const group = useRef<THREE.Group>(null)
   const [song] = useState(() => new Howl({
     src: ['/sound/music.mp3'],
-    volume: 0.5,
+    // Raised alongside normalising the file itself. Worth knowing why both:
+    // iOS makes HTMLMediaElement.volume read-only, and html5:true streams
+    // through an <audio> element, so on an iPhone this number does nothing at
+    // all and the file's own level is the entire story. This helps desktop;
+    // the normalisation is what fixed the phone.
+    volume: 0.7,
     autoplay: false,
     preload: false,
     // Same fix as waves.mp3 in SoundToggle.tsx -- at 96MB, Howler's default
@@ -113,6 +126,28 @@ export function Guitar(props) {
       onPointerOver={(e) => setHover(e.intersections[0]?.eventObject === e.eventObject)}
       onPointerOut={() => setHover(false)}
     >
+      {/* Touch only. A finger has no magnetic cursor helping it aim, and the
+          instrument renders at scale 0.25 -- a target of a few millimetres on
+          a phone. This gives it a generous invisible volume to hit instead.
+          It also sidesteps the nearest-hit guard above: the sphere's near face
+          is in front of the mesh, so a tap lands here first, and this handler
+          stops propagation before that check ever runs. Transparent rather
+          than visible={false} because three's raycaster does not skip
+          invisible objects, so the two differ only in intent -- and stating
+          the intent in the material is what makes it obvious this is a hit
+          proxy rather than a mesh someone forgot to show. */}
+      {coarse && (
+        <mesh
+          onClick={(e) => {
+            e.stopPropagation()
+            if (magnet.current) activateTarget(magnet.current)
+            else activateRef.current()
+          }}
+        >
+          <sphereGeometry args={[TOUCH_HIT_RADIUS, 12, 8]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
       <group rotation={[-Math.PI / 2, 0, 0]}>
         <mesh
           castShadow

@@ -418,10 +418,10 @@ export const TRANSITION_SECONDS = 3
 export const TRANSITION_EASE_CSS = "cubic-bezier(0.65, 0, 0.35, 1)"
 
 // The slow, ambient duration: how long one unattended phase-to-phase segment
-// takes. The whole 4-phase cycle is 4x this. Also doubles as the
+// takes. The whole 4-phase cycle is 4x this -- 4:30 at 67.5s. Also doubles as the
 // auto-progression interval -- transitions are back-to-back with no dwell,
 // so the scene is always mid-transition (see helpers/useTimeOfDayCycle.ts).
-export const AUTO_TRANSITION_SECONDS = 90
+export const AUTO_TRANSITION_SECONDS = 67.5
 
 // How long a clicked-to phase is actually held, fully settled, before
 // auto-progression resumes pulling toward the phase after it. Without this,

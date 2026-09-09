@@ -31,6 +31,7 @@ import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import { useShortViewport } from "@/helpers/useShortViewport";
+import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -324,6 +325,11 @@ export default function Page() {
   const handleEnter = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
+    // Synchronously, before any await: a fullscreen request made after one is
+    // judged to have lost its user gesture and is refused. Does nothing on
+    // iPhone, which has no Fullscreen API for ordinary elements -- that is
+    // what the scroll spacer below is for.
+    requestSceneFullscreen();
     setEntering(true);
     // A real user gesture -- flips sound on here (not before) so every
     // gated Howl (SoundToggle's waves.mp3, Speaker's music.mp3, Sky.tsx's
@@ -472,6 +478,14 @@ export default function Page() {
     };
     const handleTouchMove = (event: TouchEvent) => {
       if (lastTouchY === null) return;
+      // Only claim the gesture when something is actually going to use it.
+      // This used to preventDefault unconditionally and then let
+      // applyScrollDelta decide to do nothing, which cancelled every vertical
+      // swipe on the page for a feature that is live in a small minority of a
+      // session -- and a page that never scrolls is a page whose mobile
+      // browser toolbar never retracts. Letting the browser have the gesture
+      // is what reclaims that space.
+      if (!isInSkyJourney.current) return;
       event.preventDefault();
       const currentY = event.touches[0]?.clientY;
       if (currentY === undefined) return;
@@ -486,11 +500,15 @@ export default function Page() {
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
     window.addEventListener("touchmove", handleTouchMove, { passive: false });
     window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    // The OS cancels touches (a call arrives, a system gesture wins). Without
+    // this the stale lastTouchY makes the next drag jump.
+    window.addEventListener("touchcancel", handleTouchEnd, { passive: true });
     return () => {
       window.removeEventListener("wheel", handleWheel);
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchEnd);
     };
   }, []);
 
@@ -592,8 +610,22 @@ export default function Page() {
 
   return (
     <NavigationProvider>
-      <div className="relative h-[100dvh] w-screen overflow-hidden">
-        <div className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${isShortViewport ? "bottom-4 left-4" : "bottom-10 left-10"} ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}>
+      {/* fixed, so the document underneath can scroll without dragging the
+          scene with it -- the <Canvas> sits in normal flow inside here, and
+          every absolute overlay resolves against this box. h-[100dvh] rather
+          than inset-0 on purpose: on iOS a fixed element's inset-0 resolves
+          against the LARGE viewport, which is exactly the "taller than what
+          you can see" problem dvh was added to solve. w-full rather than
+          w-screen because 100vw overflows by the scrollbar width once the
+          page is scrollable. */}
+      <div className="fixed inset-x-0 top-0 h-[100dvh] w-full overflow-hidden">
+        <div
+          className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}
+          style={{
+            bottom: `calc(${isShortViewport ? "1rem" : "2.5rem"} + var(--safe-bottom))`,
+            left: `calc(${isShortViewport ? "1rem" : "2.5rem"} + var(--safe-left))`,
+          }}
+        >
           <div className="relative">
             {revealStage >= 1 && <h1 data-cursor="text" className={`scene-type animate-stamp font-nunito uppercase ${isShortViewport ? "text-3xl" : "text-4xl sm:text-5xl md:text-6xl"} tracking-tight text-[#d25a1a]`}>Erik Edmonds</h1>}
             {nameStamped && <p data-cursor="text" className={`scene-type font-nunito font-semibold text-[#d25a1a] ${isShortViewport ? "text-base" : "text-xl sm:text-2xl md:text-3xl"}`}>Data Scientist</p>}
@@ -603,7 +635,10 @@ export default function Page() {
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
-        <div className={`flex flex-row items-center gap-2 absolute right-5 top-5 z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}>
+        <div
+          className={`flex flex-row items-center gap-2 absolute z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}
+          style={{ top: "calc(1.25rem + var(--safe-top))", right: "calc(1.25rem + var(--safe-right))" }}
+        >
           <SoundToggle currentPhase={currentPhase} />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
@@ -624,7 +659,14 @@ export default function Page() {
             complementary: rings show exactly when the joystick doesn't.
             Desktop keeps only the 3D rings, unchanged. */}
         {isCoarsePointer && (
-          <div className={`absolute z-10 ${isShortViewport ? "bottom-4 right-4" : "bottom-28 left-1/2 -translate-x-1/2"}`}>
+          <div
+            className={`absolute z-10 ${isShortViewport ? "" : "left-1/2 -translate-x-1/2"}`}
+            style={
+              isShortViewport
+                ? { bottom: "calc(1rem + var(--safe-bottom))", right: "calc(1rem + var(--safe-right))" }
+                : { bottom: "calc(7rem + var(--safe-bottom))" }
+            }
+          >
             <HotspotJoystick
               directions={JOYSTICK_DIRECTIONS}
               currentId={hotspotNav.current}
@@ -645,7 +687,7 @@ export default function Page() {
             setDragged(true)
           }}
           onPointerUp={() => setDragged(false)}
-          dpr={[1, dprCeiling]} style={{ width: "100vw", height: "100dvh" }}>
+          dpr={[1, dprCeiling]} style={{ width: "100%", height: "100dvh" }}>
           {/* No runtime quality adaptation existed: a 2019 integrated GPU got the
               same composer, AO and shadow map as an M4 Max. PerformanceMonitor
               watches the real frame rate and walks dpr down a step at a time;
@@ -795,6 +837,21 @@ export default function Page() {
         {started && !isCoarsePointer && <SceneCursor />}
         {rainTriggered && <RainScene />}
       </div>
+      {/* The scroll spacer, and the entire reason the stage above is fixed.
+          A mobile browser only retracts its toolbar in response to a real
+          scroll, and this page had none: the wrapper was exactly one viewport
+          tall with overflow hidden, so scrollHeight === clientHeight and there
+          was nothing to react to. This gives the document a second viewport of
+          height, so one swipe collapses the chrome and hands ~60-100px back to
+          the scene. Nothing moves while it scrolls -- the stage is fixed, and
+          being fixed is also why this has to be 200dvh rather than 100: the
+          stage contributes nothing to flow, so the spacer IS the document, and
+          at one viewport tall there is still nothing to scroll.
+
+          Touch only. On desktop the wheel handler still preventDefaults (it
+          guards a real trackpad rubber-band), so a taller document would only
+          add a scrollbar that could never move. */}
+      {isCoarsePointer && <div aria-hidden="true" className="pointer-events-none h-[200dvh] w-full" />}
     </NavigationProvider>
   );
 }
