@@ -2,6 +2,7 @@
 - [x] Transition splash screen 
 - [ ] Add ambient beach music based on day
     - [ ] Day, people sounds?
+- [ ] 404 Page
 
 # Small Tweaks needed
 - [x] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start

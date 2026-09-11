@@ -6,7 +6,7 @@ import { Suspense, useCallback, useEffect, useRef, useState, useTransition } fro
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
-import { AdaptiveDpr, Gltf, OrbitControls, PerformanceMonitor, Preload, useGLTF, useProgress } from "@react-three/drei";
+import { AdaptiveDpr, Gltf, PerformanceMonitor, Preload, useGLTF, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest } from "@/helpers/StateProvider";
@@ -26,11 +26,13 @@ import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import { HintAnchor } from "@/components/canvas/HintAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
 import { CursorDriver } from "@/components/canvas/CursorDriver";
+import { CameraLook } from "@/components/canvas/CameraLook";
 import { RainRefraction } from "@/components/canvas/RainRefraction";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import { useShortViewport } from "@/helpers/useShortViewport";
+import { useTabletViewport } from "@/helpers/useTabletViewport";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -303,6 +305,13 @@ export default function Page() {
   // between double-click and press-and-hold portal entry.
   const isCoarsePointer = useCoarsePointer();
   const isShortViewport = useShortViewport();
+  const isTabletViewport = useTabletViewport();
+  // Landscape phone and tablet both want the joystick out of the middle of the
+  // scene; only the landscape phone wants it shrunk to fit (see the joystick
+  // block below). Keeping the two questions separate is the whole point --
+  // isShortViewport used to answer both, which is why a tablet, matching
+  // neither, got centred AND full-size.
+  const isCorneredJoystick = isShortViewport || isTabletViewport;
   const isRaining = useAtomValue(raining);
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
@@ -658,11 +667,21 @@ export default function Page() {
             the 3D ring hotspots below, so the two are perfectly
             complementary: rings show exactly when the joystick doesn't.
             Desktop keeps only the 3D rings, unchanged. */}
+        {/* Two independent decisions, deliberately not one flag. A landscape
+            phone needs the joystick BOTH cornered and shrunk -- it has ~350px
+            of height to spend. A tablet needs it cornered (a 1024px-tall
+            screen has plenty of room, but dead-centre still means "on top of
+            the scene") and NOT shrunk -- 84px is a small target on a 11"
+            display held at arm's length. A portrait phone wants neither: it
+            keeps the centred thumb position that suits a one-handed grip.
+            Cornering goes bottom-RIGHT, not the mirror of the desktop rail:
+            the name stamp already owns bottom-left and stands ~130px tall on a
+            tablet, which is exactly where the joystick would have landed. */}
         {isCoarsePointer && (
           <div
-            className={`absolute z-10 ${isShortViewport ? "" : "left-1/2 -translate-x-1/2"}`}
+            className={`absolute z-10 ${isCorneredJoystick ? "" : "left-1/2 -translate-x-1/2"}`}
             style={
-              isShortViewport
+              isCorneredJoystick
                 ? { bottom: "calc(1rem + var(--safe-bottom))", right: "calc(1rem + var(--safe-right))" }
                 : { bottom: "calc(7rem + var(--safe-bottom))" }
             }
@@ -815,6 +834,11 @@ export default function Page() {
                 loop rather than from a timer -- see RainRefraction.tsx. */}
             <RainRefraction />
             {started && !isCoarsePointer && <CursorDriver />}
+            {/* The view follows the cursor; the camera never moves. Same
+                desktop-only gate as CursorDriver -- it reads the same
+                pointerState, which SceneCursor only populates where there is a
+                hovering pointer to read. */}
+            {started && !isCoarsePointer && <CameraLook />}
             <Preload all />
           </Suspense>}
         </Canvas>

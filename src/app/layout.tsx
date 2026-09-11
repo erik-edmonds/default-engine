@@ -4,7 +4,6 @@ import "./globals.css";
 import { Favicon } from "@/components/layout/Icon";
 import { AppStateProvider } from "@/helpers/StateProvider";
 import { Suspense } from "react";
-import Loading from "@/app/loading";
 
 const nunito = Nunito({
   subsets: ['latin'],
@@ -117,10 +116,18 @@ export default function RootLayout({children,}: Readonly<{children: React.ReactN
           >
             <Favicon/>
           </div>
-          <Suspense fallback={<Loading/>}>
+          {/* fallback={null}, deliberately. The loading UI for this app is
+              LoadingScreen, mounted by page.tsx *inside* the tree -- it owns
+              the progress readout and the Enter button, so it has to be the
+              only thing on screen while assets load. An overlay mounted out
+              here instead sits outside page.tsx's fixed wrapper, which
+              establishes its own stacking context, so it paints over
+              LoadingScreen no matter what z-index LoadingScreen carries.
+              That is exactly how the retired app/loading.tsx used to take
+              over mid-load: particles, then a plain fill. */}
+          <Suspense fallback={null}>
             {children}
           </Suspense>
-          <Loading />
         </AppStateProvider>
       </body>
     </html>

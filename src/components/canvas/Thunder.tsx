@@ -6,6 +6,7 @@ import { CameraShake, type ShakeController } from "@react-three/drei"
 import gsap from "gsap"
 import * as THREE from "three"
 import { cameraFlying, thunder } from "@/helpers/StateProvider"
+import { cameraShakeActive } from "@/helpers/cameraBase"
 
 // A strike is two flashes, not one: the leader stroke, then a return stroke
 // about two seconds later. Both the light and the shake key off these.
@@ -36,6 +37,18 @@ export function Thunder() {
   const dirRef = useRef<THREE.DirectionalLight>(null)
   const shakeRef = useRef<ShakeController | undefined>(undefined)
   const [striking, setStriking] = useState(false)
+  // Mirrors the exact condition the <CameraShake> below mounts on, so
+  // CameraLook can stand down for precisely as long as the shake owns
+  // camera.rotation -- see helpers/cameraBase.ts. Not derived from the
+  // `thunder` atom outside, because the rig's lifetime is SHAKE_MS, not the
+  // atom's value.
+  const shaking = striking && !flying
+  useEffect(() => {
+    cameraShakeActive.current = shaking
+    return () => {
+      cameraShakeActive.current = false
+    }
+  }, [shaking])
 
   useEffect(() => {
     // Same "counter atom starts at 0, only >0 means a real trigger fired"
@@ -130,7 +143,7 @@ export function Thunder() {
           Un-mounting mid-shake is safe: flyTo keeps slerping rotation every
           frame afterwards, so any residual offset is corrected within a frame.
           The flash itself is unaffected -- only the shake stands down. */}
-      {striking && !flying && (
+      {shaking && (
         <CameraShake
           ref={shakeRef}
           intensity={1}

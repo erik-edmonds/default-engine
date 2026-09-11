@@ -1,6 +1,6 @@
 "use client"
 
-import { forwardRef, useImperativeHandle, useRef } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react"
 import * as THREE from "three"
 import { useThree } from "@react-three/fiber"
 import { useSetAtom } from "jotai"
@@ -8,6 +8,7 @@ import gsap from "gsap"
 
 import { tweenDuration } from "@/helpers/motion"
 import { cameraFlying } from "@/helpers/StateProvider"
+import { cameraBase, initCameraBase, setCameraBase, setCameraBaseFromEuler } from "@/helpers/cameraBase"
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
 
 gsap.ticker.lagSmoothing(0)
@@ -50,6 +51,13 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     if (activeFlights.current === 0) setCameraFlying(false)
   }
 
+  // Seed the aim before anything can layer a look-offset on top of it.
+  // CameraLook mounts later (it waits for `started`) and would otherwise find
+  // an identity quaternion and swing the camera to face world -Z.
+  useEffect(() => {
+    initCameraBase(camera.quaternion)
+  }, [camera])
+
   const syncOrbitTarget = (rotation: THREE.Euler, distance = 10) => {
     const target = (controls as { target?: THREE.Vector3 } | null)?.target
     if (!target) return
@@ -61,7 +69,11 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     zoomIn: () =>
       new Promise<void>((resolve) => {
         beginFlight()
-        const startRotation = camera.rotation.clone()
+        // Started from the *aim*, not from camera.rotation -- the latter
+        // carries CameraLook's cursor offset, which gsap would capture as the
+        // tween's start value and then never unwind. Writing it back into
+        // camera.rotation first is what gsap.to() reads a beat later.
+        const startRotation = new THREE.Euler().setFromQuaternion(cameraBase, camera.rotation.order)
         camera.lookAt(AVATAR_POSITION)
         const targetRotation = camera.rotation.clone()
         camera.rotation.copy(startRotation)
@@ -86,7 +98,14 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           z: targetRotation.z,
           duration: tweenDuration(2),
           ease: "power2.inOut",
-          onUpdate: () => syncOrbitTarget(camera.rotation),
+          // gsap writes camera.rotation, we publish it as the new aim, and
+          // CameraLook re-applies its offset on top a fraction of a frame
+          // later. Publishing here rather than letting the look read
+          // camera.rotation back is what keeps the offset out of the aim.
+          onUpdate: () => {
+            setCameraBaseFromEuler(camera.rotation)
+            syncOrbitTarget(camera.rotation)
+          },
         })
       }),
     flyUp: () =>
@@ -122,6 +141,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           .addScaledVector(forward, -INTRO_PULLBACK)
           .setY(ISLAND_CAMERA_POSITION.y + INTRO_LIFT)
         camera.rotation.copy(ISLAND_CAMERA_ROTATION)
+        setCameraBaseFromEuler(ISLAND_CAMERA_ROTATION)
         syncOrbitTarget(camera.rotation)
 
         introTween.current = gsap.to(camera.position, {
@@ -147,7 +167,12 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
       new Promise<void>((resolve) => {
         beginFlight()
         const total = tweenDuration(duration)
-        const startQuaternion = camera.quaternion.clone()
+        // The aim, not camera.quaternion: starting the slerp from the offset
+        // orientation would carry the cursor's tilt all the way to the
+        // destination, and the arrival rotation would be off by it. Visually
+        // continuous either way, because CameraLook keeps adding the same
+        // offset on top of whatever the slerp publishes.
+        const startQuaternion = cameraBase.clone()
         const endQuaternion = new THREE.Quaternion().setFromEuler(rotation)
         const rotateProgress = { t: 0 }
         const turnFraction = 0.75
@@ -180,6 +205,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             ease: "power2.inOut",
             onUpdate: () => {
               camera.quaternion.slerpQuaternions(startQuaternion, endQuaternion, rotateProgress.t)
+              setCameraBase(camera.quaternion)
               syncOrbitTarget(camera.rotation)
             },
           },

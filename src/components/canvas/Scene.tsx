@@ -113,6 +113,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
             {showSeagulls && <SeagullFlock />}
             <Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/>
             <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
+            {/* Need to hide this until the underwater scene is ready.
             <group ref={gearRef}>
                 <Gear
                     onClick={() => {
@@ -122,8 +123,9 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                         else downclick()
                     }}
                     onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1} position={[-3,-1.8,5]} rotation={[0, Math.PI/0.8, 0]} />
-            </group>
-            <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
+            </group> */}
+            {/* Need to hide this until the sky scene is ready.
+             <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/> */}
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth
                 raycast (plus every r3f pointer event on the island) pays for

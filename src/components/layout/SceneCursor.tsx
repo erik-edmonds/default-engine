@@ -415,7 +415,7 @@ export function SceneCursor() {
         aria-hidden="true"
         className="scene-cursor"
         data-cursor-state="idle"
-        // Above everything, including app/loading.tsx's full-screen panel.
+        // Above everything, including LoadingScreen's full-screen panel.
         // Never interactive: a cursor that can swallow its own click would be
         // worse than no cursor.
         style={{
