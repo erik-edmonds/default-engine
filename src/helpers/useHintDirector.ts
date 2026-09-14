@@ -28,11 +28,21 @@ import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 /** Priority order, highest first. Only one hint is ever on screen; a
  *  higher-priority one may take the slot from a lower one, but only once the
  *  lower one has served its minimum visible time. */
-// Discovery order is deliberate: the guitar and the clouds change something
-// in place, while the Poke Ball and the gear replace the entire page. Telling
-// a first-time visitor to leave the island is the wrong opening suggestion, so
-// those two come last.
-const PRIORITY: HintId[] = ["portalExit", "portalEnter", "guitar", "clouds", "pokeball", "scuba"]
+// This list is also the switch for WHICH discovery hints are live at all -- a
+// hint absent from it is never even considered.
+//
+// `pokeball` and `scuba` are deliberately absent: both props are commented out
+// of Scene.tsx until the sky and underwater scenes are finished, and the
+// director happily went on nudging visitors to click two things that are not in
+// the scene. Everything else about them is left intact (their copy in HINTS,
+// their marker positions, the pokeballUsed/scubaUsed inputs and the `done`
+// bookkeeping below), so re-enabling them is putting them back on this line --
+// the same edit, in the same breath, as uncommenting them in Scene.tsx.
+//
+// Discovery order among the live ones is deliberate: the guitar and the clouds
+// change something in place rather than replacing the page, which is the right
+// opening suggestion for a first-time visitor.
+const PRIORITY: HintId[] = ["portalExit", "portalEnter", "guitar", "clouds"]
 
 const EVALUATE_INTERVAL_MS = 400
 

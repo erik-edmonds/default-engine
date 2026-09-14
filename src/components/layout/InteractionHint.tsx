@@ -15,10 +15,12 @@ const HAND_SILHOUETTE =
 // Brief onboarding nudge shown once the loading screen finishes: a pulsing
 // "tap" icon (echoing CameraHotspot's own sonar-ping hover animation, so
 // the same "this pulses = interactive" language applies to both the 3D
-// markers and this DOM hint) above a glass pill caption. Says "Click to
-// Explore" rather than the more common "drag to look around" -- this site
-// has no drag/orbit control, only click-driven navigation (hotspots, the
-// Poke Ball, the Gear), so the copy has to match what's actually true here.
+// markers and this DOM hint) above a glass pill caption. The copy names the
+// gesture that actually works, rather than the more common "drag to look
+// around" -- this site has no drag/orbit control at all. On desktop that is
+// clicking the ring markers; on touch it is scrolling through the scene, and
+// there the hint carries more weight than it looks, because it is the only
+// thing on screen that says so.
 const APPEAR_DELAY_MS = 1200
 // Once it's up, the hint holds for at least this long even if the user
 // dismisses it immediately. Dismissal is triggered by the first pointer move
@@ -30,9 +32,14 @@ const MIN_VISIBLE_MS = 2000
 interface InteractionHintProps {
   visible: boolean // true once the loading screen has finished (site "started")
   dismissed: boolean // true once the user has interacted, or the hint has timed out
+  /** What the gesture actually is here. Desktop navigates by clicking ring
+   *  markers; touch navigates by scrolling through the scene, and since the
+   *  joystick was removed this hint is the *only* thing that says so -- there
+   *  is no other affordance on screen. */
+  gesture?: "click" | "scroll"
 }
 
-export function InteractionHint({ visible, dismissed }: InteractionHintProps) {
+export function InteractionHint({ visible, dismissed, gesture = "click" }: InteractionHintProps) {
   const [entered, setEntered] = useState(false)
   // Whether the minimum on-screen time has elapsed. Tracked separately from
   // `entered` so a dismissal arriving early is deferred rather than dropped.
@@ -73,7 +80,7 @@ export function InteractionHint({ visible, dismissed }: InteractionHintProps) {
     >
       <div className="relative flex h-40 w-40 items-center justify-center">
         <svg
-          className="hint-icon relative text-white"
+          className={`${gesture === "scroll" ? "hint-icon-swipe" : "hint-icon"} relative text-white`}
           width={144}
           height={144}
           viewBox="0 0 448 512"
@@ -96,7 +103,7 @@ export function InteractionHint({ visible, dismissed }: InteractionHintProps) {
           backdropFilter: "blur(6px)",
         }}
       >
-        Click to Explore
+        {gesture === "scroll" ? "Scroll to Explore" : "Click to Explore"}
       </div>
     </div>
   )

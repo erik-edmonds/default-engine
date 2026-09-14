@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import dynamic from "next/dynamic";
-import { Suspense, useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
@@ -27,22 +27,21 @@ import { HintAnchor } from "@/components/canvas/HintAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
 import { CursorDriver } from "@/components/canvas/CursorDriver";
 import { CameraLook } from "@/components/canvas/CameraLook";
+import { JourneyPath } from "@/components/canvas/JourneyPath";
 import { RainRefraction } from "@/components/canvas/RainRefraction";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import { useShortViewport } from "@/helpers/useShortViewport";
-import { useTabletViewport } from "@/helpers/useTabletViewport";
+import { JOURNEY_STOPS } from "@/config/journey";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import PhaseCube from "@/components/canvas/PhaseCube";
 import { NavigationProvider } from "@/components/layout/Navigation";
-import { HotspotJoystick } from "@/components/layout/HotspotJoystick";
 import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
 import { InteractionHint } from "@/components/layout/InteractionHint";
-import { Anchor } from "@/helpers/Interfaces";
 
 // Debug
 
@@ -80,27 +79,9 @@ const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [11.0, 5.57, -19.
 const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(15.098318983889161, 6.795693566831701, -23.697681471253638);
 const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394);
 
-const SECTIONS = [
-  { id: "home", scroll: 0.00 },
-  { id: "work", scroll: 0.33 },
-  { id: "about", scroll: 0.66 },
-  { id: "contact", scroll: 1.00 },
-];
-
-const ANCHORS: Anchor[] = [
-  { id: "home", label: "Home", position: [-1.3, -0.65, 1],   scroll: 0.00 },
-  { id: "models",   label: "Models", position: [-14.69, 3.47, -12.94], scroll: 0.33 },
-  { id: "donate",  label: "Donate", position: [11.0, 5.57, -19.72],  scroll: 0.66 },
-  { id: "contact", label: "Contact", position: [-9.11, 12.97, -13.08], scroll: 1.00 }
-  ];
-
 const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
 
-/** One label per hotspot id, read by BOTH the 3D ring markers and the mobile
- *  joystick, so the two can never disagree about where something goes.
- *  Deliberately not ANCHORS below: that array is dead code whose ids
- *  ("models"/"donate"/"contact") don't match hotspotNav's, and whose `home`
- *  position disagrees with HOME_HOTSPOT_POSITION. */
+/** One label per hotspot id, read by the 3D ring markers. */
 const HOTSPOT_LABELS: Record<string, string> = {
   home: "Home",
   "left-tree": "Models",
@@ -193,6 +174,28 @@ const PORTAL_HINT_TARGETS: Record<string, THREE.Vector3> = Object.fromEntries(
     portal.position.clone().setY(portal.position.y - PORTAL_HEIGHT / 2 - 0.3),
   ]),
 );
+
+// --- touch navigation: scrolling through the scene -------------------------
+//
+// The whole journey is one continuous scroll along an authored path (see
+// config/journey.ts) that sweeps around the outside of the island cluster and
+// passes through each destination's viewpoint on the way. Nothing here is
+// automatic: the scroll position IS the camera's position along that path.
+//
+// How close to a destination's own point on the path counts as being parked
+// there. Only inside this window does that destination's portal become
+// enterable -- sweeping past one at speed should not let you fall into it.
+// 0.012 of the path is roughly a second of unhurried scrolling.
+const ARRIVAL_WINDOW = 0.012;
+/** What hotspotNav reads as while between destinations. Matches no portal and
+ *  no ring, which is the point. */
+const IN_TRANSIT = "transit";
+
+/** Which destination the camera is parked at, or IN_TRANSIT. */
+function stopAt(u: number) {
+  for (const stop of JOURNEY_STOPS) if (Math.abs(u - stop.u) <= ARRIVAL_WINDOW) return stop.id as string;
+  return IN_TRANSIT;
+}
 
 export default function Page() {
   const router = useRouter();
@@ -305,22 +308,10 @@ export default function Page() {
   // between double-click and press-and-hold portal entry.
   const isCoarsePointer = useCoarsePointer();
   const isShortViewport = useShortViewport();
-  const isTabletViewport = useTabletViewport();
-  // Landscape phone and tablet both want the joystick out of the middle of the
-  // scene; only the landscape phone wants it shrunk to fit (see the joystick
-  // block below). Keeping the two questions separate is the whole point --
-  // isShortViewport used to answer both, which is why a tablet, matching
-  // neither, got centred AND full-size.
-  const isCorneredJoystick = isShortViewport || isTabletViewport;
   const isRaining = useAtomValue(raining);
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
   const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
-  // page.tsx otherwise only *writes* this atom (see setInSkyJourneyAtom
-  // above) -- this is a second, independent read, purely to gate the
-  // compass HUD's visibility during the sky sequence. Icon.tsx already
-  // reads the same atom for the same "hide UI mid-sequence" purpose.
-  const isInSkyJourneyValue = useAtomValue(inSkyJourney);
   const goHomeRequestValue = useAtomValue(goHomeRequest);
   const setMusicEnabled = useSetAtom(musicEnabled);
   const setSfxEnabled = useSetAtom(sfxEnabled);
@@ -464,16 +455,26 @@ export default function Page() {
     };
 
     const handleWheel = (event: WheelEvent) => {
-      // This page has no scrollable content anywhere -- scrolling only ever
-      // drives the sky journey. Without this, the browser's native page
-      // scroll fires right alongside our own handling of the same wheel
-      // event: nothing here visibly moves (nothing on the page overflows),
-      // but trackpads still report a elastic "rubber-band" overscroll for a
-      // scroll the page never actually performs, which reads as the whole
-      // page bouncing. Requires the listener below to be non-passive, or
-      // preventDefault is a silent no-op.
-      event.preventDefault();
-      applyScrollDelta(event.deltaY);
+      // The sky journey captures the gesture outright -- it reads the delta
+      // itself and nothing on the page should scroll underneath it.
+      if (isInSkyJourney.current) {
+        event.preventDefault();
+        applyScrollDelta(event.deltaY);
+        return;
+      }
+      // Otherwise, preventDefault ONLY when there is nothing to scroll.
+      //
+      // This used to be unconditional, written when the page had no scrollable
+      // content at all and the only job was suppressing a trackpad's elastic
+      // rubber-band for a scroll that never happened. Once the spacer arrived
+      // and the document became the navigation, that same line swallowed it:
+      // a one-finger touch drag still scrolled (touchmove is left alone), but
+      // a two-finger trackpad scroll, a mouse wheel on a tablet, and Chrome's
+      // device emulation on a laptop all did nothing at all.
+      //
+      // Requires the listener below to be non-passive, or preventDefault is a
+      // silent no-op.
+      if (document.documentElement.scrollHeight <= window.innerHeight + 1) event.preventDefault();
     };
 
     // Touch equivalent of the wheel handler above -- there's no wheel event
@@ -526,6 +527,8 @@ export default function Page() {
   // setTheme would leave the favicon frozen on the last *clicked* phase.
   useEffect(() => { setTheme(day); }, [day, setTheme]);
 
+  // Desktop's ring markers, and handleGoHome. Touch navigates by scrolling the
+  // path instead and never calls this.
   const flyToHotspot = (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
     setHasInteracted(true);
     beginHotspotTransition(id);
@@ -533,7 +536,7 @@ export default function Page() {
     // Leaving for any hotspot closes whatever portal was open -- otherwise a
     // blended-in portal would stay blended while the camera flew away from it.
     closePortal();
-    cameraControllerRef.current?.flyTo(position, rotation);
+    return cameraControllerRef.current?.flyTo(position, rotation);
   };
   const handleUpperIslandHotspotClick = () => flyToHotspot("upper", UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION);
   const handleLeftTreeHotspotClick = () => flyToHotspot("left-tree", LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION);
@@ -541,22 +544,86 @@ export default function Page() {
   const handleHomeHotspotClick = () => flyToHotspot("home", HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION);
 
 
-  const RAIL_FLY_HANDLERS = [
-    handleHomeHotspotClick,
-    handleLeftTreeHotspotClick,
-    handleMoonIslandHotspotClick,
-    handleUpperIslandHotspotClick,
-  ];
+  // --- touch navigation: scrolling through the scene -----------------------
+  //
+  // Driven off the document's own scroll (the spacer at the bottom of this
+  // file), NOT off captured wheel/touch events. That is deliberate and it is
+  // load-bearing: a mobile browser only retracts its toolbar in response to a
+  // real scroll, so preventDefault-ing the gesture to read it would silently
+  // undo the fix the spacer exists for and cost the scene 60-100px of height.
+  // Here the navigation and the toolbar collapse are the same gesture.
+  // Set when we move the scroll ourselves, so our own listener doesn't read
+  // the resulting event as the visitor scrolling.
+  const suppressScrollUntil = useRef(0);
+  // Whether to draw the journey path overlay. Read through
+  // useSyncExternalStore rather than as state corrected in an effect: this
+  // page is statically prerendered, so the server has to say `false` while the
+  // client reads the real URL, and that is exactly the split this hook exists
+  // for. The subscribe function is a no-op because the flag cannot change
+  // without a navigation.
+  const showJourneyPath = useSyncExternalStore(
+    () => () => {},
+    () => new URLSearchParams(window.location.search).has("path"),
+    () => false,
+  );
 
-  // Fixed screen-space directions for the mobile joystick (HotspotJoystick) --
-  // labels reuse ANCHORS' existing copy for the same landmarks rather than
-  // inventing new strings.
-  const JOYSTICK_DIRECTIONS = {
-    up: { id: "upper", label: HOTSPOT_LABELS.upper, onSelect: handleUpperIslandHotspotClick },
-    down: { id: "home", label: HOTSPOT_LABELS.home, onSelect: handleHomeHotspotClick },
-    left: { id: "left-tree", label: HOTSPOT_LABELS["left-tree"], onSelect: handleLeftTreeHotspotClick },
-    right: { id: "moon-island", label: HOTSPOT_LABELS["moon-island"], onSelect: handleMoonIslandHotspotClick },
+  const scrollFraction = () => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    if (max <= 0) return 0;
+    return Math.min(1, Math.max(0, window.scrollY / max));
   };
+
+  const scrollNavActive = () =>
+    isCoarsePointer && started && !isInSkyJourney.current && !isSequenceRunning.current;
+
+  const onScrollTick = () => {
+    if (performance.now() < suppressScrollUntil.current) return;
+    if (!scrollNavActive()) return;
+    setHasInteracted(true);
+
+    // The whole of it. The scroll fraction is the distance along the path, and
+    // setJourney only sets a target -- the spring in CameraController is what
+    // moves, which is where the weight comes from. No bands, no committed
+    // flights, no state machine: scrolling back retraces the way you came,
+    // exactly.
+    const u = scrollFraction();
+    cameraControllerRef.current?.setJourney(u);
+    // Keeps the portals' `interactive` gate honest. Safe to call on every
+    // scroll event: it returns the previous state unchanged when the id
+    // already matches, so React bails out.
+    beginHotspotTransition(stopAt(u));
+  };
+
+  // The latest-ref pattern, and not a nicety here. Everything above closes over
+  // render-scoped values (playSfx, closePortal, `started`, the hotspot
+  // helpers); a listener subscribed once with useCallback deps would either go
+  // stale mid-session or re-subscribe on every render. A ref reassigned each
+  // render means the listener is registered once and always calls the current
+  // version.
+  const scrollTickRef = useRef(onScrollTick);
+  // Deliberately no dependency array: this has to re-point after every commit,
+  // and a scroll event cannot be delivered between a render and its effects,
+  // so the listener never sees a stale one. (Assigning during render instead
+  // would be equivalent here, but react-hooks/refs rightly flags it.)
+  useEffect(() => {
+    scrollTickRef.current = onScrollTick;
+  });
+
+  useEffect(() => {
+    if (!isCoarsePointer || !started) return;
+    // Browsers restore the scroll position across a reload, so without this a
+    // refresh could hand the first scroll event a point part-way along the
+    // path and jump the camera there. Start every session at the top, where
+    // u = 0 is exactly the pose intro() just landed on.
+    if (window.scrollY !== 0) {
+      suppressScrollUntil.current = performance.now() + 250;
+      window.scrollTo(0, 0);
+    }
+
+    const onScroll = () => scrollTickRef.current();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [isCoarsePointer, started]);
 
   const handleUpClick = async () => {
     setHasInteracted(true);
@@ -610,8 +677,16 @@ export default function Page() {
     await avatarControllerRef.current?.spinAndTransform("base");
     skyOffset.current = 0;
     setMotion(false);
+    // Put the scroll navigation back at the top with the camera, or the next
+    // swipe would be read against a scroll position left over from before the
+    // sky journey and jump somewhere unrelated along the path.
+    if (isCoarsePointer) {
+      suppressScrollUntil.current = performance.now() + 250;
+      window.scrollTo(0, 0);
+      cameraControllerRef.current?.endJourney();
+    }
     isSequenceRunning.current = false;
-  }, [setInSkyJourneyAtom, setSkyText, setMotion, beginHotspotTransition]);
+  }, [setInSkyJourneyAtom, setSkyText, setMotion, beginHotspotTransition, isCoarsePointer]);
 
   useEffect(() => {
     if (goHomeRequestValue > 0) handleGoHome();
@@ -651,49 +726,11 @@ export default function Page() {
           <SoundToggle currentPhase={currentPhase} />
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
-        {/* Superseded by HotspotJoystick below -- kept here, commented out
-            rather than deleted, as a one-block revert path (Rail.tsx itself
-            is untouched and still fully functional). */}
-        {/* <div className="flex lg:hidden absolute bottom-28 left-1/2 -translate-x-1/2 z-10 bg-[#d25a1a]/50 rounded-full px-4 py-2">
-          <Rail
-            sections={SECTIONS}
-            active={active}
-            onSelect={(_s, i) => { setActive(i); RAIL_FLY_HANDLERS[i](); }}
-            phase={day}
-            orientation="horizontal"
-          />
-        </div> */}
-        {/* Mobile/touch only -- the same isCoarsePointer signal that hides
-            the 3D ring hotspots below, so the two are perfectly
-            complementary: rings show exactly when the joystick doesn't.
-            Desktop keeps only the 3D rings, unchanged. */}
-        {/* Two independent decisions, deliberately not one flag. A landscape
-            phone needs the joystick BOTH cornered and shrunk -- it has ~350px
-            of height to spend. A tablet needs it cornered (a 1024px-tall
-            screen has plenty of room, but dead-centre still means "on top of
-            the scene") and NOT shrunk -- 84px is a small target on a 11"
-            display held at arm's length. A portrait phone wants neither: it
-            keeps the centred thumb position that suits a one-handed grip.
-            Cornering goes bottom-RIGHT, not the mirror of the desktop rail:
-            the name stamp already owns bottom-left and stands ~130px tall on a
-            tablet, which is exactly where the joystick would have landed. */}
-        {isCoarsePointer && (
-          <div
-            className={`absolute z-10 ${isCorneredJoystick ? "" : "left-1/2 -translate-x-1/2"}`}
-            style={
-              isCorneredJoystick
-                ? { bottom: "calc(1rem + var(--safe-bottom))", right: "calc(1rem + var(--safe-right))" }
-                : { bottom: "calc(7rem + var(--safe-bottom))" }
-            }
-          >
-            <HotspotJoystick
-              directions={JOYSTICK_DIRECTIONS}
-              currentId={hotspotNav.current}
-              visible={sceneReady && started && !motion && !isInSkyJourneyValue}
-              compact={isShortViewport}
-            />
-          </div>
-        )}
+        {/* Touch navigates by scrolling through the scene (see the scroll
+            state machine above and the spacer at the bottom of this file), so
+            there is no on-screen control here at all -- the joystick this
+            replaced asked visitors to know where each landmark physically sat
+            before its four directions meant anything. */}
         {/* "percentage" (PCFShadowMap), not "soft" (PCFSoftShadowMap) --
             three.js has deprecated PCFSoftShadowMap and silently substitutes
             PCFShadowMap for it at runtime anyway (with a console warning),
@@ -770,9 +807,8 @@ export default function Page() {
               {/* Rings hidden on mobile/touch -- their hover-preview affordance
                   (grow, glow, sonar pulse) needs a real hover state that
                   touch doesn't have, and most of the 4 are off-screen at
-                  once on a narrow mobile viewport anyway. HotspotJoystick
-                  (mounted below, outside the Canvas) is the touch-facing
-                  replacement. */}
+                  once on a narrow mobile viewport anyway. Touch travels by
+                  scrolling instead, so it needs no markers to aim at. */}
               {sceneReady && revealStage >= 3 && !isCoarsePointer && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 <CameraHotspot label={HOTSPOT_LABELS["upper"]} labelsIntro={labelsIntro} position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
@@ -839,6 +875,10 @@ export default function Page() {
                 pointerState, which SceneCursor only populates where there is a
                 hovering pointer to read. */}
             {started && !isCoarsePointer && <CameraLook />}
+            {/* The scroll journey's path, drawn in the scene, for tuning the
+                waypoints in config/journey.ts. Off unless the URL says
+                otherwise, so it can be switched on against a deployed build. */}
+            {showJourneyPath && <JourneyPath />}
             <Preload all />
           </Suspense>}
         </Canvas>
@@ -848,7 +888,12 @@ export default function Page() {
         {!started && (
           <LoadingScreen ref={loadingScreenRef} progress={progress} isCoarsePointer={isCoarsePointer} onEnter={handleEnter} />
         )}
-        {!isCoarsePointer && <InteractionHint visible={started} dismissed={hasInteracted} />}
+        {/* Now mounted on touch too, where it carries more weight than it does
+            on desktop: with the joystick gone there is no other affordance on
+            screen, so this caption is the only thing that says the scene is
+            navigated by scrolling. Dismissed by the first scroll, which the
+            scroll listener reports as an interaction. */}
+        <InteractionHint visible={started} dismissed={hasInteracted} gesture={isCoarsePointer ? "scroll" : "click"} />
         {/* Not gated on pointer type, unlike InteractionHint: everything these
             point at is reachable by touch too, and the copy adapts to the
             gesture that actually works there (see HINTS). */}
@@ -861,21 +906,28 @@ export default function Page() {
         {started && !isCoarsePointer && <SceneCursor />}
         {rainTriggered && <RainScene />}
       </div>
-      {/* The scroll spacer, and the entire reason the stage above is fixed.
-          A mobile browser only retracts its toolbar in response to a real
-          scroll, and this page had none: the wrapper was exactly one viewport
-          tall with overflow hidden, so scrollHeight === clientHeight and there
-          was nothing to react to. This gives the document a second viewport of
-          height, so one swipe collapses the chrome and hands ~60-100px back to
-          the scene. Nothing moves while it scrolls -- the stage is fixed, and
-          being fixed is also why this has to be 200dvh rather than 100: the
-          stage contributes nothing to flow, so the spacer IS the document, and
-          at one viewport tall there is still nothing to scroll.
+      {/* The scroll spacer -- now the travel axis for touch navigation, and
+          still the entire reason the stage above is fixed.
+
+          It began as a toolbar fix: a mobile browser only retracts its chrome
+          in response to a real scroll, and this page had none (the wrapper was
+          exactly one viewport tall with overflow hidden, so scrollHeight ===
+          clientHeight). It still does that job -- the same swipe that flies
+          the camera also collapses the toolbar, which is precisely why this
+          navigation reads the document's scroll instead of capturing the
+          gesture.
+
+          300dvh, not 200: the stage is fixed and contributes nothing to flow,
+          so the spacer IS the document, and its scrollable range is its height
+          minus one viewport. 300dvh gives two viewports of travel -- one for
+          the scrubbed Home->Donate leg and one shared by the two committed
+          legs (see SCRUB_END / MODELS_END). Nothing moves while it scrolls;
+          the camera is what responds.
 
           Touch only. On desktop the wheel handler still preventDefaults (it
           guards a real trackpad rubber-band), so a taller document would only
           add a scrollbar that could never move. */}
-      {isCoarsePointer && <div aria-hidden="true" className="pointer-events-none h-[200dvh] w-full" />}
+      {isCoarsePointer && <div aria-hidden="true" className="pointer-events-none h-[1300dvh] w-full" />}
     </NavigationProvider>
   );
 }

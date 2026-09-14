@@ -1,15 +1,16 @@
 "use client"
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react"
 import * as THREE from "three"
-import { useThree } from "@react-three/fiber"
+import { useFrame, useThree } from "@react-three/fiber"
 import { useSetAtom } from "jotai"
 import gsap from "gsap"
 
-import { tweenDuration } from "@/helpers/motion"
+import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 import { cameraFlying } from "@/helpers/StateProvider"
 import { cameraBase, initCameraBase, setCameraBase, setCameraBaseFromEuler } from "@/helpers/cameraBase"
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
+import { journeyPose } from "@/config/journey"
 
 gsap.ticker.lagSmoothing(0)
 const AVATAR_POSITION = new THREE.Vector3(-1.3, -0.65, 1)
@@ -20,6 +21,33 @@ const ZOOM_IN_DISTANCE = 8
 const INTRO_PULLBACK = 7
 const INTRO_LIFT = 1
 
+// --- the journey spring ---------------------------------------------------
+//
+// The scroll sets a target distance along the path; this is what actually
+// moves the camera there, so the view carries weight instead of being welded
+// to the finger. Slightly under-damped (below the critical 2*sqrt(STIFFNESS)),
+// which leaves a small settle at the end of a flick rather than an abrupt
+// stop.
+//
+// Softer than the first version, because the path is now four times longer:
+// the same constants over twelve screens of scrolling read as sluggish rather
+// than weighty.
+const JOURNEY_STIFFNESS = 55
+const JOURNEY_DAMPING = 13
+// How far past either end of the journey the spring may carry the camera
+// before being pulled back. Past the ends the pose is extrapolated along the
+// path's tangent, so this stays small enough to keep that extrapolation
+// somewhere sensible.
+const JOURNEY_RUBBER_BAND = 0.01
+// One stalled frame must not integrate a huge step. This matters more here
+// than anywhere else in the app: gsap.ticker.lagSmoothing(0) above means a
+// long frame really does arrive as a long delta, and an unclamped spring
+// integrator does not merely stutter -- it diverges and throws the camera.
+const MAX_DELTA = 1 / 30
+// Below this the spring is considered arrived, so it stops writing and lets
+// the camera sit exactly on the target rather than jittering around it.
+const JOURNEY_REST_EPSILON = 0.00002
+
 export interface CameraControllerHandle {
   zoomIn: () => Promise<void>
   flyUp: () => Promise<void>
@@ -27,6 +55,15 @@ export interface CameraControllerHandle {
   setSkyOffset: (offsetZ: number) => void
   flyTo: (position: THREE.Vector3, rotation: THREE.Euler, duration?: number) => Promise<void>
   intro: (duration?: number) => Promise<void>
+  /** Drive the camera along the scroll journey. `u` is the target distance
+   *  along the path, 0 at Home and 1 at Contact; the spring is what actually
+   *  moves. Safe to call on every scroll event -- it only sets a target.
+   *  `enterAt` seeds the spring when the journey is first taken up, for a
+   *  caller that knows the camera is already somewhere along it. */
+  setJourney: (u: number, enterAt?: number) => void
+  /** Hand the camera back to the tweens, so the spring stops writing and
+   *  cannot fight a flight. */
+  endJourney: () => void
 }
 
 export const CameraController = forwardRef<CameraControllerHandle>((_props, ref) => {
@@ -43,6 +80,12 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
   const beginFlight = () => {
     introTween.current?.kill()
     introTween.current = null
+    // Hand the camera to the tweens. The journey spring writes position and
+    // orientation every frame, so left running it would simply overwrite the
+    // flight and the camera would never leave the path. Here rather than in
+    // flyTo so zoomIn is covered by the same guarantee.
+    journey.current.active = false
+    journey.current.v = 0
     activeFlights.current += 1
     setCameraFlying(true)
   }
@@ -65,7 +108,88 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     target.copy(camera.position).addScaledVector(forward, distance)
   }
 
+  // The journey's state. All refs: this runs in the frame loop and in scroll
+  // handlers, neither of which wants a re-render.
+  const journey = useRef({
+    active: false,
+    /** Where the scroll says we should be, 0..1 along the whole path. */
+    target: 0,
+    /** Where the spring actually is -- may sit just outside 0..1 mid-settle. */
+    u: 0,
+    /** ...and its velocity, in units of u per second. */
+    v: 0,
+  })
+  const journeyScratch = useMemo(() => ({ position: new THREE.Vector3(), look: new THREE.Vector3() }), [])
+
+  useFrame((_state, delta) => {
+    const j = journey.current
+    if (!j.active) return
+
+    if (prefersReducedMotion()) {
+      // Overshoot is exactly what this setting exists to remove, so the spring
+      // is not softened here -- it is skipped.
+      j.u = j.target
+      j.v = 0
+    } else {
+      const dt = Math.min(delta, MAX_DELTA)
+      // Semi-implicit (symplectic) Euler: velocity first, then integrate the
+      // NEW velocity into position. Explicit Euler with the same constants
+      // gains energy every step and walks the camera away.
+      j.v += (JOURNEY_STIFFNESS * (j.target - j.u) - JOURNEY_DAMPING * j.v) * dt
+      j.u += j.v * dt
+
+      // The rubber band. Clamping u alone would let the spring keep pushing
+      // against the wall and then snap; zeroing the outward velocity at the
+      // limit is what makes it turn around.
+      const low = -JOURNEY_RUBBER_BAND
+      const high = 1 + JOURNEY_RUBBER_BAND
+      if (j.u < low) { j.u = low; if (j.v < 0) j.v = 0 }
+      else if (j.u > high) { j.u = high; if (j.v > 0) j.v = 0 }
+
+      if (Math.abs(j.target - j.u) < JOURNEY_REST_EPSILON && Math.abs(j.v) < JOURNEY_REST_EPSILON) {
+        j.u = j.target
+        j.v = 0
+      }
+    }
+
+    journeyPose(j.u, journeyScratch.position, journeyScratch.look)
+    camera.position.copy(journeyScratch.position)
+    // lookAt rather than a slerp between the two nearest viewpoints: the path
+    // curves, so an orientation interpolated only between destinations would
+    // have the camera facing off into open water for most of a leg. Aiming at
+    // the look curve keeps the cluster framed the whole way, and at each
+    // destination the look point sits on that viewpoint's own view axis, so
+    // the arrival framing is identical to a hotspot flight's.
+    camera.lookAt(journeyScratch.look)
+    // Publish the aim, like every other rotation writer -- CameraLook composes
+    // its cursor offset on this, and a writer that skips it desyncs the two.
+    setCameraBase(camera.quaternion)
+    syncOrbitTarget(camera.rotation)
+  })
+
   useImperativeHandle(ref, () => ({
+    setJourney: (u, enterAt) => {
+      const j = journey.current
+      if (!j.active) {
+        // Where the spring starts when the journey is taken up, which is not
+        // always where the scroll says -- a caller returning from a flight
+        // knows the camera is already at a particular point on the path and
+        // passes it, so the camera glides from there rather than snapping.
+        j.active = true
+        j.u = enterAt ?? u
+        j.v = 0
+        // The arrival dolly tweens camera.position too, and gsap's default
+        // overwrite:false would let the two fight. Same reason beginFlight
+        // kills it.
+        introTween.current?.kill()
+        introTween.current = null
+      }
+      j.target = u
+    },
+    endJourney: () => {
+      journey.current.active = false
+      journey.current.v = 0
+    },
     zoomIn: () =>
       new Promise<void>((resolve) => {
         beginFlight()

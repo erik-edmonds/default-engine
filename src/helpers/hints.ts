@@ -48,9 +48,10 @@ export interface ActiveHint {
 export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boolean }> = {
   guitar: { fine: "Play the guitar", coarse: "Play the guitar", marker: true },
   clouds: { fine: "Make it rain", coarse: "Make it rain", marker: true },
-  // The two interactions that replace the whole page, and the two that had no
-  // onboarding at all. Both get a marker: they are small props in a busy
-  // scene, the same problem the guitar and clouds hints solve.
+  // Parked, not retired: both props are commented out of Scene.tsx until the
+  // sky and underwater scenes are finished, so neither id appears in PRIORITY
+  // (useHintDirector.ts) and neither hint can fire. Kept here, with their
+  // marker positions below, so switching them back on is one line in that list.
   pokeball: { fine: "Open the Poké Ball", coarse: "Open the Poké Ball", marker: true },
   scuba: { fine: "Take a dive", coarse: "Take a dive", marker: true },
   portalEnter: { fine: "Double-click to enter", coarse: "Press and hold to enter", marker: false },
@@ -80,12 +81,13 @@ export const HOME_BUTTON_HINT_ANCHOR = { left: 88, top: 48 } as const
 // discovery nudge appears. Nudging someone who is already busy is the
 // disruption worth avoiding, so this is an idle gate, not a timer from load.
 export const DISCOVER_IDLE_MS = 10000
-/** ...and how long once a discovery hint has already been shown. There are
- *  four of these now, only one may be on screen at a time, and retiring one
- *  resets the idle clock -- so at a flat 10s a visitor realistically sees one
- *  or two and the rest may as well not exist. A shorter re-arm keeps the
- *  first nudge unhurried while letting a lingering visitor actually reach the
- *  later ones. */
+/** ...and how long once a discovery hint has already been shown. Only one may
+ *  be on screen at a time and retiring one resets the idle clock, so at a flat
+ *  10s a visitor realistically sees the first and the rest may as well not
+ *  exist. A shorter re-arm keeps the first nudge unhurried while letting a
+ *  lingering visitor actually reach the later ones. (Two are live today --
+ *  see PRIORITY in useHintDirector.ts, which is also the list that decides
+ *  which exist at all.) */
 export const DISCOVER_REARM_IDLE_MS = 6000
 /** Floor, so a hint satisfied almost immediately still reads as deliberate
  *  rather than as a flicker. Matches InteractionHint's own MIN_VISIBLE_MS. */
