@@ -9,6 +9,10 @@ import {
   JOURNEY_LOOK_POINTS,
   JOURNEY_STOPS,
   JOURNEY_STOP_INDICES,
+  JOURNEY_STOP_SCROLL,
+  JOURNEY_SCROLL_SCREENS,
+  JOURNEY_TRAVEL_SCREENS,
+  JOURNEY_DWELL_SCREENS,
   journeyPolyline,
 } from "@/config/journey"
 
@@ -48,6 +52,8 @@ export function JourneyPath() {
       controls: JOURNEY_CONTROL_POINTS.map((p) => [p.x, p.y, p.z]),
       looks: JOURNEY_LOOK_POINTS.map((p) => [p.x, p.y, p.z]),
       stops: JOURNEY_STOPS,
+      stopScroll: JOURNEY_STOP_SCROLL,
+      screens: { travel: JOURNEY_TRAVEL_SCREENS, dwell: JOURNEY_DWELL_SCREENS, total: JOURNEY_SCROLL_SCREENS },
       length: JOURNEY_LENGTH,
     }
     return () => {

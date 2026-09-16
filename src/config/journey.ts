@@ -72,10 +72,22 @@ const LOOK_DISTANCE = 14
  *  Contact sits inside the arc that Models is on. */
 const WAYPOINTS: Waypoint[] = [
   { stop: "home" },
-  { bearing: 40, radius: 24, height: 1.5, look: [0, -1, 2] },
-  { bearing: 95, radius: 26, height: 4, look: [0, 0, -2] },
-  // Outside the moon island, which reaches r 33.7 through here.
-  { bearing: 128, radius: 40, height: 10, look: [8, 4, -16] },
+  // Close in. Terrain reaches only 15.5 through these bearings, so there is
+  // nothing out here to avoid -- an earlier 24 and 26 put the camera further
+  // from the island than either end of the leg, for no reason, across what is
+  // the longest passage in the journey.
+  //
+  // 18, not 20: the curve runs wider than its control points through here,
+  // pulled outward by the wide waypoint that follows, so 20 measured 22.6 on
+  // the path itself. These are the numbers to raise if the camera ever ends up
+  // clipping the island's skirt.
+  { bearing: 40, radius: 18, height: 1.5, look: [0, -1, 2] },
+  { bearing: 95, radius: 18, height: 4, look: [0, 0, -2] },
+  // This one has to be wide: the moon island reaches r 33.6 through bearings
+  // 120-135 and stands from y -43 to +16, so there is no way past it on the
+  // inside at this height. The radius is the tightest that still leaves the
+  // clearance every other part of the path keeps -- see the clearance check.
+  { bearing: 128, radius: 37, height: 10, look: [8, 4, -16] },
   { stop: "moon-island" },
   // Behind everything. Contact's island stands to y 23 at r 28.7 around
   // bearing 195, so this passes it at r 40 rather than over the top.
@@ -197,6 +209,107 @@ export function journeyPose(u: number, position: THREE.Vector3, look: THREE.Vect
   }
   return position
 }
+
+// --- scroll -> path position ----------------------------------------------
+//
+// The scroll does not map straight onto the path. It holds at the destinations
+// you travel through, so the camera arrives at a portal and STOPS there for a
+// screen's worth of scrolling before moving on -- without which you sweep past
+// the thing the destination exists for.
+//
+// Home and Contact get no band: Home is where the journey starts and Contact is
+// where the scroll runs out, so both already hold on their own.
+const DWELL_STOPS: JourneyStopId[] = ["moon-island", "left-tree"]
+
+/** Screens of scrolling spent travelling, across the whole journey. */
+export const JOURNEY_TRAVEL_SCREENS = 12
+/** ...and spent held at each dwelling destination. */
+export const JOURNEY_DWELL_SCREENS = 1
+/** Total scrollable range, in screens. The spacer is one taller than this,
+ *  since the scrollable range of a document is its height minus one viewport. */
+export const JOURNEY_SCROLL_SCREENS =
+  JOURNEY_TRAVEL_SCREENS + JOURNEY_DWELL_SCREENS * DWELL_STOPS.length
+
+/** How much of a travel segment is spent ramping up to speed, and the same
+ *  again slowing down into the stop at the far end.
+ *
+ *  Deliberately a fraction of each segment rather than an ease across the whole
+ *  of it: easing a whole leg leaves the camera slow at both ends and quick
+ *  through the middle, which is the "rushed through it" complaint wearing a
+ *  different hat. This gives a trapezoid -- accelerate, hold a constant cruise,
+ *  decelerate -- so speed is even for most of a passage and only changes where
+ *  the camera is arriving or leaving. */
+const RAMP = 0.18
+
+/** Integral of a smoothstep ramp-up, cruise, ramp-down profile, normalised so
+ *  f(0) = 0 and f(1) = 1. Its derivative (the speed) is continuous at both
+ *  ends, so the camera never changes velocity abruptly. */
+function trapezoid(t: number) {
+  if (t <= 0) return 0
+  if (t >= 1) return 1
+  const a = RAMP
+  // Integral of smoothstep 3x^2-2x^3 from 0 to x is x^3 - x^4/2; over the whole
+  // ramp (x = 1) that is 1/2, hence the a/2 terms below.
+  const area = 1 - a
+  if (t < a) {
+    const x = t / a
+    return (a * (x ** 3 - (x ** 4) / 2)) / area
+  }
+  if (t <= 1 - a) return (a / 2 + (t - a)) / area
+  const x = (1 - t) / a
+  return (a / 2 + (1 - 2 * a) + a * (0.5 - (x ** 3 - (x ** 4) / 2))) / area
+}
+
+/** The scroll timeline: alternating travel segments and holds, each with the
+ *  span of scroll it occupies and the stretch of path it covers. Built once
+ *  from the destinations' own arc-length positions, so retuning a waypoint
+ *  moves everything in step. */
+const TIMELINE = (() => {
+  const segments: { scroll: number; from: number; to: number; hold: boolean }[] = []
+  let cursor = 0
+  for (const stop of JOURNEY_STOPS) {
+    if (stop.u > cursor) {
+      segments.push({ scroll: (stop.u - cursor) * JOURNEY_TRAVEL_SCREENS, from: cursor, to: stop.u, hold: false })
+      cursor = stop.u
+    }
+    if (DWELL_STOPS.includes(stop.id)) {
+      segments.push({ scroll: JOURNEY_DWELL_SCREENS, from: stop.u, to: stop.u, hold: true })
+    }
+  }
+  if (cursor < 1) segments.push({ scroll: (1 - cursor) * JOURNEY_TRAVEL_SCREENS, from: cursor, to: 1, hold: false })
+
+  const total = segments.reduce((sum, s) => sum + s.scroll, 0)
+  let start = 0
+  return segments.map((s) => {
+    const span = { ...s, start: start / total, end: (start + s.scroll) / total }
+    start += s.scroll
+    return span
+  })
+})()
+
+/** Where along the path a scroll fraction (0..1 of the document) puts the
+ *  camera. Monotonic, so scrolling back retraces exactly. */
+export function journeyUForScroll(scroll: number) {
+  const s = Math.min(1, Math.max(0, scroll))
+  for (const seg of TIMELINE) {
+    if (s > seg.end) continue
+    if (seg.hold) return seg.from
+    const span = seg.end - seg.start
+    return seg.from + (seg.to - seg.from) * trapezoid(span > 0 ? (s - seg.start) / span : 1)
+  }
+  return 1
+}
+
+/** The scroll fraction at which each destination is first reached -- the start
+ *  of its hold, for those that have one. Used by the tests, and handy for any
+ *  future "jump to this destination" affordance. */
+export const JOURNEY_STOP_SCROLL: { id: JourneyStopId; scroll: number; holdUntil: number }[] =
+  JOURNEY_STOPS.map((stop) => {
+    const hold = TIMELINE.find((seg) => seg.hold && seg.from === stop.u)
+    const arrive = TIMELINE.find((seg) => !seg.hold && seg.to === stop.u)
+    const scroll = hold ? hold.start : arrive ? arrive.end : stop.u === 0 ? 0 : 1
+    return { id: stop.id, scroll, holdUntil: hold ? hold.end : scroll }
+  })
 
 /** Sampled polyline, for the ?path debug overlay. */
 export function journeyPolyline(divisions = 400) {

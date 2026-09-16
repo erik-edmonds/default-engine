@@ -134,7 +134,14 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                 the Bvh above do not, which is why that one buys almost
                 nothing. */}
             <Bvh firstHitOnly>
-                <group ref={islandRef}>
+                {/* Named so the scene graph says which subtree is the solid
+                    world. The journey path's clearance check needs to measure
+                    against terrain and nothing else; identifying it by
+                    excluding everything that isn't (by name, one pattern at a
+                    time) let animated props through, and the same viewpoint
+                    then measured 2.31, 1.73 and 4.50 units of clearance on
+                    three runs of unchanged geometry. */}
+                <group ref={islandRef} name="island-terrain">
                     <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
                 </group>
             </Bvh>

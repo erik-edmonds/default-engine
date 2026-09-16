@@ -33,7 +33,7 @@ import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import { useShortViewport } from "@/helpers/useShortViewport";
-import { JOURNEY_STOPS } from "@/config/journey";
+import { JOURNEY_SCROLL_SCREENS, JOURNEY_STOPS, journeyUForScroll } from "@/config/journey";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -581,12 +581,14 @@ export default function Page() {
     if (!scrollNavActive()) return;
     setHasInteracted(true);
 
-    // The whole of it. The scroll fraction is the distance along the path, and
-    // setJourney only sets a target -- the spring in CameraController is what
-    // moves, which is where the weight comes from. No bands, no committed
-    // flights, no state machine: scrolling back retraces the way you came,
-    // exactly.
-    const u = scrollFraction();
+    // The whole of it. journeyUForScroll turns the scroll fraction into a
+    // distance along the path -- travelling for most of it, and holding still
+    // while parked at a destination so the camera stops at the portal rather
+    // than sweeping past it. setJourney only sets a target; the spring in
+    // CameraController is what moves, which is where the weight comes from.
+    // No committed flights and no state machine: scrolling back retraces the
+    // way you came, exactly.
+    const u = journeyUForScroll(scrollFraction());
     cameraControllerRef.current?.setJourney(u);
     // Keeps the portals' `interactive` gate honest. Safe to call on every
     // scroll event: it returns the previous state unchanged when the id
@@ -917,17 +919,24 @@ export default function Page() {
           navigation reads the document's scroll instead of capturing the
           gesture.
 
-          300dvh, not 200: the stage is fixed and contributes nothing to flow,
-          so the spacer IS the document, and its scrollable range is its height
-          minus one viewport. 300dvh gives two viewports of travel -- one for
-          the scrubbed Home->Donate leg and one shared by the two committed
-          legs (see SCRUB_END / MODELS_END). Nothing moves while it scrolls;
-          the camera is what responds.
+          One viewport taller than the scroll range it has to provide: the
+          stage is fixed and contributes nothing to flow, so the spacer IS the
+          document, and a document's scrollable range is its height minus one
+          viewport. The range itself is the journey's -- travel plus the holds
+          at each destination -- so it comes from config/journey.ts rather than
+          being restated here, where it would drift the first time the pacing
+          changed. Nothing moves while it scrolls; the camera is what responds.
 
           Touch only. On desktop the wheel handler still preventDefaults (it
           guards a real trackpad rubber-band), so a taller document would only
           add a scrollbar that could never move. */}
-      {isCoarsePointer && <div aria-hidden="true" className="pointer-events-none h-[1300dvh] w-full" />}
+      {isCoarsePointer && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none w-full"
+          style={{ height: `${(JOURNEY_SCROLL_SCREENS + 1) * 100}dvh` }}
+        />
+      )}
     </NavigationProvider>
   );
 }
