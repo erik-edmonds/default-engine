@@ -33,7 +33,14 @@ import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
 import { useShortViewport } from "@/helpers/useShortViewport";
-import { JOURNEY_SCROLL_SCREENS, JOURNEY_STOPS, journeyUForScroll } from "@/config/journey";
+import {
+  JOURNEY_SCROLL_SCREENS,
+  JOURNEY_STOPS,
+  JOURNEY_STOP_SCROLL,
+  journeyUForScroll,
+  routeBetween,
+  type JourneyStopId,
+} from "@/config/journey";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -42,6 +49,7 @@ import PhaseCube from "@/components/canvas/PhaseCube";
 import { NavigationProvider } from "@/components/layout/Navigation";
 import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
 import { InteractionHint } from "@/components/layout/InteractionHint";
+import { JourneyRail } from "@/components/layout/JourneyRail";
 
 // Debug
 
@@ -115,7 +123,7 @@ const HOTSPOT_PORTALS = [
     name: "1",
     author: "Omar Faruq Tawsif",
     bg: "#e4cdac",
-    src: "/models/pickles.glb",
+    src: "/models/earth.glb",
     modelScale: 8,
     modelPosition: [0, -0.7, -2] as [number, number, number],
   },
@@ -126,7 +134,7 @@ const HOTSPOT_PORTALS = [
     name: "2",
     author: "Omar Faruq Tawsif",
     bg: "#f0f0f0",
-    src: "/models/tea.glb",
+    src: "/models/earth.glb",
     modelScale: 1,
     modelPosition: [0, -2, -3] as [number, number, number],
   },
@@ -137,7 +145,7 @@ const HOTSPOT_PORTALS = [
     name: "3",
     author: "Omar Faruq Tawsif",
     bg: "#d1d1ca",
-    src: "/models/orange.glb",
+    src: "/models/earth.glb",
     modelScale: 2,
     modelPosition: [0, -0.8, -4] as [number, number, number],
   },
@@ -195,6 +203,25 @@ const IN_TRANSIT = "transit";
 function stopAt(u: number) {
   for (const stop of JOURNEY_STOPS) if (Math.abs(u - stop.u) <= ARRIVAL_WINDOW) return stop.id as string;
   return IN_TRANSIT;
+}
+
+/** The four ids routeBetween understands, as a set, so a nav id read from
+ *  component state can be narrowed before being handed to it. */
+const JOURNEY_STOP_ID_SET = new Set<string>(JOURNEY_STOPS.map((s) => s.id));
+const asJourneyStop = (id: string | null): JourneyStopId | null =>
+  id !== null && JOURNEY_STOP_ID_SET.has(id) ? (id as JourneyStopId) : null;
+
+/** The destinations with a portal standing at them -- everywhere the rail may
+ *  be used to leave from. Home is deliberately not one: it has no portal (see
+ *  HOTSPOT_PORTALS), so there is nothing there to have arrived at. */
+const PORTAL_STOP_IDS = new Set<string>(HOTSPOT_PORTALS.map((p) => p.hotspotId));
+
+/** Where the scroll has to be put for the camera to be parked at a
+ *  destination: the middle of its hold, so arriving does not leave it on the
+ *  edge of moving off again. */
+function scrollForStop(id: JourneyStopId) {
+  const stop = JOURNEY_STOP_SCROLL.find((s) => s.id === id);
+  return stop ? (stop.scroll + stop.holdUntil) / 2 : 0;
 }
 
 export default function Page() {
@@ -312,6 +339,9 @@ export default function Page() {
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
   const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
+  // Read, not just written: the journey rail hides while the sky sequence
+  // owns the camera, since the scroll no longer means anything then.
+  const isInSkyJourneyValue = useAtomValue(inSkyJourney);
   const goHomeRequestValue = useAtomValue(goHomeRequest);
   const setMusicEnabled = useSetAtom(musicEnabled);
   const setSfxEnabled = useSetAtom(sfxEnabled);
@@ -531,11 +561,18 @@ export default function Page() {
   // path instead and never calls this.
   const flyToHotspot = (id: string, position: THREE.Vector3, rotation: THREE.Euler) => {
     setHasInteracted(true);
+    const from = asJourneyStop(hotspotNav.current);
+    const to = asJourneyStop(id);
     beginHotspotTransition(id);
     playSfx("whoosh");
     // Leaving for any hotspot closes whatever portal was open -- otherwise a
     // blended-in portal would stay blended while the camera flew away from it.
     closePortal();
+    // The same authored routes the rail's jumps use. These clicks used to fly
+    // a straight line between two viewpoints, which nothing had ever checked
+    // for clearance -- the route curves are verified against the terrain.
+    const route = from && to ? routeBetween(from, to) : null;
+    if (route) return cameraControllerRef.current?.flyRoute(route);
     return cameraControllerRef.current?.flyTo(position, rotation);
   };
   const handleUpperIslandHotspotClick = () => flyToHotspot("upper", UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION);
@@ -574,7 +611,48 @@ export default function Page() {
   };
 
   const scrollNavActive = () =>
-    isCoarsePointer && started && !isInSkyJourney.current && !isSequenceRunning.current;
+    isCoarsePointer && started && !isInSkyJourney.current && !isSequenceRunning.current && !isJumping.current;
+
+  // --- jumping: a direct flight to a destination ---------------------------
+  //
+  // The rail's taps. Deliberately not a scroll animation to the destination's
+  // place in the itinerary: that is what "scroll past Models to reach
+  // Contact" would be, and it announces a destination you did not ask for.
+  // routeBetween builds a curve straight there instead, the short way round
+  // the cluster.
+  const isJumping = useRef(false);
+  const [jumping, setJumping] = useState(false);
+  const handleJump = async (to: JourneyStopId) => {
+    if (isJumping.current) return;
+    const from = asJourneyStop(hotspotNav.current);
+    const route = from && from !== to ? routeBetween(from, to) : null;
+    if (!route) return;
+
+    isJumping.current = true;
+    setJumping(true);
+    setHasInteracted(true);
+    beginHotspotTransition(to);
+    playSfx("whoosh");
+    closePortal();
+    await cameraControllerRef.current?.flyRoute(route);
+
+    // Re-seat the scroll onto the destination, so the itinerary and the camera
+    // agree again and the next scroll carries on from here instead of yanking
+    // back to wherever the document was left. The one programmatic scroll in
+    // the design, and it fires at the end of a discrete tap -- never during a
+    // gesture, which is what made the earlier version of this feel like the
+    // page was fighting you.
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    suppressScrollUntil.current = performance.now() + 250;
+    window.scrollTo(0, scrollForStop(to) * max);
+    const u = JOURNEY_STOPS.find((s) => s.id === to)?.u ?? 0;
+    // Hand the camera back to the journey spring, seeded where the flight left
+    // it, or the next scroll would spring it across from u = 0.
+    cameraControllerRef.current?.setJourney(u, u);
+
+    isJumping.current = false;
+    setJumping(false);
+  };
 
   const onScrollTick = () => {
     if (performance.now() < suppressScrollUntil.current) return;
@@ -705,16 +783,38 @@ export default function Page() {
           w-screen because 100vw overflows by the scrollbar width once the
           page is scrollable. */}
       <div className="fixed inset-x-0 top-0 h-[100dvh] w-full overflow-hidden">
+        {/* The name lockup, and the one piece of chrome that genuinely changes
+            shape rather than size.
+
+            With room, it sits bottom-left at full size over two lines. On a
+            landscape phone -- ~350-430px of height, where the stamp, the HUD
+            and the journey rail were all competing for the same few hundred
+            pixels -- it moves to the TOP-left, beside the home button, on one
+            line with the tagline dropped. That clears the entire bottom edge
+            for the rail and stops two elements fighting over one corner.
+
+            The left offset in that state clears the 56px home button plus a
+            gap, so the two read as a single lockup rather than a collision. */}
         <div
           className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}
-          style={{
-            bottom: `calc(${isShortViewport ? "1rem" : "2.5rem"} + var(--safe-bottom))`,
-            left: `calc(${isShortViewport ? "1rem" : "2.5rem"} + var(--safe-left))`,
-          }}
+          style={
+            isShortViewport
+              ? {
+                  top: "calc(1.25rem + var(--safe-top))",
+                  left: "calc(1.25rem + 56px + 0.75rem + var(--safe-left))",
+                }
+              : {
+                  bottom: "calc(2.5rem + var(--safe-bottom))",
+                  left: "calc(2.5rem + var(--safe-left))",
+                }
+          }
         >
-          <div className="relative">
-            {revealStage >= 1 && <h1 data-cursor="text" className={`scene-type animate-stamp font-nunito uppercase ${isShortViewport ? "text-3xl" : "text-4xl sm:text-5xl md:text-6xl"} tracking-tight text-[#d25a1a]`}>Erik Edmonds</h1>}
-            {nameStamped && <p data-cursor="text" className={`scene-type font-nunito font-semibold text-[#d25a1a] ${isShortViewport ? "text-base" : "text-xl sm:text-2xl md:text-3xl"}`}>Data Scientist</p>}
+          <div className={isShortViewport ? "flex flex-row items-baseline gap-2" : "relative"}>
+            {revealStage >= 1 && <h1 data-cursor="text" className={`scene-type animate-stamp font-nunito uppercase ${isShortViewport ? "text-2xl" : "text-4xl sm:text-5xl md:text-6xl"} tracking-tight text-[#d25a1a]`}>Erik Edmonds</h1>}
+            {/* Dropped entirely on a landscape phone rather than shrunk: at
+                that height every line costs more than it gives, and the role
+                is the least load-bearing string on screen. */}
+            {nameStamped && !isShortViewport && <p data-cursor="text" className="scene-type font-nunito font-semibold text-[#d25a1a] text-xl sm:text-2xl md:text-3xl">Data Scientist</p>}
           </div>
         </div>
         <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 scene-type text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
@@ -729,10 +829,24 @@ export default function Page() {
           <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
         </div>
         {/* Touch navigates by scrolling through the scene (see the scroll
-            state machine above and the spacer at the bottom of this file), so
-            there is no on-screen control here at all -- the joystick this
-            replaced asked visitors to know where each landmark physically sat
-            before its four directions meant anything. */}
+            state machine above and the spacer at the bottom of this file).
+            The rail is the only chrome that navigation gets: it says which of
+            the four destinations you are at and lets you jump, and it clears
+            itself about a second after you stop scrolling.
+
+            Touch only. Desktop already has four labelled ring markers in the
+            world answering the same question, and a rail there would be a
+            second answer permanently over the scene. */}
+        {isCoarsePointer && (
+          <JourneyRail
+            labels={HOTSPOT_LABELS}
+            visible={sceneReady && started && !isInSkyJourneyValue}
+            horizontal={isShortViewport}
+            // Parked at a portal, and not already on the way somewhere else.
+            parkedAt={jumping || !PORTAL_STOP_IDS.has(hotspotNav.current) ? null : asJourneyStop(hotspotNav.current)}
+            onJump={handleJump}
+          />
+        )}
         {/* "percentage" (PCFShadowMap), not "soft" (PCFSoftShadowMap) --
             three.js has deprecated PCFSoftShadowMap and silently substitutes
             PCFShadowMap for it at runtime anyway (with a console warning),

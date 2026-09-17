@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+/* The whole site is one full-viewport scene with its own lighting and its own
+   time of day, so it does not follow the OS theme -- there is no light-mode
+   version of a night island, and #ffffff here was simply the white that showed
+   through wherever the canvas did not reach (behind the loading screen, and in
+   the overscroll gutter next to the journey rail). Both schemes are the
+   scene's own dark; the @media block below is now a no-op kept for the
+   explicitness. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -151,6 +158,211 @@ body {
   .hint-icon,
   .hint-icon-swipe {
     animation: none;
+  }
+}
+
+/* JourneyRail -- where you are in the scroll journey, on touch.
+
+   Deliberately quiet. An earlier version used the scene's glass language --
+   blurred discs with hairline borders, every stop drawn at the same weight --
+   and over a scene this busy it read as applied decoration rather than as
+   chrome. This is a scrollbar instead: a hairline track, small flat dots, and
+   exactly one accent, on the destination you are at.
+
+   Two rules of shape matter more than the styling:
+
+   1. The button's box is the dot plus its padding and NOTHING else. The label
+      is absolutely positioned, so it cannot widen the box. A label in normal
+      flow made each stop ~91px wide centred on a track pinned 20px from the
+      screen edge, which put half of every dot off-screen at every viewport
+      width -- the stage clips, so the dots simply vanished.
+   2. Labels float INWARD, away from the edge the rail is pinned to: left of
+      the dot on the vertical rail, above it on the horizontal one, with the
+      end labels anchored inward so they cannot hang off a narrow screen.
+
+   The two orientations are a real change of shape, not a scale: up the right
+   edge where there is height to spend, along the bottom edge on a landscape
+   phone where there is not. */
+.journey-rail {
+  position: absolute;
+  z-index: 10;
+  --rail-thickness: 1px;
+  --mark: 8px;
+  /* The dot is 8px; the target is 44px. The gap between those two numbers is
+     the whole reason the label has to be taken out of flow. */
+  --hit: 44px;
+  --accent: #d25a1a;
+}
+
+.journey-rail-track {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+/* Progress is drawn in white, not in the accent: the accent is spent entirely
+   on "you are here", and a bar and a dot competing in the same colour was
+   half of what made the old rail noisy. */
+.journey-rail-fill {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.journey-rail-stop {
+  position: absolute;
+  width: var(--hit);
+  height: var(--hit);
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #fff;
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Off at Home and mid-passage: there is nowhere to depart from, so the rail
+   is a position indicator only. Visually unchanged -- a greyed-out control
+   would be four dead buttons advertising themselves. */
+.journey-rail-stop:disabled {
+  cursor: default;
+}
+
+.journey-rail-stop:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -8px;
+  border-radius: 50%;
+}
+
+.journey-rail-mark {
+  width: var(--mark);
+  height: var(--mark);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  /* A dark hairline rather than a light one: the rail crosses sky, sea and
+     terrain, and the only thing every one of those has in common is that a
+     white dot needs separating from it. */
+  box-shadow: 0 0 0 1px rgba(8, 20, 28, 0.45);
+  transition: background 0.3s ease, transform 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* Positioned by the orientation blocks; `translate` rather than `transform`
+   so the drift on the way in composes with the centring transform instead of
+   overwriting it. */
+.journey-rail-label {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow:
+    0 1px 2px rgba(8, 20, 28, 0.55),
+    0 2px 14px rgba(8, 20, 28, 0.4);
+  transition: opacity 0.3s ease, translate 0.3s ease;
+}
+
+.journey-rail-stop[data-state="passed"] .journey-rail-mark {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.journey-rail-stop[data-state="current"] .journey-rail-mark {
+  background: var(--accent);
+  transform: scale(1.5);
+}
+
+/* Only the destination you are at names itself. Labelling all four at once
+   turns a position indicator into a menu, which is what the joystick was. */
+.journey-rail-stop[data-state="current"] .journey-rail-label {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* --- vertical: up the right edge ------------------------------------ */
+.journey-rail[data-horizontal="false"] {
+  top: 50%;
+  transform: translateY(-50%);
+  /* 24px, so a 44px target centred on the track still ends 6px short of the
+     screen edge. At the old 20px it ended 2px past it. */
+  right: calc(1.5rem + var(--safe-right));
+  height: min(46dvh, 320px);
+  width: var(--mark);
+}
+.journey-rail[data-horizontal="false"] .journey-rail-track {
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  width: var(--rail-thickness);
+}
+.journey-rail[data-horizontal="false"] .journey-rail-fill {
+  width: 100%;
+}
+.journey-rail[data-horizontal="false"] .journey-rail-stop {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+/* Labels hang to the left of the rail, away from the screen edge. */
+.journey-rail[data-horizontal="false"] .journey-rail-label {
+  right: calc(50% + var(--mark) / 2 + 10px);
+  top: 50%;
+  margin-top: -0.55em;
+  translate: 5px 0;
+}
+
+/* --- horizontal: along the bottom edge ------------------------------- */
+.journey-rail[data-horizontal="true"] {
+  left: 50%;
+  transform: translateX(-50%);
+  /* Same clearance argument as the vertical rail's `right`, on the axis the
+     44px target overflows here. */
+  bottom: calc(1.5rem + var(--safe-bottom));
+  width: min(62vw, 420px);
+  height: var(--mark);
+}
+.journey-rail[data-horizontal="true"] .journey-rail-track {
+  top: 50%;
+  transform: translateY(-50%);
+  left: 0;
+  right: 0;
+  height: var(--rail-thickness);
+}
+.journey-rail[data-horizontal="true"] .journey-rail-fill {
+  height: 100%;
+}
+.journey-rail[data-horizontal="true"] .journey-rail-stop {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+/* The label sits above the dot rather than beside it -- beside it, four
+   stops' worth of text would overlap on a 420px track. */
+.journey-rail[data-horizontal="true"] .journey-rail-label {
+  bottom: calc(50% + var(--mark) / 2 + 9px);
+  left: 50%;
+  transform: translateX(-50%);
+  translate: 0 4px;
+}
+/* The end labels are wider than their 44px button and centred on it, so at
+   the ends of the track they would reach past the screen. Anchor them to the
+   inside edge of their own button instead. */
+.journey-rail[data-horizontal="true"] .journey-rail-stop:first-of-type .journey-rail-label {
+  left: 0;
+  transform: none;
+}
+.journey-rail[data-horizontal="true"] .journey-rail-stop:last-of-type .journey-rail-label {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .journey-rail,
+  .journey-rail-mark,
+  .journey-rail-label {
+    transition-duration: 0.01ms;
   }
 }
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo } from "react"
+import * as THREE from "three"
 import { Line } from "@react-three/drei"
 
 import {
@@ -13,7 +14,9 @@ import {
   JOURNEY_SCROLL_SCREENS,
   JOURNEY_TRAVEL_SCREENS,
   JOURNEY_DWELL_SCREENS,
+  JOURNEY_STOP_IDS,
   journeyPolyline,
+  routeBetween,
 } from "@/config/journey"
 
 /** The scroll journey's path, drawn in the scene.
@@ -33,6 +36,29 @@ import {
  *  a reimplementation of it in the test is the difference between verifying
  *  this path and verifying a lookalike. */
 export function JourneyPath() {
+  // Every direct route, drawn dim and published alongside the itinerary. The
+  // western arc these use is the one stretch of the world the scroll journey
+  // never visits, so it is also the one stretch nobody has ever looked at.
+  const routes = useMemo(
+    () =>
+      JOURNEY_STOP_IDS.flatMap((from) =>
+        JOURNEY_STOP_IDS.filter((to) => to !== from).map((to) => {
+          const route = routeBetween(from, to)
+          const flat = (v: THREE.Vector3) => [v.x, v.y, v.z] as [number, number, number]
+          return {
+            key: `${from}>${to}`,
+            points: (route?.polyline(160) ?? []).map(flat),
+            // Sampled in lockstep with `points`, so index i of one is where the
+            // camera is and index i of the other is what it is looking at. A
+            // route that clears the islands while whipping the view around is
+            // still wrong, and this is what lets that be measured.
+            looks: (route?.lookPolyline(160) ?? []).map(flat),
+          }
+        }),
+      ),
+    [],
+  )
+
   const { pathPoints, lookPoints, rungs } = useMemo(() => {
     const pathPoints = journeyPolyline(400)
     const lookPoints = JOURNEY_LOOK_POINTS
@@ -55,11 +81,13 @@ export function JourneyPath() {
       stopScroll: JOURNEY_STOP_SCROLL,
       screens: { travel: JOURNEY_TRAVEL_SCREENS, dwell: JOURNEY_DWELL_SCREENS, total: JOURNEY_SCROLL_SCREENS },
       length: JOURNEY_LENGTH,
+      routes: Object.fromEntries(routes.map((r) => [r.key, r.points])),
+      routeLooks: Object.fromEntries(routes.map((r) => [r.key, r.looks])),
     }
     return () => {
       delete w.__journey
     }
-  }, [pathPoints])
+  }, [pathPoints, routes])
 
   return (
     // Named so that anything walking the scene graph can tell this overlay
@@ -67,6 +95,9 @@ export function JourneyPath() {
     // terrain, and without a name it measured it against these markers instead
     // -- which sit exactly ON the path, and duly reported a clearance of 0.06.
     <group name="journey-path-debug" renderOrder={2000}>
+      {routes.map((r) => (
+        <Line key={r.key} points={r.points} color="#3ad1a0" lineWidth={0.8} transparent opacity={0.28} depthTest={false} />
+      ))}
       <Line points={pathPoints} color="#ff7a1a" lineWidth={2} depthTest={false} />
       <Line points={lookPoints} color="#2f6fff" lineWidth={1} dashed dashSize={0.6} gapSize={0.4} depthTest={false} />
       {rungs.map((pts, i) => (

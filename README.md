@@ -86,8 +86,8 @@
 
 # PERFORMANCE!!!
 - [x] Combine scene models (island, surfboard, ultraball, beach ball, mountain) into one scene
-- [ ] Optimize for mobile
-    - [ ] Fix joystick on rotate mode on mobile
+- [x] Optimize for mobile
+    - [x] Fix joystick on rotate mode on mobile
 
 
 # Extras

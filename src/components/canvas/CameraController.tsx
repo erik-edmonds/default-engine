@@ -10,7 +10,7 @@ import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 import { cameraFlying } from "@/helpers/StateProvider"
 import { cameraBase, initCameraBase, setCameraBase, setCameraBaseFromEuler } from "@/helpers/cameraBase"
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
-import { journeyPose } from "@/config/journey"
+import { journeyPose, trapezoid, type Route } from "@/config/journey"
 
 gsap.ticker.lagSmoothing(0)
 const AVATAR_POSITION = new THREE.Vector3(-1.3, -0.65, 1)
@@ -20,6 +20,21 @@ const ZOOM_IN_DISTANCE = 8
 // and how much higher, before settling onto the island framing.
 const INTRO_PULLBACK = 7
 const INTRO_LIFT = 1
+
+// --- route flights ---------------------------------------------------------
+//
+// A jump's duration is its length at a fixed cruising speed, clamped at both
+// ends. 15 units a second is roughly the pace of scrolling the same ground on
+// the itinerary, which is the standard a jump should be held to: a jump is
+// meant to be the trip you would have scrolled, taken for you.
+//
+// The previous sqrt scaling at 1.6-3.6s ran the longest route at 26 units a
+// second -- and with an accelerating ease, peaking near 52 -- which through a
+// 25-degree corner slews the view at about 125 degrees a second. That is what
+// made a jump read as being flung rather than travelling.
+const ROUTE_UNITS_PER_SECOND = 15
+const ROUTE_MIN_SECONDS = 3
+const ROUTE_MAX_SECONDS = 6
 
 // --- the journey spring ---------------------------------------------------
 //
@@ -61,6 +76,10 @@ export interface CameraControllerHandle {
    *  `enterAt` seeds the spring when the journey is first taken up, for a
    *  caller that knows the camera is already somewhere along it. */
   setJourney: (u: number, enterAt?: number) => void
+  /** Fly an authored route between two destinations -- the rail's jumps and
+   *  the desktop ring clicks. Unlike flyTo, which is a straight line and a
+   *  slerp, this follows a curve that is known to clear the islands. */
+  flyRoute: (route: Route) => Promise<void>
   /** Hand the camera back to the tweens, so the spring stops writing and
    *  cannot fight a flight. */
   endJourney: () => void
@@ -283,6 +302,50 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           onInterrupt: () => resolve(),
           onComplete: () => {
             introTween.current = null
+            resolve()
+          },
+        })
+      }),
+    flyRoute: (route) =>
+      new Promise<void>((resolve) => {
+        beginFlight()
+        const seconds = THREE.MathUtils.clamp(
+          route.length / ROUTE_UNITS_PER_SECOND,
+          ROUTE_MIN_SECONDS,
+          ROUTE_MAX_SECONDS,
+        )
+        const progress = { t: 0 }
+        // Seeded from the route's own start so the first frame writes the
+        // departure pose rather than leaving the camera wherever it was for a
+        // tick -- gsap does not call onUpdate until the ticker comes round.
+        route.poseAt(0, journeyScratch.position, journeyScratch.look)
+        gsap.to(progress, {
+          t: 1,
+          duration: tweenDuration(seconds),
+          // LINEAR, with the shaping done by the journey's own trapezoid below.
+          // Not a stylistic preference: gsap's power eases are continuous, so
+          // their speed peaks at roughly twice the mean in the middle of the
+          // flight -- which on these routes is exactly where the corners are.
+          // trapezoid ramps up, holds a CONSTANT cruise for about two thirds of
+          // the way, then ramps down, so the fastest moment is only ~1.2x the
+          // mean. It is the same profile the scroll uses, imported rather than
+          // reimplemented so the two can never drift apart.
+          ease: "none",
+          onUpdate: () => {
+            route.poseAt(trapezoid(progress.t), journeyScratch.position, journeyScratch.look)
+            camera.position.copy(journeyScratch.position)
+            camera.lookAt(journeyScratch.look)
+            // Published like every other rotation writer, or CameraLook
+            // composes its cursor offset onto a stale aim.
+            setCameraBase(camera.quaternion)
+            syncOrbitTarget(camera.rotation)
+          },
+          onComplete: () => {
+            endFlight()
+            resolve()
+          },
+          onInterrupt: () => {
+            endFlight()
             resolve()
           },
         })

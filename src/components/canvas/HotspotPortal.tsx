@@ -1,9 +1,11 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useMemo, useRef, type ReactNode, type RefObject } from "react"
 import * as THREE from "three"
+import { useFrame } from "@react-three/fiber"
 
 import Frame from "@/components/canvas/Card"
+import { prefersReducedMotion } from "@/helpers/motion"
 
 // A portfolio portal standing permanently in the island scene at a hotspot's
 // viewpoint, with a carved frame around it so it reads as something built
@@ -58,8 +60,14 @@ export function portalTransformFor(
 function CarvedFrame({ width, height }: { width: number; height: number }) {
   const outerW = width + FRAME_THICKNESS
   const outerH = height + FRAME_THICKNESS
+  // Black in both states, deliberately. An earlier version had the frame catch
+  // a warm light when its portal went live; the frame is meant to read as a
+  // carved surround, and lighting it made the surround the subject. What wakes
+  // is the room behind it -- see PortalRoom.
   const bar = (args: [number, number, number], position: [number, number, number], key: string) => (
-    <mesh key={key} castShadow receiveShadow position={position}>
+    // Named so a test can find the frame positively rather than by guessing at
+    // "black meshes" -- the same lesson as island-terrain in Scene.tsx.
+    <mesh key={key} name="portal-frame-bar" castShadow receiveShadow position={position}>
       <boxGeometry args={args} />
       <meshStandardMaterial color={FRAME_COLOR} roughness={0.9} flatShading />
     </mesh>
@@ -96,6 +104,114 @@ function CarvedFrame({ width, height }: { width: number; height: number }) {
   )
 }
 
+// --- arriving ---------------------------------------------------------------
+//
+// `interactive` says a destination has been REQUESTED, not that the camera has
+// got there. page.tsx sets it synchronously on the click, and its own comment
+// is explicit that it is "never gated on the camera actually finishing its
+// flight". So it leads arrival by the whole flight on a ring click or a rail
+// tap, and by the spring's settle time on a scroll -- which is why the portal
+// used to come into frame already lit, with the switch-on happening somewhere
+// off the side of the screen.
+//
+// Arrival is detected from the camera itself instead, and that turns out to be
+// exact rather than approximate:
+//
+//   - CameraShake writes rotation only, never position, and is unmounted
+//     unless lightning is actually striking.
+//   - CameraLook writes the quaternion only, and mounts on desktop only.
+//   - the journey spring hard-snaps u to its target at JOURNEY_REST_EPSILON
+//     and then writes a bit-identical position every frame.
+//   - on desktop, once a flight ends nothing writes camera.position at all.
+//
+// So when you are parked the camera is not nearly still, it is exactly still,
+// and a speed test is a step function rather than a threshold to tune.
+
+/** How close to its own viewpoint the camera has to be for a portal to count
+ *  the arrival as its own. Generous -- the flight ends ON the viewpoint -- but
+ *  far tighter than the gap between any two destinations. */
+const ARRIVED_RADIUS = 1.5
+/** Below this, in world units per second, the camera is stopped. */
+const ARRIVED_SPEED = 0.02
+/** How long it has to stay stopped before the light starts: the beat. Short
+ *  enough not to read as a fault, long enough that the room is visibly dark
+ *  for a moment after you get there. */
+const ARRIVED_BEAT = 0.35
+/** ...and how long the room then takes to come up, and to go back down when
+ *  you leave. A fixed-duration ramp rather than easing.damp, so the swell has
+ *  a duration that can be asserted and reads as deliberate rather than as a
+ *  value relaxing toward a target. */
+const ROOM_SWELL_SECONDS = 1.5
+const ROOM_FADE_SECONDS = 0.4
+/** How fast the settle timer bleeds away when the camera is moving again.
+ *  Faster than it fills, so leaving is decisive, but not a hard reset -- one
+ *  stuttered frame should not put the light out. */
+const SETTLE_DECAY = 3
+
+/** The near-black an unlit portal reads as. Not pure black: a flat #000 looks
+ *  like a hole cut in the scene, whereas a hair above it still reads as a
+ *  surface with nothing shining on it. */
+const ROOM_DARK = "#070707"
+
+/** Card.tsx's own `bg` default, repeated so the lit background matches what
+ *  Card would have painted when a portal is given no colour of its own. */
+const PORTAL_DEFAULT_BG = "#f0f0f0"
+
+/** The room's two lights at full. There is no environment map inside a portal
+ *  -- MeshPortalMaterial renders its children into a scene of their own -- so
+ *  these are the *only* light the contents ever get, and the numbers are
+ *  absolute rather than a top-up on ambient. */
+const KEY_INTENSITY = 3
+const FILL_INTENSITY = 1.5
+
+/** The room behind the window.
+ *
+ *  Card.tsx renders its children into the portal's own scene, and that scene
+ *  has no lighting whatsoever -- no lights, no environment. So this is not a
+ *  glow effect layered over a lit interior; it is the interior's entire light
+ *  rig, and taking it to zero genuinely leaves the room dark.
+ *
+ *  The background has to move with the lights or the illusion collapses: a
+ *  `<color attach="background">` is unlit fill and renders at full strength
+ *  whether or not anything is switched on, so an unlit portal would otherwise
+ *  be a pale grey rectangle. Rendered here, after Card.tsx's own background,
+ *  this one attaches second and wins. */
+function PortalRoom({ id, live, bg }: { id: string; live: RefObject<{ value: number }>; bg: string }) {
+  const key = useRef<THREE.DirectionalLight>(null)
+  const fill = useRef<THREE.AmbientLight>(null)
+  const background = useRef<THREE.Color>(null)
+  const lit = useMemo(() => new THREE.Color(bg), [bg])
+  const dark = useMemo(() => new THREE.Color(ROOM_DARK), [])
+
+  // Reads the ramp rather than owning it. HotspotPortal drives it, because
+  // deciding whether the camera has arrived needs the camera, and this half of
+  // the component lives inside MeshPortalMaterial -- a scene of its own. The
+  // parent mounts first, so at the same frame priority its callback runs first
+  // and this reads a value computed this frame, not last one.
+  useFrame(() => {
+    const v = live.current.value
+    if (key.current) key.current.intensity = v * KEY_INTENSITY
+    if (fill.current) fill.current.intensity = v * FILL_INTENSITY
+    if (background.current) background.current.copy(dark).lerp(lit, v)
+  })
+
+  return (
+    <>
+      {/* Stays at the top level: attach="background" attaches to its PARENT,
+          and inside the group below that parent would be the group. */}
+      <color ref={background} attach="background" args={[ROOM_DARK]} />
+      {/* Named for the portal it belongs to. A portal's contents live in a
+          scene of their own, so from outside there is otherwise no handle on
+          which room is which -- and "is the right one lit" is the whole
+          question worth asking about this. */}
+      <group name={`portal-room-${id}`}>
+        <ambientLight name="portal-room-fill" ref={fill} intensity={0} />
+        <directionalLight name="portal-room-key" ref={key} position={[2, 3, 4]} intensity={0} />
+      </group>
+    </>
+  )
+}
+
 export interface HotspotPortalProps {
   position: THREE.Vector3
   rotation: THREE.Euler
@@ -113,11 +229,92 @@ export interface HotspotPortalProps {
   children: ReactNode
 }
 
+/** The breathe: a scale swing this small is below the threshold of "something
+ *  is animating" and above the threshold of "something is alive". */
+const BREATHE_AMOUNT = 0.012
+const BREATHE_SPEED = 1.15
+
 export function HotspotPortal({ position, rotation, id, name, author, bg, interactive = true, children }: HotspotPortalProps) {
+  const group = useRef<THREE.Group>(null)
+  // Shared with PortalRoom, which lives in the portal's own scene and cannot
+  // work this out for itself. The REF is handed down, not its contents -- both
+  // sides touch `.current` only inside useFrame, never during render.
+  const live = useRef({ value: 0 })
+  /** Seconds the camera has been stopped here, and where it was last frame. */
+  const settled = useRef(0)
+  const lastCameraPosition = useMemo(() => new THREE.Vector3(), [])
+  const hasLastPosition = useRef(false)
+
+  // Where the camera stands when it is looking at this portal. The exact
+  // inverse of portalTransformFor: that put the portal PORTAL_VIEW_DISTANCE in
+  // front of the viewpoint along the view axis, so the viewpoint is the same
+  // distance back down it.
+  const viewpoint = useMemo(
+    () => position.clone().addScaledVector(new THREE.Vector3(0, 0, -1).applyEuler(rotation), -PORTAL_VIEW_DISTANCE),
+    [position, rotation],
+  )
+
+  // Each portal breathes on its own clock, or all three pulse in lockstep and
+  // the scene reads as machinery rather than as three separate things.
+  //
+  // Derived from the id rather than Math.random(): a random seed is impure
+  // during render, and this is better anyway -- the same portal breathes on
+  // the same phase every load, so the scene is reproducible.
+  const phase = useMemo(() => {
+    let h = 0
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997
+    return (h / 997) * Math.PI * 2
+  }, [id])
+
+  // The arrival: has the camera come to a stop in front of THIS window?
+  //
+  // The breathe rides the same ramp as the light, so the portal wakes as one
+  // thing rather than stirring before the room comes up.
+  useFrame((state, dt) => {
+    const camera = state.camera
+    // REAL elapsed seconds, only capped against a tab that was backgrounded.
+    // Not the 1/30 clamp the journey spring uses: that exists so one long
+    // frame cannot integrate a huge step into an integrator, and applying it
+    // to a wall-clock timer measures the beat in FRAMES instead of seconds --
+    // on a device rendering at 0.7fps the 0.35s beat became fifteen seconds and
+    // the light never arrived at all.
+    const step = Math.min(dt, 0.5)
+
+    let atRest = false
+    if (hasLastPosition.current) {
+      atRest = step > 0 && camera.position.distanceTo(lastCameraPosition) / step < ARRIVED_SPEED
+    }
+    lastCameraPosition.copy(camera.position)
+    hasLastPosition.current = true
+
+    const here = interactive && camera.position.distanceTo(viewpoint) < ARRIVED_RADIUS
+    settled.current = Math.max(0, settled.current + (here && atRest ? step : -step * SETTLE_DECAY))
+
+    const target = settled.current >= ARRIVED_BEAT ? 1 : 0
+    if (prefersReducedMotion()) {
+      // The journey spring already snaps under this setting; a 1.5s swell
+      // would be the only thing left drifting.
+      live.current.value = target
+    } else {
+      const seconds = target === 1 ? ROOM_SWELL_SECONDS : ROOM_FADE_SECONDS
+      const ramp = THREE.MathUtils.clamp(live.current.value + ((target === 1 ? 1 : -1) * step) / seconds, 0, 1)
+      live.current.value = ramp
+    }
+
+    const v = live.current.value
+    if (group.current) {
+      const breathe = 1 + v * BREATHE_AMOUNT * Math.sin(state.clock.elapsedTime * BREATHE_SPEED + phase)
+      group.current.scale.setScalar(breathe)
+    }
+  })
+
   return (
-    <group position={position} rotation={rotation}>
+    <group ref={group} position={position} rotation={rotation}>
       <CarvedFrame width={PORTAL_WIDTH} height={PORTAL_HEIGHT} />
       <Frame id={id} name={name} author={author} bg={bg} interactive={interactive}>
+        {/* Inside <MeshPortalMaterial>, so these belong to the portal's own
+            scene rather than to the island. */}
+        <PortalRoom id={id} live={live} bg={bg ?? PORTAL_DEFAULT_BG} />
         {children}
       </Frame>
     </group>

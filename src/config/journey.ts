@@ -243,8 +243,13 @@ const RAMP = 0.18
 
 /** Integral of a smoothstep ramp-up, cruise, ramp-down profile, normalised so
  *  f(0) = 0 and f(1) = 1. Its derivative (the speed) is continuous at both
- *  ends, so the camera never changes velocity abruptly. */
-function trapezoid(t: number) {
+ *  ends, so the camera never changes velocity abruptly.
+ *
+ *  Exported because a route flight wants exactly this profile too -- see
+ *  flyRoute in CameraController. Anything else (a gsap power ease, say) peaks
+ *  at roughly twice its own mean speed, which through a corner is the whole
+ *  difference between travelling and being flung. */
+export function trapezoid(t: number) {
   if (t <= 0) return 0
   if (t >= 1) return 1
   const a = RAMP
@@ -310,6 +315,324 @@ export const JOURNEY_STOP_SCROLL: { id: JourneyStopId; scroll: number; holdUntil
     const scroll = hold ? hold.start : arrive ? arrive.end : stop.u === 0 ? 0 : 1
     return { id: stop.id, scroll, holdUntil: hold ? hold.end : scroll }
   })
+
+// --- direct routes between destinations ------------------------------------
+//
+// Tapping a destination on the rail flies straight there. Scrolling the whole
+// itinerary past every intermediate portal to reach the one you asked for is
+// the behaviour of a scrollbar, not of a menu, and Donate -> Contact in
+// particular would sweep through Models on the way -- announcing a place you
+// did not choose, twice, before delivering the one you did.
+//
+// Rather than hand-authoring six paths (and twelve, counting both directions),
+// generalise what the itinerary already is: an exterior arc around the
+// cluster. One table of arc waypoints by bearing, and a route is the stretch of
+// that arc between two destinations, walked the short way round.
+
+/** What it takes to get past the world at a given bearing.
+ *
+ *  Radius and minimum height are both properties of the TERRAIN, not of any
+ *  particular journey -- see the reach-by-bearing table at the top of this
+ *  file. The eastern half (40 through 212) is seeded with the itinerary's own
+ *  waypoints, so a jump between adjacent destinations retraces the leg you
+ *  already scrolled; only the western entries are new, and they exist because
+ *  the itinerary never goes that way while a direct route often must.
+ *
+ *  Height is otherwise interpolated between the two endpoints (it belongs to
+ *  the journey, not the world) -- `minHeight` is only a floor, for the bearings
+ *  where something stands up tall enough to matter. */
+const ROUTE_ARC: { bearing: number; radius: number; minHeight: number }[] = [
+  { bearing: 40, radius: 18, minHeight: 1.5 },
+  { bearing: 95, radius: 18, minHeight: 4 },
+  // The moon island reaches r 33.6 here and stands to y +16, so both numbers
+  // are doing work: the radius gets past it, the floor gets over its skirt.
+  { bearing: 128, radius: 37, minHeight: 10 },
+  { bearing: 172, radius: 40, minHeight: 9 },
+  // Contact's island is the tall one -- it reaches r ~32 through bearings
+  // 180-210 and stands to y 23, so there is no flying over it. Without an
+  // entry here a route between Donate and Contact cut the corner between 172
+  // and Contact's own viewpoint and passed the east face at 1.53 units, which
+  // is closer than any destination gets.
+  { bearing: 190, radius: 42, minHeight: 9 },
+  { bearing: 212, radius: 40, minHeight: 8 },
+  { bearing: 230, radius: 42, minHeight: 10 },
+  // West of the left tree the world falls away to a reach of ~15.4, so the
+  // arc can come back in -- which matters, because a route that stayed at 40
+  // out here would spend its whole length in empty water with the islands a
+  // speck on the horizon.
+  { bearing: 250, radius: 34, minHeight: 8 },
+  { bearing: 290, radius: 28, minHeight: 6 },
+  { bearing: 330, radius: 24, minHeight: 4 },
+]
+
+/** Where a travelling route looks: inward and slightly down, at a point on its
+ *  own bearing a fraction of the way in. The look point orbits with the camera,
+ *  so the cluster stays framed for the whole flight instead of sliding out of
+ *  shot the way a fixed target would.
+ *
+ *  0.55 is not a taste value -- it is what the rest of the scene already does.
+ *  Every destination's own authored aim, and every wide waypoint on the scroll
+ *  itinerary, sits at this radius ratio:
+ *
+ *      moon-island 0.51   left-tree 0.61   upper 0.57
+ *      itinerary waypoints at 128/172/212 deg: 0.48 / 0.45 / 0.56
+ *
+ *  An earlier 0.25 aimed twice as deep into the cluster as any of them, so the
+ *  whole mismatch had to be paid off in the final segment: the look target
+ *  moved 1.68x as far as the camera there against 0.25x everywhere else, which
+ *  is a portal snapping across the frame on arrival. */
+const ROUTE_LOOK_RADIUS = 0.55
+const ROUTE_LOOK_DROP = 0.55
+
+/** How much of the route at each end is spent blending the arc's own inward
+ *  gaze into the destination's authored aim. Generous on purpose: the
+ *  correction is small now that the radii agree, and spreading a small
+ *  correction over a quarter of the flight is invisible, where concentrating
+ *  even a small one into the last control-point segment is a flick. */
+const ROUTE_LOOK_BLEND = 0.28
+
+/** Degrees of bearing between control points. Even spacing is half of what
+ *  makes a route smooth, and not for the obvious reason: `poseAt` converts the
+ *  position's ARC LENGTH into the look curve's INDEX space, so a segment that
+ *  is short in arc length makes the gaze sprint through a full segment's worth
+ *  of look curve. The old construction took whatever bearings the clearance
+ *  table happened to have, which put 8-degree segments next to 40-degree ones. */
+const ROUTE_SAMPLE_DEG = 4
+
+/** Fraction of the route at each end over which the terrain lift fades in.
+ *  The two endpoints are authored camera viewpoints -- known-good positions
+ *  that the scene is built around -- so nothing needs lifting AT them, and
+ *  tapering is what keeps a route starting and ending exactly where the
+ *  scroll journey would leave you. */
+const ROUTE_LIFT_TAPER = 0.3
+
+/** Passes of a [1,2,1]/4 kernel run over the lift before it is added to the
+ *  base profile. This is the part that rounds the moon island's shoulder: the
+ *  lift is a max(), and a max of two smooth functions still has a corner where
+ *  they cross. Smoothing the lift alone leaves the base interpolation -- and
+ *  therefore both endpoints -- untouched. */
+const ROUTE_LIFT_SMOOTHING = 6
+
+function bearingOf(p: THREE.Vector3) {
+  return (THREE.MathUtils.radToDeg(Math.atan2(p.x, p.z)) + 360) % 360
+}
+
+/** Signed angle from `a` to `b`, in (-180, 180]. Its sign is which way round
+ *  the arc is shorter, which is the whole routing decision. */
+function shortestSweep(a: number, b: number) {
+  return ((((b - a) % 360) + 540) % 360) - 180
+}
+
+const smoothstep = (t: number) => t * t * (3 - 2 * t)
+
+/** What the world demands at a given bearing, as a CONTINUOUS function rather
+ *  than ten isolated points.
+ *
+ *  ROUTE_ARC is unchanged and still means the same thing; this only reads it
+ *  differently. Treating its entries as waypoints to visit is what produced a
+ *  radius profile that stepped 15 -> 18 -> 18 -> 37 -> 28 on the way to Donate.
+ *  Treating them as a requirement to stay outside lets a route meet the
+ *  constraint without adopting its shape. */
+function arcRequirement(bearing: number) {
+  const b = ((bearing % 360) + 360) % 360
+  const table = ROUTE_ARC
+  let lo = table[table.length - 1]
+  let hi = table[0]
+  for (let i = 0; i < table.length; i++) {
+    if (table[i].bearing <= b && (i === table.length - 1 || table[i + 1].bearing > b)) {
+      lo = table[i]
+      hi = table[(i + 1) % table.length]
+      break
+    }
+  }
+  // Below the first entry we are in the wrap-around gap between the last and
+  // the first, which the loop above cannot express.
+  if (b < table[0].bearing) {
+    lo = table[table.length - 1]
+    hi = table[0]
+  }
+  let span = ((hi.bearing - lo.bearing) % 360 + 360) % 360
+  if (span === 0) span = 360
+  const k = smoothstep(Math.min(1, (((b - lo.bearing) % 360 + 360) % 360) / span))
+  return {
+    radius: THREE.MathUtils.lerp(lo.radius, hi.radius, k),
+    height: THREE.MathUtils.lerp(lo.minHeight, hi.minHeight, k),
+  }
+}
+
+/** One in-place smoothing pass set over an array, endpoints held fixed. */
+function smoothSeries(values: number[], passes: number) {
+  let current = values
+  for (let pass = 0; pass < passes; pass++) {
+    const next = current.slice()
+    for (let i = 1; i < current.length - 1; i++) {
+      next[i] = (current[i - 1] + 2 * current[i] + current[i + 1]) / 4
+    }
+    current = next
+  }
+  return current
+}
+
+export interface Route {
+  /** Total arc length, so a caller can scale the flight's duration to the
+   *  distance rather than flying a short hop as slowly as a long one. */
+  length: number
+  /** Position and look-target at `t` in 0..1, sampled by arc length so the
+   *  flight holds a constant speed -- the same two-curve lockstep the scroll
+   *  journey uses, and for the same reason. */
+  poseAt: (t: number, position: THREE.Vector3, look: THREE.Vector3) => THREE.Vector3
+  /** For the ?path debug overlay and for the clearance check. */
+  polyline: (divisions?: number) => THREE.Vector3[]
+  /** ...and where it is looking at each of those points, so the gaze can be
+   *  measured from outside too. A path that clears the islands while whipping
+   *  the view around is still wrong, and only this makes that visible. */
+  lookPolyline: (divisions?: number) => THREE.Vector3[]
+}
+
+function buildRoute(positions: THREE.Vector3[], looks: THREE.Vector3[]): Route {
+  const path = new THREE.CatmullRomCurve3(positions, false, "centripetal")
+  const look = new THREE.CatmullRomCurve3(looks, false, "centripetal")
+  path.arcLengthDivisions = 4000
+  look.arcLengthDivisions = 4000
+
+  const segments = positions.length - 1
+  const lengths = path.getLengths(segments * SEGMENT_SAMPLES)
+  const cumulative = Array.from({ length: positions.length }, (_, i) => lengths[i * SEGMENT_SAMPLES])
+  const total = cumulative[cumulative.length - 1]
+
+  const poseAt = (t: number, position: THREE.Vector3, target: THREE.Vector3) => {
+    const u = Math.min(1, Math.max(0, t))
+    path.getPointAt(u, position)
+    const at = u * total
+    let i = 0
+    while (i < segments - 1 && cumulative[i + 1] < at) i++
+    const span = cumulative[i + 1] - cumulative[i]
+    const local = span > 0 ? (at - cumulative[i]) / span : 0
+    look.getPoint((i + local) / segments, target)
+    return position
+  }
+
+  return {
+    length: total,
+    poseAt,
+    polyline: (divisions = 160) => path.getSpacedPoints(divisions),
+    lookPolyline: (divisions = 160) => {
+      const out: THREE.Vector3[] = []
+      const p = new THREE.Vector3()
+      for (let i = 0; i <= divisions; i++) {
+        const l = new THREE.Vector3()
+        poseAt(i / divisions, p, l)
+        out.push(l)
+      }
+      return out
+    },
+  }
+}
+
+const ROUTE_CACHE = new Map<string, Route>()
+
+/** The direct route from one destination to another: out of the first
+ *  viewpoint, round the short way on the exterior arc, into the second.
+ *
+ *  The profile is sampled evenly in bearing and interpolated between the two
+ *  viewpoints' own radius and height, with the terrain lifted in on top where
+ *  the world requires it. That ordering is the point. The previous version
+ *  strung the clearance table's entries together as waypoints, which meant a
+ *  route inherited the table's shape whether or not the terrain at that bearing
+ *  had anything to do with where it was going -- Home to Donate swung out to
+ *  r37 for the moon island and back in to r28 over the last 20 degrees, a 25.7
+ *  degree turn per 0.75 units of travel. Built this way the same trip turns
+ *  6.8 degrees, and still clears the island.
+ *
+ *  Deterministic and cached -- every route is the same curve every time it is
+ *  asked for, which is what lets the clearance check verify them all once. */
+export function routeBetween(from: JourneyStopId, to: JourneyStopId): Route | null {
+  if (from === to) return null
+  const key = `${from}>${to}`
+  const cached = ROUTE_CACHE.get(key)
+  if (cached) return cached
+
+  const a = STOP_VIEWPOINTS[from]
+  const b = STOP_VIEWPOINTS[to]
+  const start = bearingOf(a.position)
+  const sweep = shortestSweep(start, bearingOf(b.position))
+  const span = Math.abs(sweep)
+  const direction = Math.sign(sweep) || 1
+
+  const steps = Math.max(8, Math.ceil(span / ROUTE_SAMPLE_DEG))
+  const radiusFrom = Math.hypot(a.position.x, a.position.z)
+  const radiusTo = Math.hypot(b.position.x, b.position.z)
+  const lookFrom = lookOf({ stop: from })
+  const lookTo = lookOf({ stop: to })
+
+  const bearings: number[] = []
+  const baseRadius: number[] = []
+  const baseHeight: number[] = []
+  const lift: number[] = []
+  const liftHeight: number[] = []
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const bearing = start + direction * span * t
+    // smoothstep rather than a plain lerp so the radius and height ease out of
+    // one viewpoint and into the other instead of changing at a constant rate
+    // and stopping dead.
+    const k = smoothstep(t)
+    const r = THREE.MathUtils.lerp(radiusFrom, radiusTo, k)
+    const h = THREE.MathUtils.lerp(a.position.y, b.position.y, k)
+    const required = arcRequirement(bearing)
+    const taper = smoothstep(Math.min(1, Math.min(t, 1 - t) / ROUTE_LIFT_TAPER))
+
+    bearings.push(bearing)
+    baseRadius.push(r)
+    baseHeight.push(h)
+    lift.push(taper * Math.max(0, required.radius - r))
+    liftHeight.push(taper * Math.max(0, required.height - h))
+  }
+
+  const smoothLift = smoothSeries(lift, ROUTE_LIFT_SMOOTHING)
+  const smoothLiftHeight = smoothSeries(liftHeight, ROUTE_LIFT_SMOOTHING)
+
+  const positions: THREE.Vector3[] = []
+  const looks: THREE.Vector3[] = []
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const theta = THREE.MathUtils.degToRad(bearings[i])
+    const radius = baseRadius[i] + smoothLift[i]
+    const height = baseHeight[i] + smoothLiftHeight[i]
+
+    // The ends are the authored viewpoints exactly, not the profile's idea of
+    // them -- a jump has to arrive framed the way a scroll arrival is.
+    positions.push(
+      i === 0
+        ? a.position.clone()
+        : i === steps
+          ? b.position.clone()
+          : new THREE.Vector3(radius * Math.sin(theta), height, radius * Math.cos(theta)),
+    )
+
+    const lookRadius = radius * ROUTE_LOOK_RADIUS
+    const target = new THREE.Vector3(
+      lookRadius * Math.sin(theta),
+      height * ROUTE_LOOK_DROP,
+      lookRadius * Math.cos(theta),
+    )
+    const towardFrom = 1 - smoothstep(Math.min(1, t / ROUTE_LOOK_BLEND))
+    const towardTo = 1 - smoothstep(Math.min(1, (1 - t) / ROUTE_LOOK_BLEND))
+    if (towardFrom > 0) target.lerp(lookFrom, towardFrom)
+    if (towardTo > 0) target.lerp(lookTo, towardTo)
+
+    looks.push(i === 0 ? lookFrom.clone() : i === steps ? lookTo.clone() : target)
+  }
+
+  const route = buildRoute(positions, looks)
+  ROUTE_CACHE.set(key, route)
+  return route
+}
+
+/** Every ordered pair of destinations, for the clearance check to enumerate. */
+export const JOURNEY_STOP_IDS: JourneyStopId[] = JOURNEY_STOPS.map((s) => s.id)
 
 /** Sampled polyline, for the ?path debug overlay. */
 export function journeyPolyline(divisions = 400) {
