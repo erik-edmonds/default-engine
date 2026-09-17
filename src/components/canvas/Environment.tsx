@@ -54,7 +54,22 @@ const SHADOW_TARGET_POSITION: [number, number, number] = [0, -4, 0]
 // bodies at once without touching the angle (height) that was just fixed.
 const ARC_CENTER_X = 6
 const ARC_CENTER_Y = -8
-const ARC_RADIUS = 34
+// 80, not 34. At 34 the arc ran straight THROUGH the floating-island cluster
+// -- it spans z -34..-5 and stands to y 17.8, and the discs orbit at a fixed
+// z of -70 (was -20), so at dawn the moon sat inside Icosphere_27 and visibly
+// sliced into the rock. Terrain reaches 34 at the very most, so an 80-unit arc
+// cannot intersect anything at any angle.
+//
+// The discs are scaled up by the same distance ratio (see the scale props on
+// sunGroupRef/moonGroupRef) so they subtend what they always did: the moon
+// and sun each cover, on average over a full orbit, what they covered before.
+// Moving them further away must not quietly become shrinking them.
+//
+// One thing does change, and it is the point: at 34 units the apparent size
+// swung by nearly 4 degrees over an orbit, because the discs were close enough
+// for distance to vary a lot. At 80 it swings by about 1.5. A body that barely
+// changes size as it crosses the sky is what reads as far away.
+const ARC_RADIUS = 80
 // Sun.tsx/Moon.tsx's own meshes are each rotated [PI/2, 0, 0] internally,
 // which doesn't line up with lookAt()'s -Z-faces-target convention (see the
 // sunGroupRef/moonGroupRef lookAt calls below) -- applied directly, the
@@ -400,8 +415,14 @@ export function Environment({
       moonGroupRef.current.position.set(ARC_CENTER_X + ARC_RADIUS * Math.cos(rad), ARC_CENTER_Y + ARC_RADIUS * Math.sin(rad), b.moonZ)
       moonGroupRef.current.lookAt(ISLAND_CAMERA_POSITION)
     }
+    // Hidden outright when faded out, not merely transparent. Both materials
+    // are `transparent` with depthWrite left on, so an opacity-0 disc was
+    // still submitted and still wrote depth -- an invisible solid object
+    // parked in the sky. Three of the four phases have the moon at 0.
     if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity
     if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity
+    if (sunGroupRef.current) sunGroupRef.current.visible = b.sunOpacity > 0.01
+    if (moonGroupRef.current) moonGroupRef.current.visible = b.moonOpacity > 0.01
     if (starsGroupRef.current) starsGroupRef.current.visible = b.starsOpacity > 0.5
     if (auroraMaterialRef.current) {
       auroraMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime
@@ -479,12 +500,15 @@ export function Environment({
       {/* KICK */}
       <directionalLight ref={kickRef} />
 
-      <group ref={sunGroupRef} scale={4}>
+      {/* Named so the clearance check can find the discs and sweep their
+          orbit against the terrain -- see island-terrain and portal-room-* for
+          the same convention. */}
+      <group name="sun-disc" ref={sunGroupRef} scale={9.6}>
         <group rotation={SUN_FACE_CORRECTION}>
           <Sun materialRef={sunMaterialRef} />
         </group>
       </group>
-      <group ref={moonGroupRef} scale={0.15}>
+      <group name="moon-disc" ref={moonGroupRef} scale={0.36}>
         <group rotation={MOON_FACE_CORRECTION}>
           <Moon materialRef={moonMaterialRef} />
         </group>

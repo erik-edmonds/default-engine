@@ -21,7 +21,13 @@ export function Favicon() {
       href="/"
       aria-label="Home"
       onClick={(e) => {
-        if (journeyActive) {
+        // On the island, "home" is a place in the scene, not a URL. The href
+        // points at the page you are already on, so following it does nothing
+        // at all -- which at a hotspot made this button look broken: visible,
+        // clickable, and completely inert. Hand it to the camera instead.
+        // Elsewhere (/portfolio and the project pages) the href is the whole
+        // point and is left alone.
+        if (journeyActive || onIslandRoute) {
           e.preventDefault()
           requestGoHome((n) => n + 1)
         }

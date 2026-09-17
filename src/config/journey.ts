@@ -15,20 +15,26 @@ import {
  *  radially arranged around the origin. Bearing 0 is +Z (the side Home looks
  *  from) and increases toward +X, matching atan2(x, z).
  *
- *  For reference when tuning, the terrain's measured reach by bearing (from
- *  77k transformed vertices, ocean and sky excluded):
+ *  For reference when tuning, the terrain's measured reach by bearing --
+ *  48.9k transformed vertices across 146 meshes, ocean and sky planes excluded,
+ *  counting only geometry between y -8 and y +24 (the band a camera actually
+ *  flies through; a deep underside is not something you have to go around):
  *
- *      bearing      0..105    reach ~15.5   (the main island and its skirt)
- *      bearing    120..135    reach  33.7   (the moon island -- Donate)
- *      bearing    150..165    reach  ~20
- *      bearing    180..210    reach ~28.7   and stands up to y 23 (Contact's)
- *      bearing    225..240    reach ~30.9   (the left tree -- Models)
- *      bearing    255..345    reach ~15.4
+ *      bearing      0..135    reach  15.6   tops out at y  -0.4
+ *      bearing    140..160    reach  25.1   tops out at y   6.3   (moon island -- Donate)
+ *      bearing    165..220    reach  34.0   tops out at y  17.8   (Contact's, the tall one)
+ *      bearing    225..245    reach  26.3   tops out at y   5.8   (the left tree -- Models)
+ *      bearing    250..355    reach  15.4   tops out at y  -1.0
  *
- *  So a waypoint clears the terrain when its radius comfortably exceeds the
- *  reach at its bearing. `yarn` a build and run the path-clearance check in
- *  verification rather than trusting that by eye -- the reach figures above are
- *  maxima over 15-degree buckets, so they are coarser than the geometry. */
+ *  An earlier version of this table put the moon island at "bearings 120..135,
+ *  reach 33.7". Both halves were wrong -- it spans 133..164 and reaches 25.1 --
+ *  and because ROUTE_ARC and the leg-1 waypoint below were both written from
+ *  it, the camera swung 22 units wider than anything required at bearing 128
+ *  and then came back in. That swing is what "it goes out and in" was.
+ *
+ *  A waypoint clears the terrain when its radius exceeds the reach at its
+ *  bearing. Re-measure rather than trusting this by eye: the clearance check in
+ *  verification reads the shipped geometry, and it is the arbiter. */
 
 export type JourneyStopId = "home" | "moon-island" | "left-tree" | "upper"
 
@@ -82,12 +88,17 @@ const WAYPOINTS: Waypoint[] = [
   // the path itself. These are the numbers to raise if the camera ever ends up
   // clipping the island's skirt.
   { bearing: 40, radius: 18, height: 1.5, look: [0, -1, 2] },
-  { bearing: 95, radius: 18, height: 4, look: [0, 0, -2] },
-  // This one has to be wide: the moon island reaches r 33.6 through bearings
-  // 120-135 and stands from y -43 to +16, so there is no way past it on the
-  // inside at this height. The radius is the tightest that still leaves the
-  // clearance every other part of the path keeps -- see the clearance check.
-  { bearing: 128, radius: 37, height: 10, look: [8, 4, -16] },
+  { bearing: 95, radius: 19, height: 3, look: [0, 0, -2] },
+  // This used to be radius 37 at height 10, "because the moon island reaches
+  // r 33.6 through bearings 120-135". It does not -- it starts at bearing 133
+  // and reaches 25.1, and out here the terrain stops at r 14.8 and y -0.6. The
+  // old numbers swung the camera 17 units wider and 5 higher than anything
+  // required, and then had to come back in for the arrival: that out-and-back
+  // was the whole complaint about this leg.
+  { bearing: 128, radius: 24, height: 5, look: [8, 4, -16] },
+  // Where the moon island actually begins. Coming outside it HERE, rather than
+  // 20 degrees early, is what lets the radius climb once instead of twice.
+  { bearing: 140, radius: 29, height: 6.5, look: [10, 4, -18] },
   { stop: "moon-island" },
   // Behind everything. Contact's island stands to y 23 at r 28.7 around
   // bearing 195, so this passes it at r 40 rather than over the top.
@@ -331,38 +342,42 @@ export const JOURNEY_STOP_SCROLL: { id: JourneyStopId; scroll: number; holdUntil
 
 /** What it takes to get past the world at a given bearing.
  *
- *  Radius and minimum height are both properties of the TERRAIN, not of any
- *  particular journey -- see the reach-by-bearing table at the top of this
- *  file. The eastern half (40 through 212) is seeded with the itinerary's own
- *  waypoints, so a jump between adjacent destinations retraces the leg you
- *  already scrolled; only the western entries are new, and they exist because
- *  the itinerary never goes that way while a direct route often must.
+ *  Radius only. There used to be a `minHeight` here as well, and it was doing
+ *  active harm: it lifted the path 10 units at bearing 128 to clear a ridge
+ *  whose top is at y -0.6, which is the vertical half of the swing-out-and-back.
+ *  It is also unnecessary -- the reach above is measured across the WHOLE
+ *  flight band, so a path outside it clears the terrain at any height the
+ *  camera uses, and height is then free to interpolate straight between the two
+ *  endpoints with no bump of its own.
  *
- *  Height is otherwise interpolated between the two endpoints (it belongs to
- *  the journey, not the world) -- `minHeight` is only a floor, for the bearings
- *  where something stands up tall enough to matter. */
-const ROUTE_ARC: { bearing: number; radius: number; minHeight: number }[] = [
-  { bearing: 40, radius: 18, minHeight: 1.5 },
-  { bearing: 95, radius: 18, minHeight: 4 },
-  // The moon island reaches r 33.6 here and stands to y +16, so both numbers
-  // are doing work: the radius gets past it, the floor gets over its skirt.
-  { bearing: 128, radius: 37, minHeight: 10 },
-  { bearing: 172, radius: 40, minHeight: 9 },
-  // Contact's island is the tall one -- it reaches r ~32 through bearings
-  // 180-210 and stands to y 23, so there is no flying over it. Without an
-  // entry here a route between Donate and Contact cut the corner between 172
-  // and Contact's own viewpoint and passed the east face at 1.53 units, which
-  // is closer than any destination gets.
-  { bearing: 190, radius: 42, minHeight: 9 },
-  { bearing: 212, radius: 40, minHeight: 8 },
-  { bearing: 230, radius: 42, minHeight: 10 },
-  // West of the left tree the world falls away to a reach of ~15.4, so the
-  // arc can come back in -- which matters, because a route that stayed at 40
-  // out here would spend its whole length in empty water with the islands a
-  // speck on the horizon.
-  { bearing: 250, radius: 34, minHeight: 8 },
-  { bearing: 290, radius: 28, minHeight: 6 },
-  { bearing: 330, radius: 24, minHeight: 4 },
+ *  Each entry carries the measured reach it was derived from, so the next
+ *  person can tell a deliberate margin from a stale number. Sampled where the
+ *  silhouette actually changes rather than at round bearings. */
+const ROUTE_ARC: { bearing: number; radius: number }[] = [
+  { bearing: 0, radius: 20 },    // reach 15.4
+  { bearing: 40, radius: 20 },   // reach 15.6
+  { bearing: 70, radius: 20 },   // reach 15.5
+  { bearing: 95, radius: 20 },   // reach 15.5
+  { bearing: 115, radius: 20 },  // reach 15.4
+  // Was 37, from a table that put the moon island here. It is not here -- it
+  // starts at bearing 133 -- and this is open water to r 14.8.
+  { bearing: 128, radius: 20 },  // reach 14.8
+  { bearing: 145, radius: 29 },  // reach 25.1  the moon island (Donate)
+  { bearing: 160, radius: 29 },  // reach 24.4
+  { bearing: 172, radius: 38 },  // reach 31.1
+  // Contact's island is the tall one: it stands to y 17.8, so there is no
+  // going over it and the radius has to do all the work. These carry a wider
+  // margin than the rest of the table for that reason -- a reach+4 here
+  // measured 2.93 units of real clearance, because the bin maxima understate
+  // a silhouette this ragged and height cannot make up the difference.
+  { bearing: 190, radius: 41 },  // reach 34.0
+  { bearing: 212, radius: 40 },  // reach 33.1
+  { bearing: 230, radius: 33 },  // reach 26.3  the left tree (Models)
+  { bearing: 250, radius: 30 },  // reach 24.9
+  { bearing: 270, radius: 20 },  // reach 15.1
+  { bearing: 290, radius: 20 },  // reach 14.2
+  { bearing: 310, radius: 20 },  // reach 15.3
+  { bearing: 330, radius: 20 },  // reach 15.4
 ]
 
 /** Where a travelling route looks: inward and slightly down, at a point on its
@@ -403,8 +418,14 @@ const ROUTE_SAMPLE_DEG = 4
  *  The two endpoints are authored camera viewpoints -- known-good positions
  *  that the scene is built around -- so nothing needs lifting AT them, and
  *  tapering is what keeps a route starting and ending exactly where the
- *  scroll journey would leave you. */
-const ROUTE_LIFT_TAPER = 0.3
+ *  scroll journey would leave you.
+ *
+ *  Short, because a long taper suppresses the lift exactly where it is most
+ *  needed: Contact's island sits right beside Contact's own viewpoint, so at
+ *  0.3 the first 43 degrees out of Contact had almost no lift and the route
+ *  passed the island at 3.56 units. The endpoints stay pinned either way --
+ *  this only decides how fast the lift arrives once you have left one. */
+const ROUTE_LIFT_TAPER = 0.15
 
 /** Passes of a [1,2,1]/4 kernel run over the lift before it is added to the
  *  base profile. This is the part that rounds the moon island's shoulder: the
@@ -433,7 +454,7 @@ const smoothstep = (t: number) => t * t * (3 - 2 * t)
  *  radius profile that stepped 15 -> 18 -> 18 -> 37 -> 28 on the way to Donate.
  *  Treating them as a requirement to stay outside lets a route meet the
  *  constraint without adopting its shape. */
-function arcRequirement(bearing: number) {
+function arcRequirement(bearing: number): number {
   const b = ((bearing % 360) + 360) % 360
   const table = ROUTE_ARC
   let lo = table[table.length - 1]
@@ -454,10 +475,7 @@ function arcRequirement(bearing: number) {
   let span = ((hi.bearing - lo.bearing) % 360 + 360) % 360
   if (span === 0) span = 360
   const k = smoothstep(Math.min(1, (((b - lo.bearing) % 360 + 360) % 360) / span))
-  return {
-    radius: THREE.MathUtils.lerp(lo.radius, hi.radius, k),
-    height: THREE.MathUtils.lerp(lo.minHeight, hi.minHeight, k),
-  }
+  return THREE.MathUtils.lerp(lo.radius, hi.radius, k)
 }
 
 /** One in-place smoothing pass set over an array, endpoints held fixed. */
@@ -569,7 +587,6 @@ export function routeBetween(from: JourneyStopId, to: JourneyStopId): Route | nu
   const baseRadius: number[] = []
   const baseHeight: number[] = []
   const lift: number[] = []
-  const liftHeight: number[] = []
 
   for (let i = 0; i <= steps; i++) {
     const t = i / steps
@@ -579,19 +596,19 @@ export function routeBetween(from: JourneyStopId, to: JourneyStopId): Route | nu
     // and stopping dead.
     const k = smoothstep(t)
     const r = THREE.MathUtils.lerp(radiusFrom, radiusTo, k)
-    const h = THREE.MathUtils.lerp(a.position.y, b.position.y, k)
-    const required = arcRequirement(bearing)
     const taper = smoothstep(Math.min(1, Math.min(t, 1 - t) / ROUTE_LIFT_TAPER))
 
     bearings.push(bearing)
     baseRadius.push(r)
-    baseHeight.push(h)
-    lift.push(taper * Math.max(0, required.radius - r))
-    liftHeight.push(taper * Math.max(0, required.height - h))
+    // Height is purely the interpolation between the two viewpoints -- nothing
+    // lifts it. See the note on ROUTE_ARC: the radius requirement is measured
+    // across the whole flight band, so clearing it horizontally clears it at
+    // every height, and a height bump would only be a bump.
+    baseHeight.push(THREE.MathUtils.lerp(a.position.y, b.position.y, k))
+    lift.push(taper * Math.max(0, arcRequirement(bearing) - r))
   }
 
   const smoothLift = smoothSeries(lift, ROUTE_LIFT_SMOOTHING)
-  const smoothLiftHeight = smoothSeries(liftHeight, ROUTE_LIFT_SMOOTHING)
 
   const positions: THREE.Vector3[] = []
   const looks: THREE.Vector3[] = []
@@ -600,7 +617,7 @@ export function routeBetween(from: JourneyStopId, to: JourneyStopId): Route | nu
     const t = i / steps
     const theta = THREE.MathUtils.degToRad(bearings[i])
     const radius = baseRadius[i] + smoothLift[i]
-    const height = baseHeight[i] + smoothLiftHeight[i]
+    const height = baseHeight[i]
 
     // The ends are the authored viewpoints exactly, not the profile's idea of
     // them -- a jump has to arrive framed the way a scroll arrival is.

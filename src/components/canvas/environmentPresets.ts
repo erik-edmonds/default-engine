@@ -125,12 +125,12 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     // well-tuned positions; dawn/evening (partial opacity, less critical)
     // absorb the resulting compromise instead.
     sunAngle: 324,
-    sunZ: -20,
+    sunZ: -70,
     // Moon has already set by dawn -- same hard-0 convention evening uses
     // for "not yet risen."
     moonOpacity: 0,
     moonAngle: 144,
-    moonZ: -20,
+    moonZ: -70,
     starsOpacity: 0,
     auroraOpacity: 0,
     rimColor: "#ffcf9e",
@@ -179,10 +179,10 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     // sunAngle below. Day is the sun's fully-opaque moment, so it's the one
     // preserved exactly.
     sunAngle: 54,
-    sunZ: -20,
+    sunZ: -70,
     moonOpacity: 0,
     moonAngle: 234,
-    moonZ: -20,
+    moonZ: -70,
     starsOpacity: 0,
     auroraOpacity: 0,
     rimColor: "#bcdfff",
@@ -247,12 +247,12 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     // inside it at wider aspect ratios. sunZ is a plain per-phase field with
     // no bearing on the 90-degrees-apart sunAngle invariant below, so this is
     // the safe knob to move for framing.
-    sunZ: -38,
+    sunZ: -133,
     // No moon during evening -- it's still below the horizon, rising, at
     // this point in the cycle.
     moonOpacity: 0,
     moonAngle: 324,
-    moonZ: -20,
+    moonZ: -70,
     starsOpacity: 0.3,
     // No aurora during evening -- it's a night-only effect.
     auroraOpacity: 0,
@@ -374,12 +374,12 @@ export const PRESETS: Record<TimeOfDay, EnvironmentBlend> = {
     // transparent or, for the invisible body in that phase, not rendered
     // at all.
     sunAngle: 234,
-    sunZ: -20,
+    sunZ: -70,
     moonOpacity: 1,
     // Original, hand-tuned value -- see the comment above. Night is the
     // moon's fully-opaque moment, so it's the one preserved exactly.
     moonAngle: 54,
-    moonZ: -20,
+    moonZ: -70,
     starsOpacity: 1,
     auroraOpacity: 1,
     rimColor: "#4d7fff",

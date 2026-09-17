@@ -20,7 +20,7 @@ export function Moon({ materialRef, ...props }) {
                 Sun.tsx -- ground fog shouldn't wash out the moon either.
                 toneMapped dropped for the same reason as Sun.tsx: the tone
                 curve is a post pass now, so the flag was a no-op. */}
-            <meshBasicMaterial ref={materialRef} color={MOON_COLOR} transparent fog={false} />
+            <meshBasicMaterial ref={materialRef} depthWrite={false} color={MOON_COLOR} transparent fog={false} />
         </mesh>
     </group>
   )

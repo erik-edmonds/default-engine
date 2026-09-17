@@ -32,7 +32,7 @@ export function Sun({ materialRef, ...props }) {
             (page.tsx's <ToneMapping>) that runs over the finished image
             regardless. Leaving it set was a no-op that just looked like it
             was doing something. */}
-        <meshBasicMaterial ref={materialRef} color={SUN_COLOR} transparent fog={false} />
+        <meshBasicMaterial ref={materialRef} depthWrite={false} color={SUN_COLOR} transparent fog={false} />
       </mesh>
     </group>
   )

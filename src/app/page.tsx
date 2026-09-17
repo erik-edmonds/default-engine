@@ -642,13 +642,19 @@ export default function Page() {
     // the design, and it fires at the end of a discrete tap -- never during a
     // gesture, which is what made the earlier version of this feel like the
     // page was fighting you.
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    suppressScrollUntil.current = performance.now() + 250;
-    window.scrollTo(0, scrollForStop(to) * max);
-    const u = JOURNEY_STOPS.find((s) => s.id === to)?.u ?? 0;
-    // Hand the camera back to the journey spring, seeded where the flight left
-    // it, or the next scroll would spring it across from u = 0.
-    cameraControllerRef.current?.setJourney(u, u);
+    // Touch only. The rail is the only caller that could be on a coarse
+    // pointer anyway, but the home button reaches this too, and on desktop the
+    // journey spring is never taken up -- handing it the camera there would
+    // pin the view to the path until the next flight killed it.
+    if (isCoarsePointer) {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      suppressScrollUntil.current = performance.now() + 250;
+      window.scrollTo(0, scrollForStop(to) * max);
+      const u = JOURNEY_STOPS.find((s) => s.id === to)?.u ?? 0;
+      // Hand the camera back to the journey spring, seeded where the flight
+      // left it, or the next scroll would spring it across from u = 0.
+      cameraControllerRef.current?.setJourney(u, u);
+    }
 
     isJumping.current = false;
     setJumping(false);
@@ -739,8 +745,21 @@ export default function Page() {
     startTransition(() => router.push("/portfolio"));
   };
 
-  const handleGoHome = useCallback(async () => {
-    if (isSequenceRunning.current || !isInSkyJourney.current) return;
+  /** Fly back to the establishing shot from wherever on the island you are --
+   *  the same route, sound and portal-close as any other trip, because it is
+   *  the same trip. handleJump already returns early when you are stood at the
+   *  destination, so pressing home at home does nothing. */
+  const travelHome = () => handleJump("home");
+
+  const handleGoHome = async () => {
+    if (isSequenceRunning.current) return;
+    // Two different trips home. Out of the sky journey it is a whole sequence
+    // -- the avatar has to come down and change back. On the island it is just
+    // a flight, and before this it was nothing at all.
+    if (!isInSkyJourney.current) {
+      await travelHome();
+      return;
+    }
     isSequenceRunning.current = true;
     isInSkyJourney.current = false;
     setInSkyJourneyAtom(false);
@@ -766,11 +785,29 @@ export default function Page() {
       cameraControllerRef.current?.endJourney();
     }
     isSequenceRunning.current = false;
-  }, [setInSkyJourneyAtom, setSkyText, setMotion, beginHotspotTransition, isCoarsePointer]);
+  };
 
+  // The latest-ref pattern, as with scrollTickRef above: handleGoHome closes
+  // over render-scoped values, and the listener below must always reach the
+  // current one without re-subscribing.
+  const goHomeRef = useRef(handleGoHome);
   useEffect(() => {
-    if (goHomeRequestValue > 0) handleGoHome();
-  }, [goHomeRequestValue, handleGoHome]);
+    goHomeRef.current = handleGoHome;
+  });
+
+  // Keyed on the counter alone, and de-duplicated by hand. The atom is a
+  // monotonically rising number that never returns to 0, so an effect which
+  // also depended on the handler would re-fire it on every render that
+  // recreated the handler. That was harmless only while handleGoHome opened
+  // with a guard that happened to early-return off the island -- it no longer
+  // does, because off the island is now exactly when it has work to do.
+  const lastGoHomeHandled = useRef(0);
+  useEffect(() => {
+    if (goHomeRequestValue > 0 && goHomeRequestValue !== lastGoHomeHandled.current) {
+      lastGoHomeHandled.current = goHomeRequestValue;
+      goHomeRef.current();
+    }
+  }, [goHomeRequestValue]);
 
   return (
     <NavigationProvider>
