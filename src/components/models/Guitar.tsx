@@ -1,6 +1,7 @@
+import type { ThreeElements } from '@react-three/fiber'
 import React, { useRef, useEffect, useState } from 'react'
 import * as THREE from "three"
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 import { useCursorHover } from '@/helpers/useCursorHover'
 import { useCoarsePointer } from '@/helpers/useCoarsePointer'
 import { Howl } from "howler"
@@ -22,7 +23,7 @@ const PROP_MAGNETIC_RADIUS = 155
  *  (1.4 units away) or the Poke Ball. */
 const TOUCH_HIT_RADIUS = 3.2
 
-export function Guitar(props) {
+export function Guitar(props: ThreeElements['group']) {
   // `sound` is this prop's own intent ("I want music playing"); the master
   // switch (SoundToggle.tsx) independently gates whether that's actually
   // audible -- see the comment on musicEnabled in StateProvider.tsx.
@@ -98,7 +99,10 @@ export function Guitar(props) {
   // of React and keeps going until told to stop. Navigating back home then
   // mounts a fresh Guitar with a fresh Howl on top of the still-playing
   // orphan, audible as doubled music.
-  useEffect(() => () => { if (song.playing()) song.stop() }, [song])
+  // unload, not just stop: this is an html5 Howl on a 50MB stream, and
+  // stopping leaves its <audio> element in Howler's finite shared pool. See
+  // the note in RainController.tsx on what exhausting that pool looks like.
+  useEffect(() => () => { song.unload() }, [song])
 
   useShadows(group)
 

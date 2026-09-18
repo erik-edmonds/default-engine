@@ -34,7 +34,6 @@ import { Gull } from "@/components/models/Gull"
 import { SeagullFlock } from "@/components/canvas/SeagullFlock"
 import { Thunder } from "@/components/canvas/Thunder"
 import { RainController } from "@/components/canvas/RainController"
-import { Foams } from "@/components/models/Foams"
 
 /** Where the low cloud group sits, and how many of it draws. Named because the
  *  placement effect below has to convert between this group's local space and

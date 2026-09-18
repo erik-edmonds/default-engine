@@ -1,8 +1,11 @@
+import type { ThreeElements } from '@react-three/fiber'
+import * as THREE from 'three'
 import { useRef, useEffect } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
-export function Palm(props) {
-  const group = useRef()
+export function Palm(props: ThreeElements['group']) {
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/palm.glb')
   animations[0].name = "Palm"
   const { actions } = useAnimations(animations, group)

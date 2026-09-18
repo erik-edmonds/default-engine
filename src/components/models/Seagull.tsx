@@ -1,10 +1,13 @@
+import type { ThreeElements } from '@react-three/fiber'
+import * as THREE from 'three'
 import { useRef, useEffect, useMemo } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
-import { useGraph } from '@react-three/fiber'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
+import { useGraph } from '@/helpers/useGLTF'
 import { SkeletonUtils } from 'three-stdlib'
 
-export function Seagull(props) {
-  const group = useRef()
+export function Seagull(props: ThreeElements['group']) {
+  const group = useRef<THREE.Group>(null)
   const { scene, materials, animations } = useGLTF('/models/seagull.glb')
   // useGLTF caches nodes/scene globally by URL, so every mounted <Seagull>
   // instance would otherwise share the exact same joint/skeleton objects --

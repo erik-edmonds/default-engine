@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
 import { useOceanWaterMaterial } from '@/components/canvas/OceanWater'
 import type { TimeOfDay } from '@/components/canvas/environmentPresets'
@@ -10,7 +11,7 @@ import { createWoodRoughnessTexture } from '@/components/canvas/proceduralTextur
 const ROCK_NODES = ['Object_46', 'Object_48', 'Object_50', 'Object_52', 'Object_54', 'Object_56', 'Object_44', 'Object_79', 'Object_77'] as const
 
 export function Merged({ from, day, transitionSeconds, ...props }: { from: TimeOfDay, day: TimeOfDay, transitionSeconds?: number, [key: string]: unknown }) {
-  const group = useRef()
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials } = useGLTF('/models/merged.glb')
   const { animations } = useGLTF('/models/island_motion.glb')
   // island_motion.glb's bone names mostly don't match merged.glb's -- only

@@ -1,8 +1,11 @@
+import type { ThreeElements } from '@react-three/fiber'
+import * as THREE from 'three'
 import React, { useRef, useEffect } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
-export function BrownTree(props) {
-  const group = useRef()
+export function BrownTree(props: ThreeElements['group']) {
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/brown_tree.glb')
   animations[0].name = "Swaying"
   const { actions } = useAnimations(animations, group)

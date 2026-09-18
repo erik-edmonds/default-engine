@@ -1,10 +1,11 @@
+import type { ThreeElements } from '@react-three/fiber'
 import { useRef } from 'react'
 import type * as THREE from 'three'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
 import { useShadows } from '@/helpers/useShadows'
 
-export function Scuba(props) {
+export function Scuba(props: ThreeElements['group']) {
   const group = useRef<THREE.Group>(null)
   const { nodes, materials } = useGLTF('/models/Avatars/scuba.glb')
   useShadows(group)

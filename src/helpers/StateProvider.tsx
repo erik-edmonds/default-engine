@@ -1,55 +1,11 @@
 'use client';
 
-import { createContext, useContext, useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
-import {  useFrame, useThree } from '@react-three/fiber'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { AppState } from '@/helpers/Interfaces';
+import { timeOfDay } from '@/helpers/timeOfDay';
 import { atom } from 'jotai'
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
-const BoxContext = createContext(null)
-
-const time = () => {
-    const now = new Date().getHours();
-    if (now > 4 && now <= 6) {
-      return "dawn"
-    }
-    else if (now <= 17 && now > 6) {
-      return "day"
-    }
-    else if(now <= 18 && now > 14) {
-      return "evening"
-    }
-    else {
-      return "night"
-    }
-  }
-
-export const BoxStateProvider = forwardRef(function BoxStateProvider({ children, ...props }, fref) {
-  const ref = useRef()
-  const [hovered, hover] = useState(false)
-  const [clicked, click] = useState(false)
-  useFrame((state, delta) => (ref.current.rotation.x += delta))
-  useImperativeHandle(fref, () => ref.current, [])
-  return (
-    <mesh
-      {...props}
-      ref={ref}
-      scale={clicked ? 1.5 : 1}
-      onClick={(event) => click(!clicked)}
-      onPointerMove={(event) => (event.stopPropagation(), hover(event.face.materialIndex))}
-      onPointerOut={() => {}}>
-      <BoxContext value={hovered}>{children}</BoxContext>
-    </mesh>
-  )
-})
-
-export function useBox() {
-  const context = useContext(BoxContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
-}
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   // Fixed initial value so SSR and the client's first render always agree --
@@ -61,7 +17,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   // keeps the first paint deterministic; it then corrects to the real
   // time-of-day immediately after.
   const [theme, setTheme] = useState<string>("day");
-  const syncTheme = useCallback(() => setTheme(time()), []);
+  const syncTheme = useCallback(() => setTheme(timeOfDay()), []);
   useEffect(() => { syncTheme(); }, [syncTheme]);
 
   return (

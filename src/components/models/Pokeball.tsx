@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import React, { useRef, useEffect, useState, useMemo } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 import { useCursorHover } from '@/helpers/useCursorHover'
 import { useFrame } from '@react-three/fiber'
 

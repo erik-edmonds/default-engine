@@ -104,7 +104,7 @@ export function RainController() {
   }, [fading, rainSound])
 
   // Same orphaned-Howl risk Speaker.tsx/SoundToggle.tsx guard against.
-  useEffect(() => () => { rainSound.stop() }, [rainSound])
+  useEffect(() => () => { rainSound.unload() }, [rainSound])
 
   // Belt and braces: if this ever unmounts mid-storm, don't strand the DOM
   // overlay on. Nothing else writes `raining` false. (jotai's useSetAtom

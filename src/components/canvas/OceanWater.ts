@@ -357,6 +357,11 @@ export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitio
       // dragging the water's colors back toward the abandoned phase.
       overwrite: true,
     })
+    // Killed on unmount. Without this the tween lives on gsap's global ticker
+    // and keeps writing into blendRef after the component is gone -- and on the
+    // ambient auto-cycle that is a tween with MINUTES left to run, not
+    // milliseconds.
+    return () => { gsap.killTweensOf(blendRef.current) }
   }, [day, transitionSeconds])
 
   // Scratch object reused every frame -- avoid allocating a Vector3 per

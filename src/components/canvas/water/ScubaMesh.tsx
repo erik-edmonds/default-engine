@@ -2,7 +2,7 @@
 
 import * as THREE from 'three'
 import { useLayoutEffect, useMemo, useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 import * as scubaRenderShader from './shaders/scubaRender'
 
 const SCUBA_BOUNDING_RADIUS = 0.25

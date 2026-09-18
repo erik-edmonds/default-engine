@@ -75,7 +75,7 @@ export function SplashParticles({ count = 350 }) {
   })
 
   return (
-    <instancedMesh ref={meshRef} args={[null, null, count]}>
+    <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
       <sphereGeometry args={[0.3, 6, 6]} /> 
       <meshBasicMaterial color="#ffffff" transparent opacity={0.85} />
     </instancedMesh>

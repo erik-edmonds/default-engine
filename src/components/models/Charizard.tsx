@@ -1,7 +1,8 @@
+import type { ThreeElements } from '@react-three/fiber'
 import React, { useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
-export function Charizard(props) {
+export function Charizard(props: ThreeElements['group']) {
   const { nodes, materials } = useGLTF('/models/charizard.glb')
   return (
     <group {...props} dispose={null}>

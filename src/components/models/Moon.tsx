@@ -1,12 +1,13 @@
+import type { ThreeElements } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
 // Pushed into HDR so the disc clears Bloom's threshold -- see Sun.tsx for the
 // full reasoning. Lower gain than the sun: a blooming moon should glow, not
 // glare.
 const MOON_COLOR = new THREE.Color('#eef2ff').multiplyScalar(1.8)
 
-export function Moon({ materialRef, ...props }) {
+export function Moon({ materialRef, ...props }: { materialRef: React.Ref<THREE.MeshBasicMaterial> } & ThreeElements['group']) {
   const { nodes } = useGLTF('/models/moon.glb')
   return (
     <group {...props} dispose={null}>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, type ReactNode, type RefObject } from "react"
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
 
@@ -225,6 +225,14 @@ export interface HotspotPortalProps {
    *  is actually at the hotspot it stands in front of. The portal is always
    *  visible either way; this only controls whether it answers the pointer. */
   interactive?: boolean
+  /** True when this is the portal currently entered (the `/item/:id` route).
+   *
+   *  Inside a portal the material's blend is 1 and its scene IS the screen, so
+   *  the room has to be lit whatever the camera is doing -- the arrival
+   *  detection below is about walking up to a window from outside, and it does
+   *  not describe standing in the room. Without this, landing on a shared
+   *  /item/:id link put you inside a dark, empty box. */
+  open?: boolean
   /** The portal's contents, e.g. <Gltf src="/models/tea.glb" />. */
   children: ReactNode
 }
@@ -234,12 +242,26 @@ export interface HotspotPortalProps {
 const BREATHE_AMOUNT = 0.012
 const BREATHE_SPEED = 1.15
 
-export function HotspotPortal({ position, rotation, id, name, author, bg, interactive = true, children }: HotspotPortalProps) {
+export function HotspotPortal({ position, rotation, id, name, author, bg, interactive = true, open = false, children }: HotspotPortalProps) {
   const group = useRef<THREE.Group>(null)
   // Shared with PortalRoom, which lives in the portal's own scene and cannot
   // work this out for itself. The REF is handed down, not its contents -- both
   // sides touch `.current` only inside useFrame, never during render.
   const live = useRef({ value: 0 })
+  // Whether the room's contents are worth rendering at all.
+  //
+  // MeshPortalMaterial redraws each portal's scene into its own render target
+  // EVERY frame, whether or not you are looking through it -- so three portals
+  // holding real content (a 1400-point cloud, a globe, a 118k-vert skinned
+  // avatar) is three extra scenes drawn per frame, permanently. That measurably
+  // slowed the whole page: time-to-first-paint of the name stamp went from ~14s
+  // to ~19s on a software renderer.
+  //
+  // An unlit room shows nothing anyway -- no light, near-black background --
+  // so not drawing its contents while it is dark is invisible and nearly free.
+  // Tied to the light's own ramp rather than to `interactive` so the contents
+  // outlast the fade-down and nothing pops out mid-dim.
+  const [roomAwake, setRoomAwake] = useState(false)
   /** Seconds the camera has been stopped here, and where it was last frame. */
   const settled = useRef(0)
   const lastCameraPosition = useMemo(() => new THREE.Vector3(), [])
@@ -290,7 +312,9 @@ export function HotspotPortal({ position, rotation, id, name, author, bg, intera
     const here = interactive && camera.position.distanceTo(viewpoint) < ARRIVED_RADIUS
     settled.current = Math.max(0, settled.current + (here && atRest ? step : -step * SETTLE_DECAY))
 
-    const target = settled.current >= ARRIVED_BEAT ? 1 : 0
+    // `open` short-circuits the beat: you are not approaching the room, you
+    // are standing in it.
+    const target = open || settled.current >= ARRIVED_BEAT ? 1 : 0
     if (prefersReducedMotion()) {
       // The journey spring already snaps under this setting; a 1.5s swell
       // would be the only thing left drifting.
@@ -302,6 +326,9 @@ export function HotspotPortal({ position, rotation, id, name, author, bg, intera
     }
 
     const v = live.current.value
+    // Flips at most twice per visit, so this is not a per-frame setState.
+    const shouldBeAwake = open || interactive || v > 0.001
+    if (shouldBeAwake !== roomAwake) setRoomAwake(shouldBeAwake)
     if (group.current) {
       const breathe = 1 + v * BREATHE_AMOUNT * Math.sin(state.clock.elapsedTime * BREATHE_SPEED + phase)
       group.current.scale.setScalar(breathe)
@@ -315,7 +342,7 @@ export function HotspotPortal({ position, rotation, id, name, author, bg, intera
         {/* Inside <MeshPortalMaterial>, so these belong to the portal's own
             scene rather than to the island. */}
         <PortalRoom id={id} live={live} bg={bg ?? PORTAL_DEFAULT_BG} />
-        {children}
+        {roomAwake && children}
       </Frame>
     </group>
   )

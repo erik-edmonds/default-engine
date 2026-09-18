@@ -1,8 +1,11 @@
+import type { ThreeElements } from '@react-three/fiber'
+import * as THREE from 'three'
 import React, { useRef } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
-export function DeadCampfire(props) {
-  const group = useRef()
+export function DeadCampfire(props: ThreeElements['group']) {
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/campfire.glb')
   const { actions } = useAnimations(animations, group)
   return (

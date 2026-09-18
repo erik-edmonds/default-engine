@@ -283,6 +283,15 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     tryStartMaterialize()
   }
 
+  // None of the tweens below were ever killed, so unmounting mid-flight left
+  // gsap writing into a disposed group's transform on its global ticker.
+  useEffect(() => () => {
+    if (!group.current) return
+    gsap.killTweensOf(group.current.position)
+    gsap.killTweensOf(group.current.rotation)
+    gsap.killTweensOf(group.current.scale)
+  }, [])
+
   useImperativeHandle(ref, () => ({
     spinAndTransform: (target: ModelKind) =>
       new Promise<void>((resolve) => {
@@ -320,6 +329,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           duration: tweenDuration(5),
           ease: "power2.inOut",
           onComplete: () => resolve(),
+          // Resolved on interrupt too: the unmount cleanup below kills these,
+          // and a killed tween never fires onComplete -- which would leave
+          // page.tsx awaiting a promise that can no longer settle.
+          onInterrupt: () => resolve(),
         })
       }),
     beginSkyJourney: () => {
@@ -355,6 +368,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           duration,
           ease: "power2.inOut",
           onComplete: () => resolve(),
+          // Resolved on interrupt too: the unmount cleanup below kills these,
+          // and a killed tween never fires onComplete -- which would leave
+          // page.tsx awaiting a promise that can no longer settle.
+          onInterrupt: () => resolve(),
         })
         gsap.to(group.current.rotation, {
           x: BASE_ROTATION[0],
@@ -375,6 +392,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           duration: tweenDuration(0.9),
           ease: "power1.inOut",
           onComplete: () => resolve(),
+          // Resolved on interrupt too: the unmount cleanup below kills these,
+          // and a killed tween never fires onComplete -- which would leave
+          // page.tsx awaiting a promise that can no longer settle.
+          onInterrupt: () => resolve(),
         })
       }),
     diveUnderwater: () =>

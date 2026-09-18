@@ -70,8 +70,8 @@ export function Rig({ position = new THREE.Vector3(0, 0, 2), focus = new THREE.V
   const [, params] = useRoute('/item/:id')
 
   useEffect(() => {
-    const active = scene.getObjectByName(params?.id)
-    if (active) {
+    const active = params?.id ? scene.getObjectByName(params.id) : undefined
+    if (active?.parent) {
       active.parent.localToWorld(position.set(0, 0.5, 0.25))
       active.parent.localToWorld(focus.set(0, 0, -2))
       controls?.setLookAt(...position.toArray(), ...focus.toArray(), true)

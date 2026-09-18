@@ -1,8 +1,11 @@
+import type { ThreeElements } from '@react-three/fiber'
+import * as THREE from 'three'
 import { useRef, useEffect } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useAnimations } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
-export function Avatar(props) {
-  const group = useRef()
+export function Avatar(props: ThreeElements['group']) {
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/Avatars/base.glb')
   animations[0].name = "Idle"
   const { actions } = useAnimations(animations, group)

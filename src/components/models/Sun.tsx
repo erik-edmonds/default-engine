@@ -1,5 +1,6 @@
+import type { ThreeElements } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 
 // Above 1.0 on purpose. #ff8c1a peaks at exactly 1.0 linear, so with Bloom's
 // luminanceThreshold at 0.9 the disc sat right at the edge and barely
@@ -9,7 +10,7 @@ import { useGLTF } from '@react-three/drei'
 // them straight through.
 const SUN_COLOR = new THREE.Color('#ff8c1a').multiplyScalar(2.6)
 
-export function Sun({ materialRef, ...props }) {
+export function Sun({ materialRef, ...props }: { materialRef: React.Ref<THREE.MeshBasicMaterial> } & ThreeElements['group']) {
   const { nodes } = useGLTF('/models/sun.glb')
   return (
     <group {...props} dispose={null}>

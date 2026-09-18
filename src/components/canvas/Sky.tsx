@@ -1,7 +1,9 @@
+import type { CloudDatum } from '@/config/store'
 import * as THREE from 'three'
 import { useEffect, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Instances, Instance, useGLTF } from '@react-three/drei'
+import { Instances, Instance } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 import { useSetAtom } from 'jotai'
 import { rainRequest, thunder } from '@/helpers/StateProvider'
 import { MAGNETIC_SNAP_RADIUS, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
@@ -13,7 +15,7 @@ import { registerHintCloud, unregisterHintCloud } from '@/helpers/hints'
 // of them wrote one shared atom -- see RainController.tsx for the bugs that
 // caused and why there is now exactly one owner. Clicking a cloud is a
 // request; it isn't the thing that runs the storm.
-export function Clouds({ data, range }) {
+export function Clouds({ data, range }: { data: CloudDatum[]; range: number }) {
   const { nodes, materials } = useGLTF('/models/cloud.glb')
 
   return (
@@ -35,8 +37,12 @@ export function Clouds({ data, range }) {
 const CLOUD_MAGNETIC_STRENGTH = 1
 const CLOUD_MAGNETIC_RADIUS = 140
 
-function Cloud({ random, atom, color = new THREE.Color(), hintTarget = false, ...props }) {
-  const ref = useRef()
+/** drei's <Instance> proxy: an Object3D that also carries a per-instance
+ *  colour, which is not on Object3D itself. */
+type InstanceRef = THREE.Object3D & { color: THREE.Color }
+
+function Cloud({ random, color = new THREE.Color(), hintTarget = false, ...props }: CloudDatum & { color?: THREE.Color; hintTarget?: boolean }) {
+  const ref = useRef<InstanceRef>(null)
   const [hovered, setHover] = useState(false)
   const setRainRequest = useSetAtom(rainRequest)
   const setThunder = useSetAtom(thunder)
@@ -83,6 +89,7 @@ function Cloud({ random, atom, color = new THREE.Color(), hintTarget = false, ..
   }, [])
 
   useFrame((state) => {
+    if (!ref.current) return
     const t = state.clock.getElapsedTime() + random * 10000
     ref.current.position.y = Math.sin(t / 1.5) / 2
     ref.current.scale.x = ref.current.scale.y = ref.current.scale.z = THREE.MathUtils.lerp(ref.current.scale.z, hovered ? 1.4 : 1, 0.1)

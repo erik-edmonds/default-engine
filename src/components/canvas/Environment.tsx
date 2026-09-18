@@ -247,6 +247,11 @@ export function Environment({
       // toward the phase the user just skipped past.
       overwrite: true,
     })
+    // Killed on unmount. Without this the tween lives on gsap's global ticker
+    // and keeps writing into blendRef after the component is gone -- and on the
+    // ambient auto-cycle that is a tween with MINUTES left to run, not
+    // milliseconds.
+    return () => { gsap.killTweensOf(blendRef.current) }
   }, [target, transitionSeconds])
 
   useEffect(() => {

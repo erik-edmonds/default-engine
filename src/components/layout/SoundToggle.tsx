@@ -112,12 +112,35 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
     }
   }, [enabled, isNight, waves, tides])
 
-  // Same orphaned-instance risk Speaker.tsx has -- stop cleanly on unmount
-  // rather than leaving a looping ambient track running with nothing left
-  // to control it.
+  // Stop AND unload on unmount.
+  //
+  // This used to stop only, which leaves the <audio> element and its buffer
+  // sitting in Howler's global pool -- and that pool is finite and shared
+  // across every html5 Howl on the page. RainController.tsx documents the
+  // failure it leads to ("a new html5 Howl can get stuck in 'loading' forever
+  // waiting for a free slot (observed live)"); stop-without-unload is exactly
+  // how orphaned instances accumulate across repeated route transitions.
   useEffect(() => () => {
-    if (waves.playing()) waves.stop()
-    if (tides.playing()) tides.stop()
+    waves.unload()
+    tides.unload()
+  }, [waves, tides])
+
+  // A refused play() was silent in every sense: no handler, no log, and a UI
+  // that went on animating as though sound were playing. Both tracks retry on
+  // Howler's next unlock, and until then `blocked` stops the bars lying.
+  const [blocked, setBlocked] = useState(false)
+  useEffect(() => {
+    const wire = (howl: Howl) => {
+      const onError = () => {
+        setBlocked(true)
+        howl.once("unlock", () => { setBlocked(false); howl.play() })
+      }
+      howl.on("playerror", onError)
+      return () => howl.off("playerror", onError)
+    }
+    const offWaves = wire(waves)
+    const offTides = wire(tides)
+    return () => { offWaves(); offTides() }
   }, [waves, tides])
 
   // Something audible-only was activated while muted. Keyed on the counter, so
@@ -177,7 +200,11 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
         <span
           key={i}
           aria-hidden="true"
-          className={enabled ? "eq-bar eq-bar-animating" : "eq-bar"}
+          // `&& !blocked`: the bars are the only indication that sound is on,
+          // so animating them while the browser is refusing to play makes the
+          // control state a lie. Flat bars with the toggle still "on" reads
+          // correctly -- enabled, but not sounding.
+          className={enabled && !blocked ? "eq-bar eq-bar-animating" : "eq-bar"}
           style={{
             display: "inline-block",
             width: 4,

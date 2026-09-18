@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF'
 import { useFrame } from '@react-three/fiber'
 
 import { useShadows } from '@/helpers/useShadows'

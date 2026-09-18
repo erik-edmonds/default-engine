@@ -1,5 +1,6 @@
 "use client"
 
+import type { ThreeElements } from '@react-three/fiber'
 import { MeshDistortMaterial } from '@react-three/drei'
 
 // The waterfall foam (Foam.tsx mounts four of these). It has no click handler
@@ -7,7 +8,7 @@ import { MeshDistortMaterial } from '@react-three/drei'
 // of interactivity it can't keep. Harmless-ish with a native cursor; with the
 // custom one it would open the lens and read as a target, so the hover is gone
 // entirely rather than being migrated.
-export const Blob = ({ distort, speed,  ...props }) => {
+export const Blob = ({ distort, speed, ...props }: { distort: number; speed: number } & ThreeElements['mesh']) => {
   return (
     <mesh {...props}>
       <sphereGeometry args={[1, 24, 8]} scale={[1.5, 0.5, 1.5]} />

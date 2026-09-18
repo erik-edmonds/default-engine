@@ -6,7 +6,8 @@ import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStor
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
-import { AdaptiveDpr, Gltf, PerformanceMonitor, Preload, useGLTF, useProgress } from "@react-three/drei";
+import { AdaptiveDpr, PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
+import { useGLTF } from '@/helpers/useGLTF';
 import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest } from "@/helpers/StateProvider";
@@ -17,8 +18,15 @@ import { CameraController, type CameraControllerHandle } from "@/components/canv
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { SunFlare } from "@/components/canvas/SunFlare";
-import { type TimeOfDay } from "@/components/canvas/environmentPresets";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
+import { timeOfDay } from "@/helpers/timeOfDay";
+import { PORTALS, portalById } from "@/config/portals";
+import { PortalInterior } from "@/components/canvas/PortalInteriors";
+import { PortalDestination } from "@/components/layout/PortalDestination";
+import { openPortalId } from "@/helpers/StateProvider";
+import { SceneBoundary } from "@/components/layout/SceneBoundary";
+import { SceneFallback } from "@/components/layout/SceneFallback";
+import { useContextLoss } from "@/helpers/useContextLoss";
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
 import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/canvas/HotspotPortal";
@@ -67,13 +75,6 @@ const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" 
   { threshold: 525, text: "Let's Connect — Contact Me", align: "center" },
 ];
 
-function getTimeOfDay(): TimeOfDay {
-  const hour = new Date().getHours();
-  if (hour > 4 && hour <= 6) return "dawn";
-  if (hour > 6 && hour <= 17) return "day";
-  if (hour > 14 && hour <= 18) return "evening";
-  return "night";
-}
 
 const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-9.11, 12.97, -13.08];
 const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-12.138549003045972, 15.973606020841718, -28.466165069815958);
@@ -115,46 +116,28 @@ const HOME_VIEWPOINT_ROTATION = ISLAND_CAMERA_ROTATION;
 // thing added here is where they stand. `hotspotId` is the island waypoint
 // each one is parked in front of; `id` is what Card.tsx's Frame matches its
 // own `/item/:id` route on.
-const HOTSPOT_PORTALS = [
-  {
-    hotspotId: "left-tree",
-    ...portalTransformFor(LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION),
-    id: "01",
-    name: "1",
-    author: "Omar Faruq Tawsif",
-    bg: "#e4cdac",
-    src: "/models/earth.glb",
-    modelScale: 8,
-    modelPosition: [0, -0.7, -2] as [number, number, number],
-  },
-  {
-    hotspotId: "moon-island",
-    ...portalTransformFor(MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION),
-    id: "02",
-    name: "2",
-    author: "Omar Faruq Tawsif",
-    bg: "#f0f0f0",
-    src: "/models/earth.glb",
-    modelScale: 1,
-    modelPosition: [0, -2, -3] as [number, number, number],
-  },
-  {
-    hotspotId: "upper",
-    ...portalTransformFor(UPPER_ISLAND_VIEWPOINT_POSITION, UPPER_ISLAND_VIEWPOINT_ROTATION),
-    id: "03",
-    name: "3",
-    author: "Omar Faruq Tawsif",
-    bg: "#d1d1ca",
-    src: "/models/earth.glb",
-    modelScale: 2,
-    modelPosition: [0, -0.8, -4] as [number, number, number],
-  },
-];
+/** Viewpoints by hotspot id, so config/portals.ts can stay free of geometry --
+ *  it describes what each portal CONTAINS and where it GOES; where it stands is
+ *  a property of the island. */
+const HOTSPOT_VIEWPOINT_BY_ID = {
+  "left-tree": { position: LEFT_TREE_VIEWPOINT_POSITION, rotation: LEFT_TREE_VIEWPOINT_ROTATION },
+  "moon-island": { position: MOON_ISLAND_VIEWPOINT_POSITION, rotation: MOON_ISLAND_VIEWPOINT_ROTATION },
+  upper: { position: UPPER_ISLAND_VIEWPOINT_POSITION, rotation: UPPER_ISLAND_VIEWPOINT_ROTATION },
+} as const;
 
-// Warms the portal models alongside everything else during the loading screen
-// rather than leaving them to <Preload all />'s scene-graph walk alone.
+const HOTSPOT_PORTALS = PORTALS.map((portal) => ({
+  ...portal,
+  ...portalTransformFor(HOTSPOT_VIEWPOINT_BY_ID[portal.hotspotId].position, HOTSPOT_VIEWPOINT_BY_ID[portal.hotspotId].rotation),
+}));
+
+// Warms the portal interiors alongside everything else during the loading
+// screen rather than leaving them to <Preload all />'s scene-graph walk alone.
 // useGLTF.preload is a static method, not a hook, so module scope is fine.
-HOTSPOT_PORTALS.forEach((portal) => useGLTF.preload(portal.src));
+//
+// Only two files now, not three: the point-cloud interior is generated, and
+// the avatar interior reuses base.glb, which the island already loads for the
+// avatar stood outside.
+useGLTF.preload("/models/earth.glb");
 
 // Where the camera ends up when a portal is entered: just short of the plane,
 // on the viewpoint side. The portal material's own blend (0 -> 1) is what
@@ -229,7 +212,7 @@ export default function Page() {
   const { setTheme } = useAppState();
   const [, startTransition] = useTransition();
   // Fixed initial value, corrected to the real time-of-day in an effect
-  // below -- calling getTimeOfDay() directly in useState() runs it once on
+  // below -- calling timeOfDay() directly in useState() runs it once on
   // the server and again at hydration, and a real-clock hour boundary
   // crossed in between (4/6/14/17/18) desyncs server vs. client (same class
   // of bug fixed for the theme atom in StateProvider.tsx). `day` also
@@ -241,6 +224,15 @@ export default function Page() {
   const { from: dayFrom, phase: day, transitionSeconds, skipAhead, resetTo, currentPhase } = useTimeOfDayCycle("day");
   const progress = useProgress((state) => state.progress);
   const sceneReady = progress >= 100;
+  // drei tracks every asset that failed to load and nothing was reading it, so
+  // a 404'd model was indistinguishable from one still downloading -- the
+  // loader simply sat there. These are the URLs that will never arrive.
+  const assetErrors = useProgress((state) => state.errors);
+  const { lost: contextLost, onCreated: watchContext } = useContextLoss();
+  // Which portal is open, published by PortalRouteSync from the wouter route.
+  // Outside <Canvas> nothing can call wouter (see PortalRouteSync's note), so
+  // the atom is how the DOM layer learns a portal has been entered.
+  const openPortal = portalById(useAtomValue(openPortalId));
   const [motion, setMotion] = useState(false);
   const [islandMounted, setIslandMounted] = useState(false);
   // Gates the loading screen: once the scene can render (sceneReady) but
@@ -329,7 +321,7 @@ export default function Page() {
   // timeout below if the user hasn't touched anything yet.
   const [hasInteracted, setHasInteracted] = useState(false);
   // SSR-safe (fixed on the first render, corrected in an effect) -- same
-  // pattern as getTimeOfDay() above. Gates the heaviest postprocessing passes,
+  // pattern as timeOfDay() in helpers/timeOfDay.ts. Gates the heaviest postprocessing passes,
   // which are the single biggest mobile GPU-performance risk in this scene.
   // Lifted into a shared hook because Card.tsx needs the same answer to decide
   // between double-click and press-and-hold portal entry.
@@ -388,14 +380,17 @@ export default function Page() {
     // Ramp the bloom in over the same window instead of popping it. The effect
     // is already mounted (at intensity 0, from the click), so its shader
     // compile happened under the opaque plate rather than on a bare screen.
+    // Held so it can be killed: unmounting during the 1.6s ramp otherwise
+    // leaves a tween writing .intensity onto a disposed postprocessing effect.
+    let bloomTween: gsap.core.Tween | null = null;
     if (bloomRef.current) {
-      gsap.to(bloomRef.current, { intensity: BLOOM_INTENSITY, duration: tweenDuration(1.6), ease: "power2.out" });
+      bloomTween = gsap.to(bloomRef.current, { intensity: BLOOM_INTENSITY, duration: tweenDuration(1.6), ease: "power2.out" });
     }
     const timeline = gsap.timeline();
     timeline.call(() => setRevealStage(1), undefined, tweenDuration(0.5));
     timeline.call(() => setRevealStage(2), undefined, tweenDuration(0.9));
     timeline.call(() => setRevealStage(3), undefined, tweenDuration(1.4));
-    return () => { timeline.kill(); };
+    return () => { timeline.kill(); bloomTween?.kill(); };
   }, [started]);
 
   useEffect(() => {
@@ -404,7 +399,7 @@ export default function Page() {
     return () => clearTimeout(mountTimer);
   }, [router, startTransition]);
 
-  useEffect(() => { resetTo(getTimeOfDay()); }, [resetTo]);
+  useEffect(() => { resetTo(timeOfDay()); }, [resetTo]);
 
   // Keyed to the reveal, not to sceneReady. The <h1>'s animate-stamp used to
   // play the moment loading finished -- underneath the loading screen, where
@@ -891,7 +886,8 @@ export default function Page() {
             requested directly instead of through the deprecated name. The
             softness Environment.tsx's directional light relies on comes
             from its own shadow-radius, not this type. */}
-        <Canvas id="three-scene-canvas" shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 50 }}
+        <SceneBoundary label="island-scene">
+        <Canvas id="three-scene-canvas" onCreated={watchContext} shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 50 }}
           onPointerDown={() => {
             setDragged(true)
           }}
@@ -984,8 +980,8 @@ export default function Page() {
                   position={portal.position}
                   rotation={portal.rotation}
                   id={portal.id}
-                  name={portal.name}
-                  author={portal.author}
+                  name={portal.title}
+                  author={portal.credit}
                   bg={portal.bg}
                   // Openable only from its own hotspot. The portals are
                   // permanently in the scene, so several are in shot from
@@ -993,9 +989,14 @@ export default function Page() {
                   // a portal while hotspotNav still said "home", so on exit
                   // the flight landed at that hotspot's viewpoint with its
                   // own marker still showing, right in front of you.
-                  interactive={hotspotNav.current === portal.hotspotId}
+                  // Also interactive while it is the portal you are inside:
+                  // a shared /item/:id link lands you in the room without ever
+                  // passing through its hotspot, so hotspotNav still says
+                  // "home" and the portal would otherwise stay inert and dark.
+                  interactive={hotspotNav.current === portal.hotspotId || openPortal?.id === portal.id}
+                  open={openPortal?.id === portal.id}
                 >
-                  <Gltf src={portal.src} scale={portal.modelScale} position={portal.modelPosition} />
+                  <PortalInterior kind={portal.interior} />
                 </HotspotPortal>
               ))}
             </group>
@@ -1035,6 +1036,33 @@ export default function Page() {
             <Preload all />
           </Suspense>}
         </Canvas>
+        </SceneBoundary>
+        {/* What the portal actually delivers. Entering used to blend a window
+            fullscreen onto a model and stop there -- no content, nothing to do
+            and no way onward. */}
+        {openPortal && <PortalDestination portal={openPortal} onExit={closePortal} />}
+        {/* A lost GPU context used to be a black canvas and nothing else. This
+            says so, and clears itself if the browser hands the context back --
+            which it only can because the listener calls preventDefault(). */}
+        {contextLost && (
+          <SceneFallback
+            title="Rendering stopped"
+            detail="The browser released the graphics context, usually to free memory for another tab. It may come back on its own."
+            action="Reload"
+            onAction={() => window.location.reload()}
+          />
+        )}
+        {/* An asset that 404s can never finish loading, so without this the
+            loader simply sat at whatever percentage it had reached, forever,
+            looking identical to a slow connection. */}
+        {!started && assetErrors.length > 0 && (
+          <SceneFallback
+            title="Some of the scene didn't load"
+            detail={`${assetErrors.length} file${assetErrors.length === 1 ? "" : "s"} failed to download. The scene may be missing pieces.`}
+            action="Try again"
+            onAction={() => window.location.reload()}
+          />
+        )}
         {/* Plain DOM + 2D-canvas overlay, not a second WebGL canvas -- see
             LoadingScreen.tsx for why. Unmounted (not just hidden) once
             `started` flips, so its animation loop actually stops. */}
