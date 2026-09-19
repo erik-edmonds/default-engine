@@ -5,6 +5,7 @@ import { useGLTF } from '@/helpers/useGLTF'
 import { useCursorHover } from '@/helpers/useCursorHover'
 import { useCoarsePointer } from '@/helpers/useCoarsePointer'
 import { Howl } from "howler"
+import { wireAudioFailures } from "@/helpers/sfx"
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { musicEnabled, sfxEnabled, soundOffNudge } from '@/helpers/StateProvider'
 import { useShadows } from '@/helpers/useShadows'
@@ -34,7 +35,7 @@ export function Guitar(props: ThreeElements['group']) {
   const coarse = useCoarsePointer()
   const { nodes, materials } = useGLTF('/models/guitarra.glb')
   const group = useRef<THREE.Group>(null)
-  const [song] = useState(() => new Howl({
+  const [song] = useState(() => wireAudioFailures(new Howl({
     src: ['/sound/music.mp3'],
     // Raised alongside normalising the file itself. Worth knowing why both:
     // iOS makes HTMLMediaElement.volume read-only, and html5:true streams
@@ -48,7 +49,7 @@ export function Guitar(props: ThreeElements['group']) {
     // decode-the-whole-file-first mode means a multi-second wait before any
     // sound; html5: true streams instead, starting almost immediately.
     html5: true,
-  }))
+  }), "music", { retry: false }))
 
   useCursorHover(hovered)
 

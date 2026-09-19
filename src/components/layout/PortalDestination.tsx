@@ -79,6 +79,16 @@ export function PortalDestination({ portal }: { portal: PortalDefinition }) {
           </>
         )}
 
+        {d.kind === "prose" && d.paragraphs.map((line) => (
+          <p
+            key={line}
+            className="scene-type"
+            style={{ margin: 0, maxWidth: "42ch", fontSize: "clamp(0.85rem, 2.4vw, 1rem)", lineHeight: 1.6, color: "rgba(255,255,255,0.9)" }}
+          >
+            {line}
+          </p>
+        ))}
+
         {d.kind === "pending" && (
           <p className="scene-type" style={{ margin: 0, fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#ffb37a" }}>
             {d.note}

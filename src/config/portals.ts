@@ -21,6 +21,9 @@ export type PortalDestination =
   | { kind: "route"; href: string; label: string }
   /** Entering offers a set of contact links, in the scene. */
   | { kind: "links"; links: { label: string; href: string }[] }
+  /** Entering tells you something, in the scene, with nowhere else to go.
+   *  The paragraphs are the destination. */
+  | { kind: "prose"; paragraphs: string[] }
   /** Entering offers nothing yet, and says so rather than pretending. */
   | { kind: "pending"; note: string }
 
@@ -50,9 +53,10 @@ export interface PortalDefinition {
 //   1. CONTACT_LINKS below is a placeholder. Your university address is
 //      deliberately NOT used -- putting a .edu on a public site should be your
 //      decision, not an assumption made on your behalf.
-//   2. The middle portal was labelled "Donate", which you said is not right.
-//      It is built as "About" until you say what it should be. Renaming it is
-//      one string here plus the matching entry in HOTSPOT_LABELS (app/page.tsx).
+//   2. ABOUT_PARAGRAPHS below is the About portal's copy. It currently holds
+//      the one true line the portal already had; you said you would write the
+//      real thing. Replacing it is this one array -- nothing else moves, and
+//      the panel sizes itself to however many paragraphs you give it.
 // ---------------------------------------------------------------------------
 
 /** REPLACE THESE. Every href below is a placeholder and none of them resolve. */
@@ -67,6 +71,16 @@ export const CONTACT_LINKS: { label: string; href: string }[] = [
 export const CONTACT_LINKS_ARE_PLACEHOLDERS = CONTACT_LINKS.some(
   (l) => l.href.includes("example.com") || l.href.includes("your-handle"),
 )
+
+/** REPLACE THIS with the real About copy.
+ *
+ *  Deliberately NOT a placeholder in the way the contact links are: every line
+ *  here is already true, so the portal delivers something honest today rather
+ *  than apologising for itself. It used to say "This portal is still being
+ *  written" on screen, which is the one thing a finished portfolio cannot do. */
+export const ABOUT_PARAGRAPHS: string[] = [
+  "Data scientist, digital nomad, certified scuba diver.",
+]
 
 export const PORTALS: PortalDefinition[] = [
   {
@@ -86,16 +100,12 @@ export const PORTALS: PortalDefinition[] = [
   {
     id: "02",
     hotspotId: "moon-island",
-    // PLACEHOLDER NAME -- see the block above.
     title: "About",
     credit: "earth.glb · see CREDITS.md",
     bg: "#f0f0f0",
     interior: "globe",
-    blurb: "Data scientist, digital nomad, certified scuba diver.",
-    destination: {
-      kind: "pending",
-      note: "This portal is still being written.",
-    },
+    blurb: "A bit about me.",
+    destination: { kind: "prose", paragraphs: ABOUT_PARAGRAPHS },
   },
   {
     id: "03",

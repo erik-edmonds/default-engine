@@ -49,6 +49,7 @@ import {
   routeBetween,
   type JourneyStopId,
 } from "@/config/journey";
+import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES } from "@/config/skyJourney";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -68,12 +69,6 @@ const BLOOM_INTENSITY = 0.85;
  *  to read four short words, short enough not to become permanent chrome. */
 const LABEL_INTRO_MS = 3500;
 
-const SKY_TEXT_CUES: { threshold: number; text: string; align: "left" | "right" | "center" }[] = [
-  { threshold: 75, text: "Digital Nomad", align: "left" },
-  { threshold: 225, text: "Pokémon Trainer at Heart", align: "right" },
-  { threshold: 375, text: "Certified Scuba Diver", align: "left" },
-  { threshold: 525, text: "Let's Connect — Contact Me", align: "center" },
-];
 
 
 const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-9.11, 12.97, -13.08];
@@ -473,7 +468,6 @@ export default function Page() {
   }, [revealStage]);
 
   useEffect(() => {
-    const SKY_JOURNEY_DISTANCE = 600;
     const SCROLL_SENSITIVITY = 0.4 / 6;
 
     const applyScrollDelta = (deltaY: number) => {
@@ -806,6 +800,9 @@ export default function Page() {
     try {
       isInSkyJourney.current = false;
       setInSkyJourneyAtom(false);
+      // Before the flight below, so the sky driver stops writing the camera
+      // and flyTo owns the descent outright.
+      cameraControllerRef.current?.endSkyJourney();
       skyTextRef.current = "";
       setSkyText("");
       beginHotspotTransition("home");

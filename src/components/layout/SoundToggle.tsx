@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useAtom, useAtomValue } from "jotai"
 import { Howl } from "howler"
+import { wireAudioFailures } from "@/helpers/sfx"
 import { sfxEnabled, soundOffNudge } from "@/helpers/StateProvider"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 
@@ -46,7 +47,10 @@ const BARS = [
 export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay }) {
   const [enabled, setEnabled] = useAtom(sfxEnabled)
 
-  const [waves] = useState(() => new Howl({
+  // Looping ambient beds, so retry:false -- the effect below starts them when
+  // `enabled` says so, and slamming a 29MB stream back on at the moment the
+  // page unlocks is not what the listener asked for.
+  const [waves] = useState(() => wireAudioFailures(new Howl({
     src: ["/sound/waves.mp3"],
     volume: AMBIENT_VOLUME,
     loop: true,
@@ -57,19 +61,19 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
     // html5: true switches to native <audio> streaming instead, which
     // starts as soon as the first chunk buffers.
     html5: true,
-  }))
+  }), "waves", { retry: false }))
 
   // Night's ambient bed. Starts silent: whichever track isn't current sits at
   // volume 0 rather than paused, so a crossfade can raise it from nothing
   // without a play() click at the top of the fade.
-  const [tides] = useState(() => new Howl({
+  const [tides] = useState(() => wireAudioFailures(new Howl({
     src: ["/sound/tides.mp3"],
     volume: 0,
     loop: true,
     preload: false,
     // 12MB, same streaming reasoning as waves.mp3 above.
     html5: true,
-  }))
+  }), "tides", { retry: false }))
 
   // currentPhase (useTimeOfDayCycle) only flips once a transition has fully
   // landed, so this goes true at the exact moment night arrives on screen --

@@ -30,8 +30,19 @@ export function audioBlocked() {
   return blocked
 }
 
-function attach(player: Howl) {
-  if ((player as Howl & { __wired?: boolean }).__wired) return
+/** Register failure handling on any Howl in the app.
+ *
+ *  Exported because this used to be private here, which meant the one-shot UI
+ *  sounds were the ONLY audio in the project that handled a refusal -- the
+ *  ambient waves and tides, the guitar's music track and the rain all had
+ *  nothing. On iOS a refused play() is completely silent in both senses: no
+ *  error, no sound, `sfxEnabled` still true and the equalizer still animating.
+ *
+ *  `retry` is false for anything that loops or is long: replaying a 29MB
+ *  ambient bed the instant the page unlocks is not what the listener asked
+ *  for. Those callers watch audioBlocked() and start it themselves. */
+export function wireAudioFailures(player: Howl, label: string, { retry = true } = {}) {
+  if ((player as Howl & { __wired?: boolean }).__wired) return player
   ;(player as Howl & { __wired?: boolean }).__wired = true
   player.on("playerror", () => {
     blocked = true
@@ -39,12 +50,17 @@ function attach(player: Howl) {
     // there is exactly what onplayerror exists for.
     player.once("unlock", () => {
       blocked = false
-      player.play()
+      if (retry) player.play()
     })
   })
   player.on("loaderror", (_id, error) => {
-    console.error("[sfx] failed to load", error)
+    console.error(`[${label}] failed to load`, error)
   })
+  return player
+}
+
+function attach(player: Howl) {
+  wireAudioFailures(player, "sfx")
 }
 
 export function playSfx(name: SfxName) {

@@ -158,8 +158,12 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                     }}
                     onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1} position={[-3,-1.8,5]} rotation={[0, Math.PI/0.8, 0]} />
             </group> */}
-            {/* Need to hide this until the sky scene is ready.
-             <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/> */}
+            {/* The sky journey's entry point, unparked now that the camera
+                actually flies it: CameraController.beginSkyJourney and
+                setSkyOffset were empty functions, so releasing the Dragonite
+                used to leave the camera sitting still while the avatar and the
+                captions ran the whole sequence without it. */}
+            <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth
                 raycast (plus every r3f pointer event on the island) pays for

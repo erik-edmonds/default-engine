@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Howl } from 'howler'
+import { wireAudioFailures } from "@/helpers/sfx"
 
 import { raining, rainRequest, sfxEnabled } from '@/helpers/StateProvider'
 import { Rain } from '@/components/canvas/Rain'
@@ -39,7 +40,7 @@ export function RainController() {
   const [active, setActive] = useState(false)
   const [fading, setFading] = useState(false)
 
-  const [rainSound] = useState(() => new Howl({
+  const [rainSound] = useState(() => wireAudioFailures(new Howl({
     src: ['/sound/rain.mp3'],
     volume: RAIN_SOUND_VOLUME,
     preload: false,
@@ -52,7 +53,7 @@ export function RainController() {
     // orphaned instances and a new html5 Howl can get stuck in "loading"
     // forever waiting for a free slot (observed live). Default Web Audio API
     // mode sidesteps the shared pool entirely.
-  }))
+  }), "rain"))
 
   // The hold. Re-arms from scratch on every request, so a click landing
   // mid-fade cancels the fade and buys another full RAIN_HOLD_MS.

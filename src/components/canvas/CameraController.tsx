@@ -5,12 +5,20 @@ import * as THREE from "three"
 import { useFrame, useThree } from "@react-three/fiber"
 import { useSetAtom } from "jotai"
 import gsap from "gsap"
+import { easing } from "maath"
 
 import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 import { cameraFlying } from "@/helpers/StateProvider"
 import { cameraBase, initCameraBase, setCameraBase, setCameraBaseFromEuler } from "@/helpers/cameraBase"
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
 import { journeyPose, trapezoid, type Route } from "@/config/journey"
+import {
+  AVATAR_BASE_POSITION,
+  SKY_RISE,
+  SKY_SCROLL_SMOOTH_TIME,
+  avatarSkyPose,
+  cameraSkyPose,
+} from "@/config/skyJourney"
 
 gsap.ticker.lagSmoothing(0)
 const AVATAR_POSITION = new THREE.Vector3(-1.3, -0.65, 1)
@@ -68,6 +76,9 @@ export interface CameraControllerHandle {
   flyUp: () => Promise<void>
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
+  /** Hands the camera back. Symmetric with beginSkyJourney, and with
+   *  AvatarController.returnHome, which drops the avatar's own latch. */
+  endSkyJourney: () => void
   flyTo: (position: THREE.Vector3, rotation: THREE.Euler, duration?: number) => Promise<void>
   intro: (duration?: number) => Promise<void>
   /** Drive the camera along the scroll journey. `u` is the target distance
@@ -140,7 +151,54 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
   })
   const journeyScratch = useMemo(() => ({ position: new THREE.Vector3(), look: new THREE.Vector3() }), [])
 
+  // The sky journey's state. Separate from the island journey above because it
+  // is a different kind of motion: that one is a spring along an authored
+  // curve, this one damps toward a scrolled offset -- and it uses the SAME
+  // damping constant as AvatarController, deliberately. Two different smoothing
+  // constants would let the camera and the avatar slide apart while the wheel
+  // is moving, and this whole sequence is the camera holding the avatar in
+  // frame.
+  const sky = useRef({ active: false, target: 0, display: 0 })
+  const skyScratch = useMemo(() => ({ position: new THREE.Vector3(), look: new THREE.Vector3() }), [])
+
   useFrame((_state, delta) => {
+    // --- the sky journey ---------------------------------------------------
+    //
+    // Runs before the island journey and returns: the two can never both own
+    // the camera, and `flying` outranks both -- a hotspot flight or the fly-up
+    // itself is a gsap tween writing camera.position, and this must not fight
+    // it.
+    const s = sky.current
+    if (s.active) {
+      if (activeFlights.current === 0) {
+        if (prefersReducedMotion()) {
+          s.display = s.target
+        } else {
+          easing.damp(s, "display", s.target, SKY_SCROLL_SMOOTH_TIME, Math.min(delta, MAX_DELTA))
+        }
+        // Where the avatar is, computed from the SAME table it reads rather
+        // than asked for: both controllers damp the same offset with the same
+        // constant, so they agree by construction, and the camera stays
+        // decoupled from the avatar's ref. The idle bob is deliberately not
+        // included -- a camera that followed it would read as seasick.
+        const pose = avatarSkyPose(s.display)
+        cameraSkyPose(
+          s.display,
+          { x: pose.x, y: AVATAR_BASE_POSITION[1] + SKY_RISE + pose.yOffset, z: pose.z },
+          skyScratch.position,
+          skyScratch.look,
+        )
+        camera.position.copy(skyScratch.position)
+        camera.lookAt(skyScratch.look)
+        // Published like every other rotation writer, or CameraLook composes
+        // its cursor offset onto a stale aim.
+        setCameraBase(camera.quaternion)
+        syncOrbitTarget(camera.rotation)
+      }
+      return
+    }
+
+    // --- the island journey ------------------------------------------------
     const j = journey.current
     if (!j.active) return
 
@@ -208,6 +266,12 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     endJourney: () => {
       journey.current.active = false
       journey.current.v = 0
+      // The sky latch too. handleGoHome calls this on the way back from the
+      // sky, and a camera still being driven by the sky path would fight the
+      // flight home for the whole of its duration.
+      sky.current.active = false
+      sky.current.target = 0
+      sky.current.display = 0
     },
     zoomIn: () =>
       new Promise<void>((resolve) => {
@@ -263,8 +327,35 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           onComplete: () => resolve(),
         })
       }),
-    beginSkyJourney: () => {},
-    setSkyOffset: () => {},
+    // Takes up the camera at the top of the fly-up. No pose is captured here,
+    // unlike the avatar's: the camera path's first stop is DERIVED from where
+    // flyUp leaves both of them (see CAMERA_STOPS in config/skyJourney.ts), so
+    // offset 0 already is the current pose and there is nothing to blend out.
+    beginSkyJourney: () => {
+      sky.current.active = true
+      sky.current.target = 0
+      sky.current.display = 0
+    },
+    setSkyOffset: (offset) => {
+      sky.current.target = offset
+    },
+    // Must be called before the flight home, not after.
+    //
+    // The driver stands down while a flight is active, but `active` alone is
+    // not enough: once flyTo finishes and activeFlights drops back to zero the
+    // driver would resume and snap the camera straight back to the sky path,
+    // undoing the trip home a frame after it landed. Dropping the latch first
+    // is what makes flyTo the sole owner for the whole descent.
+    //
+    // This exists separately from endJourney because handleGoHome only calls
+    // that one on a coarse pointer -- the island journey's spring is never
+    // taken up on desktop -- so relying on it left the camera stuck at
+    // altitude on every desktop return.
+    endSkyJourney: () => {
+      sky.current.active = false
+      sky.current.target = 0
+      sky.current.display = 0
+    },
     // The arrival move, fired at the same moment as the loading screen's
     // burst() rather than after it -- the snap to the wide start below happens
     // while the plate is still opaque, so what you see as it dissolves is a

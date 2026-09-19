@@ -246,6 +246,11 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
 
       <group
         ref={ballGroupRef}
+        // Named so a check can find it positively rather than guessing at
+        // "Object_5" -- the same reasoning as island-terrain in Scene.tsx and
+        // portal-frame-bar in HotspotPortal.tsx. The Sketchfab export names
+        // every node Object_N, so there is nothing else to match on.
+        name="pokeball"
         onClick={() => {
           // Registry-routed so the direct and assisted clicks share a debounce.
           if (magnet.current) activateTarget(magnet.current)
