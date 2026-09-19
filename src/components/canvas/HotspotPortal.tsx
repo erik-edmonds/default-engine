@@ -58,8 +58,19 @@ export function portalTransformFor(
  *  island's faceted art style, and a standard material so it picks up the
  *  time-of-day rig like any other object on the island. */
 function CarvedFrame({ width, height }: { width: number; height: number }) {
-  const outerW = width + FRAME_THICKNESS
-  const outerH = height + FRAME_THICKNESS
+  // A real picture frame: the top and bottom bars run the FULL outer width and
+  // the side bars fill exactly the gap between them.
+  //
+  // This used to be four bars each stopping at the centre line of its
+  // neighbour, which left a FRAME_THICKNESS/2 square of nothing at every
+  // corner -- the frame looked short on the edges and unfinished where the
+  // pieces should meet. (There was a commented-out set of "corner blocks" here
+  // that existed to paper over exactly that; sizing the bars correctly means
+  // there is nothing left to patch.)
+  //
+  // The aperture stays exactly `width` x `height`, so none of this creeps over
+  // the portal it surrounds.
+  const outerW = width + FRAME_THICKNESS * 2
   // Black in both states, deliberately. An earlier version had the frame catch
   // a warm light when its portal went live; the frame is meant to read as a
   // carved surround, and lighting it made the surround the subject. What wakes
@@ -75,31 +86,13 @@ function CarvedFrame({ width, height }: { width: number; height: number }) {
 
   return (
     <group>
-      {bar([outerW, FRAME_THICKNESS, FRAME_DEPTH], [0, outerH / 2, 0], "top")}
-      {bar([outerW, FRAME_THICKNESS, FRAME_DEPTH], [0, -outerH / 2, 0], "bottom")}
-      {bar([FRAME_THICKNESS, outerH, FRAME_DEPTH], [-outerW / 2, 0, 0], "left")}
-      {bar([FRAME_THICKNESS, outerH, FRAME_DEPTH], [outerW / 2, 0, 0], "right")}
-      {/* Corner blocks -- the join detail that stops it reading as four
-          extruded rectangles meeting at nothing. */}
-      {/* {[
-        [-1, -1],
-        [-1, 1],
-        [1, -1],
-        [1, 1],
-      ].map(([sx, sy]) =>
-        bar(
-          [FRAME_THICKNESS * 1.5, FRAME_THICKNESS * 1.5, FRAME_DEPTH * 1.4],
-          [(sx * outerW) / 2, (sy * outerH) / 2, 0],
-          `corner-${sx}-${sy}`,
-        ),
-      )} 
-      {[-1, 1].map((sx) =>
-        bar(
-          [FRAME_THICKNESS * 2.2, FRAME_THICKNESS * 0.7, FRAME_DEPTH * 1.8],
-          [(sx * outerW) / 2, -outerH / 2 - FRAME_THICKNESS * 0.7, 0],
-          `plinth-${sx}`,
-        ),
-      )} */}
+      {/* Full width, so they cover the corners the side bars cannot reach. */}
+      {bar([outerW, FRAME_THICKNESS, FRAME_DEPTH], [0, (height + FRAME_THICKNESS) / 2, 0], "top")}
+      {bar([outerW, FRAME_THICKNESS, FRAME_DEPTH], [0, -(height + FRAME_THICKNESS) / 2, 0], "bottom")}
+      {/* Exactly the aperture height, so each end meets a horizontal bar flush
+          -- no overlap to z-fight, no gap to show through. */}
+      {bar([FRAME_THICKNESS, height, FRAME_DEPTH], [-(width + FRAME_THICKNESS) / 2, 0, 0], "left")}
+      {bar([FRAME_THICKNESS, height, FRAME_DEPTH], [(width + FRAME_THICKNESS) / 2, 0, 0], "right")}
     </group>
   )
 }
