@@ -17,7 +17,7 @@ import { CONTACT_LINKS_ARE_PLACEHOLDERS, type PortalDefinition } from "@/config/
  * -- focusable, hoverable, right-clickable, readable by a screen reader, and
  * openable in a new tab. Troika text in the canvas is none of those.
  */
-export function PortalDestination({ portal, onExit }: { portal: PortalDefinition; onExit: () => void }) {
+export function PortalDestination({ portal }: { portal: PortalDefinition }) {
   const d = portal.destination
   return (
     <div
@@ -85,9 +85,10 @@ export function PortalDestination({ portal, onExit }: { portal: PortalDefinition
           </p>
         )}
 
-        <button type="button" onClick={onExit} style={{ ...ctaStyle, border: "1px solid rgba(255,255,255,0.28)", background: "transparent", color: "rgba(255,255,255,0.72)" }}>
-          Back to the island
-        </button>
+        {/* No exit button here. The home button in the corner now steps out of
+            a portal to the viewpoint it is seen from, so a second control for
+            the same action -- in the most crowded part of the frame, directly
+            over the name stamp -- was one too many. */}
       </div>
     </div>
   )

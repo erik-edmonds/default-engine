@@ -43,11 +43,18 @@ export function PortalRouteSync({
   cameraControllerRef: RefObject<CameraControllerHandle | null>
   /** How far short of the portal plane the camera stops. */
   enterInset: number
-  onEnter?: () => void
+  /** Called with the portal being entered, so the page can record WHERE that
+   *  is. It used to take no argument and only played a sound, which was enough
+   *  while every entry came from double-clicking a portal you had already flown
+   *  to -- the hotspot was recorded on the way in. Landing straight on
+   *  /item/:id skips that flight entirely, so nothing knew which destination
+   *  the camera was standing at, and the next trip home computed its route from
+   *  "home" to "home" and did nothing at all. */
+  onEnter?: (portal: PortalRouteSyncPortal) => void
 }) {
   const [, setLocation] = useLocation()
   const [, route] = useRoute("/item/:id")
-  const exitRequest = useAtomValue(portalExitRequest)
+  const exit = useAtomValue(portalExitRequest)
   const setOpenPortalId = useSetAtom(openPortalId)
 
   const enteredId = route?.id ?? null
@@ -73,7 +80,7 @@ export function PortalRouteSync({
     if (enteredId) {
       const portal = portals.find((p) => p.id === enteredId)
       if (!portal) return
-      onEnter?.()
+      onEnter?.(portal)
       const target = portal.position.clone().addScaledVector(portal.forward, -enterInset)
       cameraControllerRef.current?.flyTo(target, portal.rotation, 1.8)
       return
@@ -93,12 +100,18 @@ export function PortalRouteSync({
   }, [enteredId])
 
   // Someone asked for the portal to close (see portalExitRequest).
+  //
+  // `flyBack` is the caller's intent, and it decides whether the exit flight
+  // above runs. A jump or a ring click is already flying somewhere else and
+  // suppresses it; the home button pressed inside a portal wants exactly that
+  // flight -- back out to the viewpoint the portal is seen from -- and is the
+  // reason this atom carries an intent rather than being a bare counter.
   useEffect(() => {
-    if (exitRequest === 0) return
+    if (exit.seq === 0) return
     if (!lastEnteredId.current) return
-    suppressExitFlight.current = true
+    suppressExitFlight.current = !exit.flyBack
     setLocation("/")
-  }, [exitRequest, setLocation])
+  }, [exit, setLocation])
 
   return null
 }

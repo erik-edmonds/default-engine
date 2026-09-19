@@ -12,7 +12,17 @@ export function Favicon() {
   // the loading screen. Only the island route has a title screen, though --
   // /portfolio and the project pages have no way home without this button, and
   // nothing there ever clears the atom.
-  const onIslandRoute = usePathname() === "/"
+  //
+  // "/item/:id" counts as the island route, and missing that is what broke this
+  // button inside a portal. Entering a portal pushes that path through wouter,
+  // Next mirrors it into usePathname(), and this flag went false -- so the
+  // handler below stopped intercepting and the button reverted to a plain link
+  // to "/". Pressing home inside a portal therefore performed a NAVIGATION back
+  // to the island route instead of asking the scene to step out of the portal,
+  // which is why it dumped you at the home position with the portal behind you.
+  // Both paths render the same scene, so both have to be treated as being in it.
+  const pathname = usePathname()
+  const onIslandRoute = pathname === "/" || pathname.startsWith("/item/")
   const hidden = onIslandRoute && titleActive
   const requestGoHome = useSetAtom(goHomeRequest)
 

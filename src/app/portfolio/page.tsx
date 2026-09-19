@@ -53,19 +53,6 @@ export default function Page() {
         <Preload all />
       </Canvas>
 			</div>
-
-      <style jsx>{`
-        .portfolio-page {
-          position: relative;
-          min-height: 100vh;
-          overflow: hidden;
-        }
-
-        .canvas-wrap {
-          position: absolute;
-          inset: 0;
-        }
-      `}</style>
 		</main>
 	);
 }

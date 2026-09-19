@@ -55,13 +55,30 @@ export const thunder = atom(0) // incrementing counter -- bumped on cloud click 
 // RainController.tsx, which is the single owner of the whole rain lifecycle.
 export const rainRequest = atom(0)
 
-// Incrementing counter -- bumped to ask that any open hotspot portal be
-// closed. Exists because closing one means writing a wouter route, and wouter
-// reads `location` at render: calling it from page.tsx's top level breaks the
-// static prerender of "/" with "ReferenceError: location is not defined".
-// PortalRouteSync lives inside <Canvas> (whose children never render on the
-// server) and owns every wouter call; this atom is how the page asks it to act.
-export const portalExitRequest = atom(0)
+// A request that any open hotspot portal be closed. Exists because closing one
+// means writing a wouter route, and wouter reads `location` at render: calling
+// it from page.tsx's top level breaks the static prerender of "/" with
+// "ReferenceError: location is not defined". PortalRouteSync lives inside
+// <Canvas> (whose children never render on the server) and owns every wouter
+// call; this atom is how the page asks it to act.
+//
+// `seq` is the incrementing counter that makes each request distinct. `flyBack`
+// is the caller's INTENT, and the two callers want opposite things:
+//
+//   - A jump or a ring click is already flying somewhere else. It closes the
+//     portal on its way past and must NOT also fly back out to the portal's
+//     own viewpoint, or two flights fight over the camera. flyBack: false.
+//   - The home button pressed while inside a portal is not going anywhere else
+//     yet -- stepping back out to just outside the portal IS the whole action.
+//     flyBack: true.
+//
+// It was a bare counter, which meant only the first behaviour existed and the
+// home button had no way to ask for the second.
+export interface PortalExitRequest {
+  seq: number
+  flyBack: boolean
+}
+export const portalExitRequest = atom<PortalExitRequest>({ seq: 0, flyBack: false })
 
 // The id of the portal currently open ("/item/:id"), or null. The route itself
 // is the source of truth and stays that way -- this is a read-only mirror of

@@ -315,7 +315,19 @@ export default function Page() {
   // render and this page is statically prerendered; this atom is how we ask
   // it to close an open portal.
   const requestPortalExit = useSetAtom(portalExitRequest);
-  const closePortal = useCallback(() => requestPortalExit((n) => n + 1), [requestPortalExit]);
+  /** Close an open portal on the way somewhere else. The caller is already
+   *  flying, so PortalRouteSync must not also fly back out to the portal's
+   *  viewpoint -- see portalExitRequest. */
+  const closePortal = useCallback(
+    () => requestPortalExit((prev) => ({ seq: prev.seq + 1, flyBack: false })),
+    [requestPortalExit],
+  );
+  /** Step back out of a portal to where it is seen from, and stop there. The
+   *  home button's meaning while a portal is open. */
+  const exitPortal = useCallback(
+    () => requestPortalExit((prev) => ({ seq: prev.seq + 1, flyBack: true })),
+    [requestPortalExit],
+  );
   // Drives InteractionHint's dismissal: flips true on the first genuine
   // interaction (a hotspot, the Poke Ball, or the Gear), or after an ~8s
   // timeout below if the user hasn't touched anything yet.
@@ -625,34 +637,41 @@ export default function Page() {
 
     isJumping.current = true;
     setJumping(true);
-    setHasInteracted(true);
-    beginHotspotTransition(to);
-    playSfx("whoosh");
-    closePortal();
-    await cameraControllerRef.current?.flyRoute(route);
+    // try/finally, not a straight line: isJumping gates scrollNavActive(), so
+    // anything that throws between here and the end would leave the flag set
+    // and silently disable scroll navigation for the rest of the session --
+    // with nothing on screen to say why. The same reasoning applies to
+    // isSequenceRunning in handleGoHome and handleUpClick.
+    try {
+      setHasInteracted(true);
+      beginHotspotTransition(to);
+      playSfx("whoosh");
+      closePortal();
+      await cameraControllerRef.current?.flyRoute(route);
 
-    // Re-seat the scroll onto the destination, so the itinerary and the camera
-    // agree again and the next scroll carries on from here instead of yanking
-    // back to wherever the document was left. The one programmatic scroll in
-    // the design, and it fires at the end of a discrete tap -- never during a
-    // gesture, which is what made the earlier version of this feel like the
-    // page was fighting you.
-    // Touch only. The rail is the only caller that could be on a coarse
-    // pointer anyway, but the home button reaches this too, and on desktop the
-    // journey spring is never taken up -- handing it the camera there would
-    // pin the view to the path until the next flight killed it.
-    if (isCoarsePointer) {
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      suppressScrollUntil.current = performance.now() + 250;
-      window.scrollTo(0, scrollForStop(to) * max);
-      const u = JOURNEY_STOPS.find((s) => s.id === to)?.u ?? 0;
-      // Hand the camera back to the journey spring, seeded where the flight
-      // left it, or the next scroll would spring it across from u = 0.
-      cameraControllerRef.current?.setJourney(u, u);
+      // Re-seat the scroll onto the destination, so the itinerary and the
+      // camera agree again and the next scroll carries on from here instead of
+      // yanking back to wherever the document was left. The one programmatic
+      // scroll in the design, and it fires at the end of a discrete tap --
+      // never during a gesture, which is what made the earlier version of this
+      // feel like the page was fighting you.
+      // Touch only. The rail is the only caller that could be on a coarse
+      // pointer anyway, and on desktop the journey spring is never taken up --
+      // handing it the camera there would pin the view to the path until the
+      // next flight killed it.
+      if (isCoarsePointer) {
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        suppressScrollUntil.current = performance.now() + 250;
+        window.scrollTo(0, scrollForStop(to) * max);
+        const u = JOURNEY_STOPS.find((s) => s.id === to)?.u ?? 0;
+        // Hand the camera back to the journey spring, seeded where the flight
+        // left it, or the next scroll would spring it across from u = 0.
+        cameraControllerRef.current?.setJourney(u, u);
+      }
+    } finally {
+      isJumping.current = false;
+      setJumping(false);
     }
-
-    isJumping.current = false;
-    setJumping(false);
   };
 
   const onScrollTick = () => {
@@ -710,15 +729,18 @@ export default function Page() {
     setHasInteracted(true);
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
-    setMusicEnabled(false);
-    await avatarControllerRef.current?.materializeDragonite();
-    await cameraControllerRef.current?.zoomIn();
-    await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
-    cameraControllerRef.current?.beginSkyJourney();
-    avatarControllerRef.current?.beginSkyJourney();
-    isInSkyJourney.current = true;
-    setInSkyJourneyAtom(true);
-    isSequenceRunning.current = false;
+    try {
+      setMusicEnabled(false);
+      await avatarControllerRef.current?.materializeDragonite();
+      await cameraControllerRef.current?.zoomIn();
+      await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
+      cameraControllerRef.current?.beginSkyJourney();
+      avatarControllerRef.current?.beginSkyJourney();
+      isInSkyJourney.current = true;
+      setInSkyJourneyAtom(true);
+    } finally {
+      isSequenceRunning.current = false;
+    }
   };
 
   const handleDragoniteRelease = () => {
@@ -732,11 +754,14 @@ export default function Page() {
     setHasInteracted(true);
     if (isSequenceRunning.current) return;
     isSequenceRunning.current = true;
-    setMusicEnabled(false);
-    await avatarControllerRef.current?.spinAndTransform("scuba");
-    await avatarControllerRef.current?.moveToIslandEdge();
-    await avatarControllerRef.current?.diveUnderwater();
-    isSequenceRunning.current = false;
+    try {
+      setMusicEnabled(false);
+      await avatarControllerRef.current?.spinAndTransform("scuba");
+      await avatarControllerRef.current?.moveToIslandEdge();
+      await avatarControllerRef.current?.diveUnderwater();
+    } finally {
+      isSequenceRunning.current = false;
+    }
     startTransition(() => router.push("/portfolio"));
   };
 
@@ -748,6 +773,25 @@ export default function Page() {
 
   const handleGoHome = async () => {
     if (isSequenceRunning.current) return;
+    // Inside a portal, home means "get me out of this portal" -- back to the
+    // viewpoint it is seen from, a step you can see yourself take. It does NOT
+    // mean fly to the establishing shot: that throws away where you were, and
+    // it is what this button started doing when travelHome became an
+    // unconditional handleJump("home"). Press it again, now outside, and the
+    // branch below takes you home properly.
+    //
+    // It also matters for the scroll. handleJump ends by re-seating the
+    // document scroll onto its destination, and Home's seat is exactly 0 --
+    // Home has no hold band to sit in the middle of -- so flying home from a
+    // portal left the page pinned to the top of a 15-screen document with the
+    // camera already at the end of the trip. Small scroll gestures then moved
+    // nothing, which is why two-finger scrolling looked broken afterwards
+    // while a big finger drag still worked. Exiting the portal touches the
+    // scroll not at all.
+    if (openPortal) {
+      exitPortal();
+      return;
+    }
     // Two different trips home. Out of the sky journey it is a whole sequence
     // -- the avatar has to come down and change back. On the island it is just
     // a flight, and before this it was nothing at all.
@@ -756,30 +800,36 @@ export default function Page() {
       return;
     }
     isSequenceRunning.current = true;
-    isInSkyJourney.current = false;
-    setInSkyJourneyAtom(false);
-    skyTextRef.current = "";
-    setSkyText("");
-    beginHotspotTransition("home");
-    // A second way out of a hotspot that doesn't go through flyToHotspot, so
-    // it has to close an open portal itself.
-    closePortal();
-    await Promise.all([
-      cameraControllerRef.current?.flyTo(HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION),
-      avatarControllerRef.current?.returnHome(),
-    ]);
-    await avatarControllerRef.current?.spinAndTransform("base");
-    skyOffset.current = 0;
-    setMotion(false);
-    // Put the scroll navigation back at the top with the camera, or the next
-    // swipe would be read against a scroll position left over from before the
-    // sky journey and jump somewhere unrelated along the path.
-    if (isCoarsePointer) {
-      suppressScrollUntil.current = performance.now() + 250;
-      window.scrollTo(0, 0);
-      cameraControllerRef.current?.endJourney();
+    // try/finally for the same reason as handleJump: isSequenceRunning also
+    // gates scrollNavActive(), so a throw in the middle of this sequence would
+    // leave scroll navigation dead with no way back short of a reload.
+    try {
+      isInSkyJourney.current = false;
+      setInSkyJourneyAtom(false);
+      skyTextRef.current = "";
+      setSkyText("");
+      beginHotspotTransition("home");
+      // A second way out of a hotspot that doesn't go through flyToHotspot, so
+      // it has to close an open portal itself.
+      closePortal();
+      await Promise.all([
+        cameraControllerRef.current?.flyTo(HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION),
+        avatarControllerRef.current?.returnHome(),
+      ]);
+      await avatarControllerRef.current?.spinAndTransform("base");
+      skyOffset.current = 0;
+      setMotion(false);
+      // Put the scroll navigation back at the top with the camera, or the next
+      // swipe would be read against a scroll position left over from before the
+      // sky journey and jump somewhere unrelated along the path.
+      if (isCoarsePointer) {
+        suppressScrollUntil.current = performance.now() + 250;
+        window.scrollTo(0, 0);
+        cameraControllerRef.current?.endJourney();
+      }
+    } finally {
+      isSequenceRunning.current = false;
     }
-    isSequenceRunning.current = false;
   };
 
   // The latest-ref pattern, as with scrollTickRef above: handleGoHome closes
@@ -827,8 +877,17 @@ export default function Page() {
 
             The left offset in that state clears the 56px home button plus a
             gap, so the two read as a single lockup rather than a collision. */}
+        {/* Hidden while a portal is open. The name sits bottom-left and the
+            destination panel sits bottom-centre, and on a phone those are the
+            same place: "ERIK EDMONDS / Data Scientist" in orange ran directly
+            under the panel's buttons. Faded rather than unmounted so it comes
+            back the way it left, and hidden rather than moved because inside a
+            portal the island's own title is not what you are looking at.
+            aria-hidden and pointer-events-none together keep it out of the
+            way of a screen reader and the cursor while it is invisible. */}
         <div
-          className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${revealStage < 1 ? "opacity-0" : "opacity-100"}`}
+          aria-hidden={revealStage < 1 || !!openPortal}
+          className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${revealStage < 1 || openPortal ? "opacity-0" : "opacity-100"}`}
           style={
             isShortViewport
               ? {
@@ -868,11 +927,15 @@ export default function Page() {
 
             Touch only. Desktop already has four labelled ring markers in the
             world answering the same question, and a rail there would be a
-            second answer permanently over the scene. */}
+            second answer permanently over the scene.
+
+            Hidden while a portal is open, alongside the name stamp: the rail
+            navigates the journey, and inside a portal the journey is not what
+            the screen is for. The way out is the home button, which stays. */}
         {isCoarsePointer && (
           <JourneyRail
             labels={HOTSPOT_LABELS}
-            visible={sceneReady && started && !isInSkyJourneyValue}
+            visible={sceneReady && started && !isInSkyJourneyValue && !openPortal}
             horizontal={isShortViewport}
             // Parked at a portal, and not already on the way somewhere else.
             parkedAt={jumping || !PORTAL_STOP_IDS.has(hotspotNav.current) ? null : asJourneyStop(hotspotNav.current)}
@@ -1009,7 +1072,15 @@ export default function Page() {
               viewpoints={HOTSPOT_VIEWPOINTS}
               cameraControllerRef={cameraControllerRef}
               enterInset={PORTAL_ENTER_INSET}
-              onEnter={() => playSfx("whoosh")}
+              // Record WHERE the portal is, not just that one opened. Arriving
+              // by double-click has already set this on the way in, but a
+              // shared /item/:id link opens a portal with no flight at all --
+              // and without this the rail, the ring markers and every route
+              // computed from here would still believe you were stood at Home.
+              onEnter={(portal) => {
+                playSfx("whoosh")
+                beginHotspotTransition(portal.hotspotId)
+              }}
             />
             {/* Same split as NavigationProjector above: the projection needs
                 the camera so it lives in here, while the thing it positions is
@@ -1040,7 +1111,9 @@ export default function Page() {
         {/* What the portal actually delivers. Entering used to blend a window
             fullscreen onto a model and stop there -- no content, nothing to do
             and no way onward. */}
-        {openPortal && <PortalDestination portal={openPortal} onExit={closePortal} />}
+        {/* No exit control of its own: the home button in the corner is the
+            single way out of a portal. */}
+        {openPortal && <PortalDestination portal={openPortal} />}
         {/* A lost GPU context used to be a black canvas and nothing else. This
             says so, and clears itself if the browser hands the context back --
             which it only can because the listener calls preventDefault(). */}
@@ -1073,8 +1146,11 @@ export default function Page() {
             on desktop: with the joystick gone there is no other affordance on
             screen, so this caption is the only thing that says the scene is
             navigated by scrolling. Dismissed by the first scroll, which the
-            scroll listener reports as an interaction. */}
-        <InteractionHint visible={started} dismissed={hasInteracted} gesture={isCoarsePointer ? "scroll" : "click"} />
+            scroll listener reports as an interaction.
+
+            Not while a portal is open: it describes how to move around the
+            island, which is not where you are. */}
+        <InteractionHint visible={started && !openPortal} dismissed={hasInteracted} gesture={isCoarsePointer ? "scroll" : "click"} />
         {/* Not gated on pointer type, unlike InteractionHint: everything these
             point at is reachable by touch too, and the copy adapts to the
             gesture that actually works there (see HINTS). */}

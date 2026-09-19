@@ -22,7 +22,7 @@ import { GreenTree } from "@/components/models/GreenTree"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 import { BrownTree } from "@/components/models/BrownTree"
 import { ClusterTree } from "@/components/models/ClusterTree"
-import { makeCloud, randomVector, surface, type CloudDatum } from "@/config/store"
+import { ringClouds, CLOUD_RING_LOW, CLOUD_RING_HIGH } from "@/config/store"
 import { Pokeball } from "@/components/models/Pokeball"
 import { Waterfall } from "@/components/models/Waterfall"
 import { Gear } from "@/components/models/Gear"
@@ -35,11 +35,6 @@ import { SeagullFlock } from "@/components/canvas/SeagullFlock"
 import { Thunder } from "@/components/canvas/Thunder"
 import { RainController } from "@/components/canvas/RainController"
 
-/** Where the low cloud group sits, and how many of it draws. Named because the
- *  placement effect below has to convert between this group's local space and
- *  world space to test a candidate against the island. */
-const CLOUD_GROUP_LOW = { x: 20, y: 15, z: -20 }
-const LOW_CLOUD_COUNT = 5
 
 export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downclick, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; downclick: () => void; showSeagulls?: boolean }) {
     const [hovered, set] = useState(false)
@@ -78,77 +73,54 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
         return registerCursorSurface(islandRef.current)
     }, [])
 
-    // The low clouds, vetted against the island.
+    // Both cloud rings, vetted against the island.
     //
-    // They are placed at random inside a box that the upper floating islands
-    // already occupy -- Icosphere_27 reaches y 17.8, the trees sit at y 12-15 --
-    // and both are opaque and depth-writing, so a cloud landing in one hard
-    // intersects it. Randomness is the point (the sky should not be identical
-    // every visit), so the fix is to re-roll the bad draws rather than to
-    // author the good ones.
+    // The islands are opaque and depth-writing, so a cloud placed inside one
+    // hard-intersects it. Randomness is the point (the sky should not be
+    // identical every visit), so the fix is to re-roll the bad draws rather
+    // than to author the good ones. ringClouds re-rolls a rejected cloud WITHIN
+    // ITS OWN BEARING BUCKET, which keeps the coverage guarantee intact while
+    // dodging a tree.
     //
-    // Deferred to an effect because it needs the island's real world bounds,
-    // which only exist once the GLB has mounted. Until then the group renders
-    // empty, which happens behind the loading screen.
-    const [lowClouds, setLowClouds] = useState<CloudDatum[]>([])
-    useEffect(() => {
-        const island = islandRef.current
-        if (!island) return
-
-        // How far a cloud's own body reaches from its centre: the GLB's
-        // half-extent, grown by the 1.4x hover scale, plus the +/-0.5 bob that
-        // Sky.tsx applies every frame. A cloud that merely touches when idle
-        // would still punch through when hovered.
-        const reach = new THREE.Vector3(2.689 * 1.4, 1.164 * 1.4 + 0.5, 1.910 * 1.4)
-
-        const blockers: THREE.Box3[] = []
-        island.traverse((child) => {
-            const mesh = child as THREE.Mesh
-            if (!mesh.isMesh || !mesh.geometry) return
-            const box = new THREE.Box3().setFromObject(mesh)
-            const size = box.getSize(new THREE.Vector3())
-            // The ocean plane spans the whole world and would veto everything;
-            // it is also nowhere near the clouds.
-            if (size.x > 100 || size.z > 100) return
-            if (box.max.y < CLOUD_GROUP_LOW.y - 12) return
-            blockers.push(box.expandByVector(reach))
-        })
-
-        const world = new THREE.Vector3()
-        const clear = (local: [number, number, number]) => {
-            world.set(local[0] + CLOUD_GROUP_LOW.x, local[1] + CLOUD_GROUP_LOW.y, local[2] + CLOUD_GROUP_LOW.z)
-            return !blockers.some((b) => b.containsPoint(world))
-        }
-
-        const placed: CloudDatum[] = []
-        for (let i = 0; i < LOW_CLOUD_COUNT; i++) {
-            let local = randomVector()
-            for (let attempt = 0; attempt < 24 && !clear(local); attempt++) local = randomVector()
-            // Every draw was blocked -- lift it clear instead of dropping it.
-            // The cluster tops out at y 17.8, so this always terminates.
-            while (!clear(local) && local[1] + CLOUD_GROUP_LOW.y < 30) local = [local[0], local[1] + 2, local[2]]
-            placed.push(makeCloud(local))
-        }
-        setLowClouds(placed)
-    }, [])
+    // Placed in a useState initialiser, so the data exists on the very first
+    // render and its length never changes. That is load-bearing, not tidiness:
+    // drei's <Instances> sizes its instance buffers from the first `limit` it
+    // sees and keeps stale refs in a subscription array, so a group whose data
+    // arrives late gets a zero-length matrix buffer AND a frame loop that
+    // dereferences refs which are not attached yet. Those were the "performance
+    // is horrible" regression and the `matrixWorld of undefined` error
+    // respectively -- see the note on `limit` in Sky.tsx.
+    //
+    // The clearance test reads config/terrain.ts, a measured table, rather than
+    // the live scene graph. Reading the graph is what forced the late data in
+    // the first place: the island is behind <Suspense> and animates in, so
+    // there is no frame early enough to measure it and no cheap way to know
+    // when it has settled.
+    const [clouds] = useState(() => ({
+        low: ringClouds(CLOUD_RING_LOW),
+        high: ringClouds(CLOUD_RING_HIGH),
+    }))
 
     return (
         <>
-            {/* Sliced to what actually draws. `range` only clamps the DRAW
-                count -- every entry still mounted a <Cloud> with its own
-                useFrame, and drei's <Instances> loop decomposes/composes a
-                matrix for all of them regardless. Two 1000-entry arrays were
-                paying ~4,000 callbacks and 2,000 matrix rebuilds per frame so
-                that 20 clouds could appear. */}
+            {/* Every entry draws. `range` used to clamp the DRAW count out of
+                two 1000-entry arrays, which meant ~4,000 callbacks and 2,000
+                matrix rebuilds per frame so that 20 clouds could appear; now
+                the arrays ARE the sky, so the two numbers cannot drift and
+                every cloud the data describes is one you can actually see.
+
+                Both groups sit at the origin: cloud positions are world-space
+                (see config/store.ts). The old offset groups meant every
+                clearance test had to convert local to world, and that
+                conversion is where the placement bug lived. */}
             <Bvh firstHitOnly>
-                {/* Named so the check can find these five and test them
-                    against the island, which is the only way to know the
-                    re-roll below actually worked. */}
-                <group name="clouds-low" position={[CLOUD_GROUP_LOW.x, CLOUD_GROUP_LOW.y, CLOUD_GROUP_LOW.z]}>
-                    <Clouds data={lowClouds} range={LOW_CLOUD_COUNT} />
+                {/* Named so the checks can find them and test them against the
+                    island, which is the only way to know the re-roll worked. */}
+                <group name="clouds-low">
+                    <Clouds data={clouds.low} limit={CLOUD_RING_LOW.count} />
                 </group>
-                <group position={[10, 0, 10]}>
-                    <Clouds data={surface} range={15} />
+                <group name="clouds-high">
+                    <Clouds data={clouds.high} limit={CLOUD_RING_HIGH.count} />
                 </group>
             </Bvh>
             {/* Outside the Bvh above, which exists for the cloud groups. A

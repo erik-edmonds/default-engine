@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 
 import {
   TRAIL_LENGTH,
@@ -382,7 +383,20 @@ export function SceneCursor() {
   // sheet asks for lines behind a slow cursor, rings around a faster one.
   const showTrail = moving && tier === "slow"
 
-  return (
+  // Portalled to <body>, and this is a fix rather than a flourish.
+  //
+  // `position: fixed` creates a stacking context, and this component renders
+  // inside the page's fixed full-viewport stage. That trapped the cursor's
+  // z-index INSIDE that stage, which itself sits at `z-index: auto` in the root
+  // -- so the home button's wrapper (`fixed z-50` in app/layout.tsx) painted
+  // over the whole stage, cursor included. The cursor vanished behind the home
+  // button and read as not recognising it, even though hover detection was
+  // working the whole time: it is a global pointerover listener matching
+  // "button, a, [data-cursor]", and the home button is an <a>.
+  //
+  // Rendering into <body> puts the z-index back in the root stacking context,
+  // where a value this large means what it says.
+  return createPortal(
     <>
       {/* Trail ghosts, positioned by the driver from a ring buffer of recent
           cursor positions. Short dashes rather than lens outlines: the sheet's
@@ -503,6 +517,7 @@ export function SceneCursor() {
           </svg>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }

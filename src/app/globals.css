@@ -575,3 +575,28 @@ html.custom-cursor * {
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 }
+
+/* /portfolio's layout.
+ *
+ * Plain CSS rather than the <style jsx> block these six lines used to live in,
+ * and not a stylistic preference: styled-jsx and `reactCompiler: true` (see
+ * next.config.ts) are incompatible. The compiler hoists each JSX element into
+ * its own memo-cache temporary, so the <style jsx> element is no longer a
+ * sibling of the elements it scopes and styled-jsx has nothing to attach its
+ * generated `jsx-<hash>` class to on the client. The server rendered the class
+ * and the client did not, which is the hydration mismatch this page threw --
+ * and, silently, /portfolio lost all three of its layout rules in the bargain,
+ * so the canvas was never actually being positioned.
+ *
+ * This was the only <style jsx> in the repo. Navigation.tsx uses a plain
+ * <style> tag, which is unaffected. */
+.portfolio-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
