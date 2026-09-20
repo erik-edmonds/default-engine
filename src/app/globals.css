@@ -600,3 +600,82 @@ html.custom-cursor * {
   position: absolute;
   inset: 0;
 }
+
+/* The keyboard route into the scene.
+ *
+ * On desktop the four destinations are in-world ring markers, which are 3D
+ * picking and therefore unreachable without a mouse -- the whole experience was
+ * inoperable by keyboard. The rail is already an accessible control (real
+ * buttons, aria-current, proper labels); it was simply touch-only, because a
+ * permanently visible rail would be a second answer on screen for the mouse
+ * users who already have the rings.
+ *
+ * So it is revealed by FOCUS rather than by pointer type: invisible until
+ * someone tabs to it, fully present once they do.
+ *
+ * opacity, deliberately, not visibility or display -- both of those remove an
+ * element from the tab order, which would make the thing unreachable by the
+ * exact input it exists to serve. An opacity:0 element is still focusable. */
+.keyboard-rail {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.keyboard-rail:focus-within,
+/* ...and as soon as the visitor starts tabbing AT ALL, not only once focus has
+   arrived in the rail itself.
+   
+   The rail is the fourth tab stop -- home button, sound, time of day, then it.
+   Revealing it only on :focus-within meant three presses of Tab with nothing
+   visibly happening, which reads as "keyboard navigation does not work here".
+   Showing it on the first Tab tells the visitor where they are heading before
+   they get there. */
+html[data-keyboard="true"] .keyboard-rail {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A focus state that reads against a busy 3D background. The scene behind can
+ * be any colour at any time of day, so this pairs a light ring with a dark
+ * outer one rather than relying on contrast with one of them. */
+.journey-rail-stop:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(8, 20, 28, 0.85);
+  border-radius: 4px;
+}
+
+/* The dive's match cut.
+ *
+ * Diving used to hard-cut from the island straight to /portfolio: the avatar
+ * swam off, the camera sat where it was, and the route changed. The two scenes
+ * have different cameras, different worlds and different lighting, so true
+ * continuity between them is not available -- but a wash in the water's own
+ * deep colour, taken as the camera goes under and lifted once the underwater
+ * scene has mounted, covers the join honestly.
+ *
+ * #0c4f63 is DEEP_COLOR from OceanWater.ts, not a colour picked to look like
+ * it: the frame is full of that exact water at the moment this takes over. */
+.dive-wash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #0c4f63;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 900ms ease-in;
+}
+
+.dive-wash[data-state="covering"] {
+  opacity: 1;
+  /* Claims the screen while the route changes underneath it. */
+  pointer-events: auto;
+}
+
+/* Lifting it is slower than dropping it -- you are arriving somewhere, and the
+ * reveal is the point. */
+.dive-wash[data-state="lifting"] {
+  opacity: 0;
+  transition: opacity 1200ms ease-out;
+}

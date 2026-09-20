@@ -5,7 +5,7 @@ import * as THREE from "three"
 import { useAtomValue, useSetAtom } from "jotai"
 import { useLocation, useRoute } from "wouter"
 
-import { openPortalId, portalExitRequest } from "@/helpers/StateProvider"
+import { openPortalId, portalEnterRequest, portalExitRequest } from "@/helpers/StateProvider"
 import type { CameraControllerHandle } from "@/components/canvas/CameraController"
 
 // Keeps the camera in step with the portals' own routing.
@@ -55,6 +55,7 @@ export function PortalRouteSync({
   const [, setLocation] = useLocation()
   const [, route] = useRoute("/item/:id")
   const exit = useAtomValue(portalExitRequest)
+  const enter = useAtomValue(portalEnterRequest)
   const setOpenPortalId = useSetAtom(openPortalId)
 
   const enteredId = route?.id ?? null
@@ -98,6 +99,14 @@ export function PortalRouteSync({
     // callback. Only the route should re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enteredId])
+
+  // Someone asked for a portal to open -- the keyboard rail, currently. Routed
+  // through wouter exactly as a double-click is, so there is one way a portal
+  // opens rather than two that can drift.
+  useEffect(() => {
+    if (enter.seq === 0 || !enter.id) return
+    setLocation(`/item/${enter.id}`)
+  }, [enter, setLocation])
 
   // Someone asked for the portal to close (see portalExitRequest).
   //

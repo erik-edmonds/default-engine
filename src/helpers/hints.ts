@@ -23,7 +23,16 @@ export type HintId = "guitar" | "clouds" | "pokeball" | "scuba" | "portalEnter" 
  *  - `screen` a fixed viewport offset, for pointing at DOM chrome (the home
  *             button) rather than at anything in the scene. */
 export type HintTarget =
-  | { kind: "world"; position: THREE.Vector3 }
+  /** A fixed point in the scene, projected every frame.
+   *
+   *  `maxDistance` is how near the camera must be for the hint to show at all.
+   *  Being on screen is not enough for an instruction: from the Home viewpoint
+   *  the far portals still project into frame, so "Double-click to enter" was
+   *  appearing over open scenery, anchored to a portal thirty units away that
+   *  a double-click could never reach. Gating on the world -- can you actually
+   *  act on this from here -- rather than on which hotspot some variable
+   *  believes you are at, makes the hint correct by construction. */
+  | { kind: "world"; position: THREE.Vector3; maxDistance?: number }
   | { kind: "cloud" }
   | { kind: "screen"; left: number; top: number }
 
@@ -153,3 +162,13 @@ export function getHintClouds(): ReadonlySet<THREE.Object3D> {
 // el.style.transform directly), which keeps the per-frame position update off
 // React's render path entirely.
 export const hintNode: { current: HTMLElement | null } = { current: null }
+
+/** How near the camera must be for "double-click to enter" to show.
+ *
+ *  A portal stands PORTAL_VIEW_DISTANCE (4.5) from its own viewpoint and 30-45
+ *  units from any other, so this separates "you are stood at it" from "you can
+ *  see it across the water" with a wide margin either side. It exists because
+ *  being on screen was the only test, and from the Home viewpoint the far
+ *  portals project into frame -- so the hint captioned open scenery next to a
+ *  hotspot ring, advertising a double-click that could not land. */
+export const PORTAL_HINT_MAX_DISTANCE = 12

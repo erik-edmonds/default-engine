@@ -50,20 +50,20 @@ export interface PortalDefinition {
 // Two answers came back without their specifics and I would not invent either.
 // Both live here, together, so they are one edit rather than a hunt:
 //
-//   1. CONTACT_LINKS below is a placeholder. Your university address is
-//      deliberately NOT used -- putting a .edu on a public site should be your
-//      decision, not an assumption made on your behalf.
+//   1. CONTACT_LINKS is now real -- nothing to do there.
 //   2. ABOUT_PARAGRAPHS below is the About portal's copy. It currently holds
 //      the one true line the portal already had; you said you would write the
 //      real thing. Replacing it is this one array -- nothing else moves, and
 //      the panel sizes itself to however many paragraphs you give it.
 // ---------------------------------------------------------------------------
 
-/** REPLACE THESE. Every href below is a placeholder and none of them resolve. */
+/** The real ones, supplied by Erik. Published deliberately and on request --
+ *  putting an address on a public site is the site owner's call, which is why
+ *  these sat as declared placeholders rather than being guessed at. */
 export const CONTACT_LINKS: { label: string; href: string }[] = [
-  { label: "Email", href: "mailto:you@example.com" },
-  { label: "LinkedIn", href: "https://www.linkedin.com/in/your-handle" },
-  { label: "GitHub", href: "https://github.com/your-handle" },
+  { label: "Email", href: "mailto:erikedmonds2019@u.northwestern.edu" },
+  { label: "GitHub", href: "https://github.com/erik-edmonds" },
+  { label: "LinkedIn", href: "https://www.linkedin.com/in/erik-edmonds/" },
 ]
 
 /** True while the contact links are still the placeholders above. The panel

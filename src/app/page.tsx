@@ -10,7 +10,7 @@ import { AdaptiveDpr, PerformanceMonitor, Preload, useProgress } from '@react-th
 import { useGLTF } from '@/helpers/useGLTF';
 import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest } from "@/helpers/StateProvider";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest } from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
 import { Scene } from "@/components/canvas/Scene";
@@ -50,6 +50,7 @@ import {
   type JourneyStopId,
 } from "@/config/journey";
 import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES } from "@/config/skyJourney";
+import { DIVE_ARRIVAL_KEY, DIVE_WASH_MS } from "@/config/dive";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -303,6 +304,8 @@ export default function Page() {
     setHotspotNav((prev) => (id === prev.current ? prev : { current: id, departingFrom: prev.current }));
   }, []);
   const [rainTriggered, setRainTriggered] = useState(false);
+  /** Covers the cut between the island and /portfolio. See .dive-wash. */
+  const [diveWash, setDiveWash] = useState<"idle" | "covering">("idle");
   // Entering/leaving a portal is expressed entirely as the wouter route
   // Card.tsx's Frame already reads (`/item/:id`), so there's no separate
   // "which portal is open" state here. All wouter calls live in
@@ -317,6 +320,23 @@ export default function Page() {
     () => requestPortalExit((prev) => ({ seq: prev.seq + 1, flyBack: false })),
     [requestPortalExit],
   );
+  /** Open the portal standing at a given destination.
+   *
+   *  The keyboard's way in. Entering is otherwise a double-click or a
+   *  press-and-hold on the portal mesh, so before this a keyboard user could
+   *  fly to a destination and then had no way to go into it. Routed through the
+   *  same wouter /item/:id that a double-click writes, via PortalRouteSync --
+   *  one way a portal opens, not two. */
+  const requestPortalEnter = useSetAtom(portalEnterRequest);
+  const enterPortalByKeyboard = useCallback(
+    (stop: JourneyStopId) => {
+      const portal = HOTSPOT_PORTALS.find((p) => p.hotspotId === stop);
+      if (!portal) return;
+      requestPortalEnter((prev) => ({ seq: prev.seq + 1, id: portal.id }));
+    },
+    [requestPortalEnter],
+  );
+
   /** Step back out of a portal to where it is seen from, and stop there. The
    *  home button's meaning while a portal is open. */
   const exitPortal = useCallback(
@@ -752,7 +772,24 @@ export default function Page() {
       setMusicEnabled(false);
       await avatarControllerRef.current?.spinAndTransform("scuba");
       await avatarControllerRef.current?.moveToIslandEdge();
-      await avatarControllerRef.current?.diveUnderwater();
+      // The camera goes with it. Before this the avatar swam off and dived
+      // while the camera sat at whatever viewpoint it happened to be on, so
+      // the set piece happened somewhere off to the side of the frame.
+      await Promise.all([
+        avatarControllerRef.current?.diveUnderwater(),
+        cameraControllerRef.current?.dive(),
+      ]);
+      // Under the surface now, so the wash takes the frame and the route
+      // changes behind it. /portfolio lifts it once its own scene has mounted.
+      setDiveWash("covering");
+      try {
+        sessionStorage.setItem(DIVE_ARRIVAL_KEY, "1");
+      } catch {
+        // Private mode, or storage disabled. The wash simply will not lift on
+        // the other side, which is a worse arrival but not a broken one --
+        // /portfolio clears it on a timeout regardless.
+      }
+      await new Promise((r) => setTimeout(r, DIVE_WASH_MS));
     } finally {
       isSequenceRunning.current = false;
     }
@@ -828,6 +865,43 @@ export default function Page() {
       isSequenceRunning.current = false;
     }
   };
+
+  // Escape leaves a portal, from anywhere.
+  //
+  // The convention a visitor will try first, and before this it did nothing at
+  // all -- the only ways out were the home button in the corner and, on touch,
+  // a ring tap. Uses exitPortal, so Escape means exactly what pressing home
+  // inside a portal means: step back out to the viewpoint it is seen from,
+  // rather than fly to Home.
+  // Mark the document once the visitor is navigating by keyboard, so the
+  // journey rail can show itself before focus actually reaches it (see
+  // .keyboard-rail). Tab only -- arrow keys and Enter are also used by the
+  // scene itself, and a mouse user who happens to press one should not be
+  // handed navigation chrome they did not ask for.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      document.documentElement.dataset.keyboard = "true";
+      window.removeEventListener("keydown", onKeyDown);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Depends on openPortal rather than reading it through a latest-ref: a
+  // keydown listener that re-subscribes when a portal opens costs nothing, and
+  // the ref version needed a write during render that react-hooks/refs rightly
+  // rejects.
+  useEffect(() => {
+    if (!openPortal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      exitPortal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openPortal, exitPortal]);
 
   // The latest-ref pattern, as with scrollTickRef above: handleGoHome closes
   // over render-scoped values, and the listener below must always reach the
@@ -905,7 +979,11 @@ export default function Page() {
             {nameStamped && !isShortViewport && <p data-cursor="text" className="scene-type font-nunito font-semibold text-[#d25a1a] text-xl sm:text-2xl md:text-3xl">Data Scientist</p>}
           </div>
         </div>
-        <div className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 scene-type text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
+        {/* Announced, not just drawn. These four captions carry the whole
+            narration of the sky journey and a screen reader heard none of it.
+            polite rather than assertive: they are commentary on a sequence the
+            visitor is driving, not an interruption. */}
+        <div role="status" aria-live="polite" className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 scene-type text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
           style={{ opacity: skyText ? 1 : 0 }}>
           <span className="max-w-xl">{skyText}</span>
         </div>
@@ -929,7 +1007,7 @@ export default function Page() {
             Hidden while a portal is open, alongside the name stamp: the rail
             navigates the journey, and inside a portal the journey is not what
             the screen is for. The way out is the home button, which stays. */}
-        {isCoarsePointer && (
+        {isCoarsePointer ? (
           <JourneyRail
             labels={HOTSPOT_LABELS}
             visible={sceneReady && started && !isInSkyJourneyValue && !openPortal}
@@ -938,6 +1016,41 @@ export default function Page() {
             parkedAt={jumping || !PORTAL_STOP_IDS.has(hotspotNav.current) ? null : asJourneyStop(hotspotNav.current)}
             onJump={handleJump}
           />
+        ) : (
+          /* The same rail, as the keyboard's way into a scene that is otherwise
+             pure 3D picking. Hidden until focus enters it (see .keyboard-rail
+             in globals.css), so a mouse user still sees only the ring markers
+             and the "second answer on screen" objection above still holds.
+
+             `parkedAt` differs from the touch version on purpose. There it
+             means "in a portal's hold band", because the rail tracks a
+             continuous scroll and jumping only makes sense once you have
+             stopped. On desktop the camera is always AT a discrete stop, Home
+             included -- so the current stop is simply where you are, and
+             gating it on PORTAL_STOP_IDS would leave a keyboard user at Home
+             facing four disabled buttons and no way to move. */
+          <div className="keyboard-rail">
+            <JourneyRail
+              labels={HOTSPOT_LABELS}
+              visible={sceneReady && started && !isInSkyJourneyValue && !openPortal}
+              horizontal={false}
+              // NOT gated on `jumping`, unlike the touch rail above.
+              //
+              // Disabling every stop mid-flight drops keyboard focus: a focused
+              // button that becomes disabled hands focus back to <body>, so
+              // pressing Enter to travel somewhere silently ejected the user
+              // from the rail and they had to Tab all the way back in.
+              // beginHotspotTransition already sets hotspotNav to the
+              // destination synchronously, so showing it as current throughout
+              // the flight keeps the buttons alive and focus where it was.
+              // Mashing Enter mid-flight is harmless -- handleJump returns
+              // early while isJumping is set.
+              parkedAt={asJourneyStop(hotspotNav.current)}
+              onJump={handleJump}
+              onEnterPortal={enterPortalByKeyboard}
+              enterableStops={PORTAL_STOP_IDS}
+            />
+          </div>
         )}
         {/* "percentage" (PCFShadowMap), not "soft" (PCFSoftShadowMap) --
             three.js has deprecated PCFSoftShadowMap and silently substitutes
@@ -1159,6 +1272,9 @@ export default function Page() {
             and the driver does no per-frame work while the plate is up. */}
         {started && !isCoarsePointer && <SceneCursor />}
         {rainTriggered && <RainScene />}
+        {/* Only mounted once the dive commits, so it can never sit over the
+            scene by accident. */}
+        {diveWash !== "idle" && <div className="dive-wash" data-state="covering" aria-hidden="true" />}
       </div>
       {/* The scroll spacer -- now the travel axis for touch navigation, and
           still the entire reason the stage above is fixed.

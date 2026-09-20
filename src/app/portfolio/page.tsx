@@ -3,6 +3,8 @@
 import { Preload } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useRouter } from 'next/navigation'
+import { useEffect, useRef } from 'react'
+import { DIVE_ARRIVAL_KEY } from '@/config/dive'
 import { Rig, FRAME_SPACING } from '@/helpers/CameraHelpers';
 import { WaterScene } from '@/components/canvas/water/WaterScene'
 import { PortalInterior } from '@/components/canvas/PortalInteriors'
@@ -27,6 +29,39 @@ const PROJECTS = [
 
 export default function Page() {
 	const router = useRouter()
+
+	// The far side of the dive's match cut.
+	//
+	// If the island set the flag on its way under, this page opens covered by the
+	// same wash and lifts it once mounted, so the join reads as continuing
+	// underwater. Anyone arriving by link or bookmark has no flag and sees
+	// nothing. The flag is consumed immediately: reloading /portfolio should not
+	// replay an arrival the visitor never made.
+	//
+	// Driven by writing the DOM through a ref rather than by React state, for two
+	// reasons. Reading sessionStorage in a useState initialiser would run on the
+	// server too -- where it does not exist -- and any client-only initial value
+	// is a hydration mismatch, which is the exact bug that took this page's
+	// styling out in Round 5. And setting state synchronously in an effect is a
+	// cascading render; updating an external system, which the DOM is here, is
+	// what an effect is actually for.
+	const washRef = useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		let arrived = false
+		try {
+			arrived = sessionStorage.getItem(DIVE_ARRIVAL_KEY) === '1'
+			if (arrived) sessionStorage.removeItem(DIVE_ARRIVAL_KEY)
+		} catch {
+			// Storage unavailable -- there is simply no arrival to play.
+		}
+		const node = washRef.current
+		if (!arrived || !node) return
+		node.dataset.state = 'covering'
+		// Next frame, so the browser has the covered state to transition FROM.
+		const id = requestAnimationFrame(() => { node.dataset.state = 'lifting' })
+		return () => cancelAnimationFrame(id)
+	}, [])
+
 	return (
 		<main className="portfolio-page">
 			<div className="canvas-wrap">
@@ -53,6 +88,7 @@ export default function Page() {
         <Preload all />
       </Canvas>
 			</div>
+			<div ref={washRef} className="dive-wash" data-state="none" aria-hidden="true" />
 		</main>
 	);
 }

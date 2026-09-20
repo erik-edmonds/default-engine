@@ -80,6 +80,19 @@ export interface PortalExitRequest {
 }
 export const portalExitRequest = atom<PortalExitRequest>({ seq: 0, flyBack: false })
 
+// The mirror of the above: a request to OPEN a portal, by its /item/:id id.
+//
+// Exists for the keyboard. Entering is otherwise a double-click or a
+// press-and-hold on the portal mesh, and a keyboard can produce neither -- so
+// the rail needs a way to say "open this one" without being able to call wouter
+// itself (same constraint as the exit request: wouter reads `location` at
+// render and "/" is statically prerendered).
+export interface PortalEnterRequest {
+  seq: number
+  id: string | null
+}
+export const portalEnterRequest = atom<PortalEnterRequest>({ seq: 0, id: null })
+
 // The id of the portal currently open ("/item/:id"), or null. The route itself
 // is the source of truth and stays that way -- this is a read-only mirror of
 // it, published by PortalRouteSync for the benefit of code that can't call

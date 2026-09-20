@@ -82,8 +82,10 @@ export function HintAnchor() {
     }
 
     let source: THREE.Vector3 | null = null
+    let maxDistance: number | undefined
     if (hint.target.kind === "world") {
       source = v.copy(hint.target.position)
+      maxDistance = hint.target.maxDistance
     } else {
       // Keep the chosen cloud while it stays in frame; only look for another
       // once it leaves.
@@ -95,6 +97,13 @@ export function HintAnchor() {
     }
 
     if (!source) {
+      el.style.visibility = "hidden"
+      report(false)
+      return
+    }
+
+    // Too far to act on? Then it is not an instruction, it is clutter.
+    if (maxDistance !== undefined && camera.position.distanceTo(source) > maxDistance) {
       el.style.visibility = "hidden"
       report(false)
       return

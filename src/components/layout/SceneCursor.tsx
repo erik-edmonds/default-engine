@@ -183,6 +183,18 @@ export function SceneCursor() {
   const nodeRef = useRef<HTMLDivElement>(null)
   const trailRef = useRef<(HTMLDivElement | null)[]>([])
   const domHoverToken = useRef({})
+  /** True while the pointer is over a DOM control (the home button, the sound
+   *  toggle, a link in a portal panel) rather than over the 3D scene.
+   *
+   *  The cursor sits above all chrome now, which it has to -- it used to be
+   *  trapped in the scene's stacking context and vanished behind the home
+   *  button. But being on top means its own artwork can hide what it is
+   *  pointing at, and DOM controls are small: measured, the hover gem covered
+   *  90% of the 56px home button, so reaching for the button made the button
+   *  disappear. The brackets are 56px across and frame such a control exactly;
+   *  it is only the gem and core in the middle that obscure it. */
+  const [overChrome, setOverChrome] = useState(false)
+
   const [view, setView] = useState<{ state: CursorState; tier: CursorSpeedTier; target: CursorTargetType | null }>({
     state: "idle",
     tier: "slow",
@@ -344,9 +356,13 @@ export function SceneCursor() {
       // hover outranks text in the driver's chain -- reporting it would mask it.
       if (!match || match.hasAttribute("disabled") || match.dataset.cursor === "text") {
         setCursorHover(domHoverToken.current, null)
+        setOverChrome(false)
         return
       }
       setCursorHover(domHoverToken.current, "interactive")
+      // Remember that this hover came from a piece of DOM chrome rather than
+      // from something in the 3D scene -- the artwork differs, see the gem.
+      setOverChrome(true)
     }
 
     window.addEventListener("pointermove", onMove, capture)
@@ -506,12 +522,20 @@ export function SceneCursor() {
             {(state === "idle" || state === "hover" || state === "locked") && (
               <>
                 <Brackets r={state === "locked" ? 24 : 28} color={ink} />
-                <Gem
-                  spin={state === "locked" ? 0 : spin * 0.25}
-                  open={state === "locked" ? 1 : state === "hover" ? 0.35 : 0}
-                  palette={GEM}
-                />
-                <Core color={ink} />
+                {/* Over a DOM control the brackets alone do the job -- they are
+                    56px across, which frames a button of that size exactly.
+                    Drawing the gem and the core on top of it is what made the
+                    home button vanish under its own cursor. */}
+                {!overChrome && (
+                  <>
+                    <Gem
+                      spin={state === "locked" ? 0 : spin * 0.25}
+                      open={state === "locked" ? 1 : state === "hover" ? 0.35 : 0}
+                      palette={GEM}
+                    />
+                    <Core color={ink} />
+                  </>
+                )}
               </>
             )}
           </svg>

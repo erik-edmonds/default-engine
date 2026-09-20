@@ -147,8 +147,19 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
             {showSeagulls && <SeagullFlock />}
             <Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/>
             <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
-            {/* Need to hide this until the underwater scene is ready.
-            <group ref={gearRef}>
+            {/* The dive's entry point, unparked now that the camera goes with
+                the avatar: before this it swam off the island edge and dived
+                while the camera stayed on whatever viewpoint it was on, and
+                then the route hard-cut to /portfolio. */}
+            {/* The position lives on the WRAPPER, not on <Gear>.
+                
+                This wrapper exists only to give the magnetic registry something
+                to read a world position from -- and with the offset on the
+                child, that world position was (0,0,0). The Gear's cursor magnet
+                was pulling toward the middle of the island, six units from the
+                Gear itself. It never showed while the whole thing was commented
+                out; unparking it is what made it matter. */}
+            <group ref={gearRef} name="dive-gear" position={[-3,-1.8,5]}>
                 <Gear
                     onClick={() => {
                         // Through the registry, so a direct click and the
@@ -156,8 +167,8 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
                         if (gearMagnet.current) activateTarget(gearMagnet.current)
                         else downclick()
                     }}
-                    onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1} position={[-3,-1.8,5]} rotation={[0, Math.PI/0.8, 0]} />
-            </group> */}
+                    onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1} rotation={[0, Math.PI/0.8, 0]} />
+            </group>
             {/* The sky journey's entry point, unparked now that the camera
                 actually flies it: CameraController.beginSkyJourney and
                 setSkyOffset were empty functions, so releasing the Dragonite

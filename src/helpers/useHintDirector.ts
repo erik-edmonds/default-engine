@@ -22,6 +22,7 @@ import {
   hintOnScreen,
   type ActiveHint,
   type HintId,
+  PORTAL_HINT_MAX_DISTANCE,
 } from "@/helpers/hints"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 
@@ -179,7 +180,13 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
           if (arrivedAt.current === null || now - arrivedAt.current < ARRIVAL_SETTLE_MS) return null
           const position = state.portalTargets[state.currentHotspot]
           if (!position) return null
-          return { id, target: { kind: "world", position } }
+          // A portal is 4.5 units from its own viewpoint (PORTAL_VIEW_DISTANCE)
+          // and 30-45 from any other, so this cleanly separates "you are stood
+          // at it" from "you can see it across the water". Without it the hint
+          // appeared at the Home viewpoint, captioning a portal far out of
+          // reach -- on screen, because it projects into frame, but impossible
+          // to double-click.
+          return { id, target: { kind: "world", position, maxDistance: PORTAL_HINT_MAX_DISTANCE } }
         }
 
         // The two discovery nudges share a gate: only at the home viewpoint

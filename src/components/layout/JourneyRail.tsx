@@ -33,6 +33,19 @@ interface JourneyRailProps {
   /** Fly directly to a destination. Only ever called while `parkedAt` is set,
    *  so the caller always knows where the flight is departing from. */
   onJump: (id: JourneyStopId) => void
+  /** Open the portal at the stop you are already parked at.
+   *
+   *  Only supplied by the keyboard rail. Without it the stop you are standing
+   *  at is a disabled button -- correct for touch, where the rail is a position
+   *  indicator and the portal is right there to be pressed -- but it left a
+   *  keyboard user at a destination with no way to go INTO it, since entering
+   *  is a double-click or a long-press and a keyboard can produce neither. */
+  onEnterPortal?: (id: JourneyStopId) => void
+  /** Which stops have a portal to enter. Home does not, so without this the
+   *  stop you start at offered an "Enter Home" button that called a handler
+   *  with nothing to open -- a dead control, and the first thing a keyboard
+   *  user would land on. */
+  enterableStops?: ReadonlySet<string>
 }
 
 /**
@@ -60,7 +73,7 @@ interface JourneyRailProps {
  * that would sweep the camera through Models on the way and announce a place
  * you did not choose.
  */
-export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump }: JourneyRailProps) {
+export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump, onEnterPortal, enterableStops }: JourneyRailProps) {
   const [progress, setProgress] = useState(0)
   const [awake, setAwake] = useState(false)
   // Set while a finger is down on the rail: a control that fades on its own is
@@ -107,6 +120,25 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump }: J
     if (progress >= JOURNEY_STOP_SCROLL[i].scroll - 0.004) current = i
   }
 
+  // Percentages, rounded to something a browser will serialise back unchanged.
+  //
+  // `${stop.scroll * 100}%` produces "30.16430927577099%", which is what goes
+  // into the server HTML -- but a browser normalises a CSS percentage when it
+  // parses it, so the hydrating client reads the property back as "30.1643%".
+  // React compares the two strings, finds them different, and reports a
+  // hydration mismatch.
+  //
+  // It never surfaced while this rail was `{isCoarsePointer && ...}`: that is
+  // false on the server AND on the first client render, so the rail was not
+  // part of hydration at all. Rendering it for keyboard users is what exposed
+  // it.
+  //
+  // Number() after toFixed is the load-bearing half -- it strips trailing
+  // zeros, so 71.8260 becomes 71.826, which is exactly what the browser
+  // serialises. toFixed alone would swap this mismatch for a different one.
+  // Three decimals is far below one device pixel on any rail height.
+  const pct = (n: number) => `${Number(n.toFixed(3))}%`
+
   const canJump = parkedAt !== null
   const shown = visible && (awake || canJump)
   // Which axis a stop's position is written to. The rest of the difference
@@ -118,6 +150,23 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump }: J
       aria-label="Journey progress"
       className="journey-rail"
       data-horizontal={horizontal ? "true" : "false"}
+      // Arrow keys move between stops, which is the toolbar pattern a keyboard
+      // user will try first. Tab already steps through them, so this is an
+      // addition rather than the only way in -- if it fails, nothing is lost.
+      onKeyDown={(event) => {
+        const forward = event.key === "ArrowDown" || event.key === "ArrowRight"
+        const back = event.key === "ArrowUp" || event.key === "ArrowLeft"
+        if (!forward && !back) return
+        const stops = Array.from(
+          event.currentTarget.querySelectorAll<HTMLButtonElement>("button.journey-rail-stop:not([disabled])"),
+        )
+        if (stops.length === 0) return
+        const at = stops.indexOf(document.activeElement as HTMLButtonElement)
+        // Wraps, so the four stops behave as a ring rather than dead-ending.
+        const next = at === -1 ? 0 : (at + (forward ? 1 : -1) + stops.length) % stops.length
+        stops[next].focus()
+        event.preventDefault()
+      }}
       onPointerDown={keepAwake}
       onPointerUp={release}
       onPointerCancel={release}
@@ -132,7 +181,7 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump }: J
       <div className="journey-rail-track" aria-hidden="true">
         <div
           className="journey-rail-fill"
-          style={horizontal ? { width: `${progress * 100}%` } : { height: `${progress * 100}%` }}
+          style={horizontal ? { width: pct(progress * 100) } : { height: pct(progress * 100) }}
         />
       </div>
 
@@ -140,6 +189,11 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump }: J
         // Not a destination while you are already standing in it, and not one
         // at all unless you are parked somewhere you may leave from.
         const reachable = canJump && stop.id !== parkedAt
+        // The stop you are standing at becomes "enter this portal" rather than
+        // a dead marker, when a caller offers that.
+        const isHere = stop.id === parkedAt
+        const enterable = isHere && !!onEnterPortal && !!enterableStops?.has(stop.id)
+        const label = labels[stop.id] ?? stop.id
         return (
           <button
             key={stop.id}
@@ -150,14 +204,18 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump }: J
             // The rail is a position indicator first and a control second, so
             // when it cannot be used it says where you are rather than
             // advertising four dead buttons.
-            disabled={!reachable}
-            aria-label={reachable ? `Travel to ${labels[stop.id] ?? stop.id}` : (labels[stop.id] ?? stop.id)}
-            onClick={reachable ? () => onJump(stop.id) : undefined}
-            style={{ [along]: `${stop.scroll * 100}%` } as React.CSSProperties}
+            disabled={!reachable && !enterable}
+            aria-label={
+              enterable ? `Enter ${label}` : reachable ? `Travel to ${label}` : label
+            }
+            onClick={
+              enterable ? () => onEnterPortal!(stop.id) : reachable ? () => onJump(stop.id) : undefined
+            }
+            style={{ [along]: pct(stop.scroll * 100) } as React.CSSProperties}
           >
             <span className="journey-rail-mark" aria-hidden="true" />
             <span className="journey-rail-label" aria-hidden="true">
-              {labels[stop.id] ?? stop.id}
+              {label}
             </span>
           </button>
         )
