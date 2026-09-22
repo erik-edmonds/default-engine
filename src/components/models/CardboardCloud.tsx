@@ -8,7 +8,7 @@
 import { useGLTF } from '@/helpers/useGLTF'
 
 export function PaperCloud(props: React.ComponentProps<'group'>) {
-  const { nodes, materials } = useGLTF('/cardboard_cloud.glb')
+  const { nodes, materials } = useGLTF('/models/cardboard_cloud.glb')
   return (
     <group {...props} dispose={null}>
       <mesh

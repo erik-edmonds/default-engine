@@ -16,6 +16,7 @@ import { Gull } from "@/components/models/Gull"
 import { SeagullFlock } from "@/components/canvas/SeagullFlock"
 import { Thunder } from "@/components/canvas/Thunder"
 import { RainController } from "@/components/canvas/RainController"
+import { PaperCloud } from "@/components/models/CardboardCloud"
 
 export function Scene({ from, day, transitionSeconds, onDragoniteRelease, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
