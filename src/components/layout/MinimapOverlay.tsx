@@ -35,29 +35,6 @@ export function MinimapOverlay({
   phase?: TimeOfDay
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
-  const [hovered, setHovered] = useState<JourneyStopId | null>(null)
-
-  // Pointing at a destination turns the island to show it from THAT viewpoint.
-  //
-  // It is a preview of where you are about to go, and it costs nothing to
-  // compute: the same mapHeading the visitor's own bearing comes from, handed
-  // to the same damping, so the model swings rather than cutting. Clearing it
-  // hands control back and the island swings home again.
-  const hover = useCallback((id: JourneyStopId | null) => {
-    setHovered(id)
-    const stop = id ? MINIMAP_STOPS.find((s) => s.id === id) : null
-    setMinimapHeadingFocus(stop ? mapHeading(stop.x, stop.z) : null)
-  }, [])
-
-  // Released on close as well as on mouse-out. Without this, closing the map
-  // while pointing at a name would leave the island stuck facing that
-  // destination for the rest of the session.
-  useEffect(() => {
-    if (open) return
-    setHovered(null)
-    setMinimapHeadingFocus(null)
-  }, [open])
-  useEffect(() => () => setMinimapHeadingFocus(null), [])
 
   // Escape closes, matching the portals. Bound only while open so it cannot
   // swallow the key from anything else.
@@ -80,6 +57,41 @@ export function MinimapOverlay({
   }, [open])
 
   if (!open) return null
+  return <OverlayBody panelRef={panelRef} labels={labels} currentStop={currentStop} onPick={onPick} onClose={onClose} phase={phase} />
+}
+
+/** The open map.
+ *
+ *  Its own component purely so that CLOSING IT UNMOUNTS THIS. The hover state
+ *  and the heading focus below both have to be released when the map goes away
+ *  -- otherwise closing while pointing at a name leaves the island stuck facing
+ *  that destination for the rest of the session -- and an unmount does that in
+ *  a cleanup, where reaching back from an effect on `open` would be a setState
+ *  inside an effect for something React can do for free.
+ */
+function OverlayBody({ panelRef, labels, currentStop, onPick, onClose, phase }: {
+  panelRef: React.RefObject<HTMLDivElement | null>
+  labels: Record<string, string>
+  currentStop: string
+  onPick: (id: JourneyStopId) => void
+  onClose: () => void
+  phase: TimeOfDay
+}) {
+  const [hovered, setHovered] = useState<JourneyStopId | null>(null)
+
+  // Pointing at a destination turns the island to show it from THAT viewpoint.
+  //
+  // A preview of where you are about to go, and it costs nothing to compute:
+  // the same mapHeading the visitor's own bearing comes from, handed to the
+  // same damping, so the model swings rather than cutting. Clearing it hands
+  // control back and the island swings home again.
+  const hover = useCallback((id: JourneyStopId | null) => {
+    setHovered(id)
+    const stop = id ? MINIMAP_STOPS.find((s) => s.id === id) : null
+    setMinimapHeadingFocus(stop ? mapHeading(stop.x, stop.z) : null)
+  }, [])
+
+  useEffect(() => () => setMinimapHeadingFocus(null), [])
 
   return (
     <div className="minimap-overlay" role="dialog" aria-modal="true" aria-label="Island map">
