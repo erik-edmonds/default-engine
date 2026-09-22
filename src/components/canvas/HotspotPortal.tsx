@@ -144,6 +144,20 @@ const SETTLE_DECAY = 3
 /** The near-black an unlit portal reads as. Not pure black: a flat #000 looks
  *  like a hole cut in the scene, whereas a hair above it still reads as a
  *  surface with nothing shining on it. */
+/** What an unlit room shows.
+ *
+ *  It used to be "#070707", and that is what the three portals hanging in the
+ *  sky actually looked like from Home: hard-edged black slabs. Measured across
+ *  48 frames of a recording, perfectly steady -- not a flicker, not a
+ *  performance artefact, just a near-black rectangle in the middle of the sky
+ *  with a hotspot ring beside it, which reads as a hole in the render.
+ *
+ *  The comment below already knew the shape of this problem and picked the
+ *  wrong end of it: unlit-and-pale is "a pale grey rectangle", unlit-and-dark
+ *  is a black one, and both are holes. The answer is neither -- an unlit room
+ *  takes the colour the scene fades its own distant geometry to, so a portal
+ *  you have not approached sits in the sky as glass rather than as a gap.
+ *  `sleepBg` carries that per-phase colour in; this stays as the fallback. */
 const ROOM_DARK = "#070707"
 
 /** Card.tsx's own `bg` default, repeated so the lit background matches what
@@ -169,12 +183,12 @@ const FILL_INTENSITY = 1.5
  *  whether or not anything is switched on, so an unlit portal would otherwise
  *  be a pale grey rectangle. Rendered here, after Card.tsx's own background,
  *  this one attaches second and wins. */
-function PortalRoom({ id, live, bg }: { id: string; live: RefObject<{ value: number }>; bg: string }) {
+function PortalRoom({ id, live, bg, sleepBg }: { id: string; live: RefObject<{ value: number }>; bg: string; sleepBg?: string }) {
   const key = useRef<THREE.DirectionalLight>(null)
   const fill = useRef<THREE.AmbientLight>(null)
   const background = useRef<THREE.Color>(null)
   const lit = useMemo(() => new THREE.Color(bg), [bg])
-  const dark = useMemo(() => new THREE.Color(ROOM_DARK), [])
+  const dark = useMemo(() => new THREE.Color(sleepBg ?? ROOM_DARK), [sleepBg])
 
   // Reads the ramp rather than owning it. HotspotPortal drives it, because
   // deciding whether the camera has arrived needs the camera, and this half of
@@ -214,6 +228,10 @@ export interface HotspotPortalProps {
   name: string
   author: string
   bg?: string
+  /** What the room shows while it is asleep -- see ROOM_DARK. The scene's own
+   *  fog colour for the current time of day, so an unapproached portal sits in
+   *  the sky the way distant geometry does instead of as a black slab. */
+  sleepBg?: string
   /** Whether this portal can be opened right now -- true only once the camera
    *  is actually at the hotspot it stands in front of. The portal is always
    *  visible either way; this only controls whether it answers the pointer. */
@@ -235,7 +253,7 @@ export interface HotspotPortalProps {
 const BREATHE_AMOUNT = 0.012
 const BREATHE_SPEED = 1.15
 
-export function HotspotPortal({ position, rotation, id, name, author, bg, interactive = true, open = false, children }: HotspotPortalProps) {
+export function HotspotPortal({ position, rotation, id, name, author, bg, sleepBg, interactive = true, open = false, children }: HotspotPortalProps) {
   const group = useRef<THREE.Group>(null)
   // Shared with PortalRoom, which lives in the portal's own scene and cannot
   // work this out for itself. The REF is handed down, not its contents -- both
@@ -334,7 +352,7 @@ export function HotspotPortal({ position, rotation, id, name, author, bg, intera
       <Frame id={id} name={name} author={author} bg={bg} interactive={interactive}>
         {/* Inside <MeshPortalMaterial>, so these belong to the portal's own
             scene rather than to the island. */}
-        <PortalRoom id={id} live={live} bg={bg ?? PORTAL_DEFAULT_BG} />
+        <PortalRoom id={id} live={live} bg={bg ?? PORTAL_DEFAULT_BG} sleepBg={sleepBg} />
         {roomAwake && children}
       </Frame>
     </group>

@@ -30,8 +30,11 @@ export class CausticsPass {
     private readonly renderer: THREE.WebGLRenderer,
     private readonly lightDirection: THREE.Vector3,
     private readonly objectShadowTexture: THREE.Texture,
+    /** Square resolution of the caustics texture. 1024 is what the full-screen
+     *  page wants; a portal shows this through a small window and does not. */
+    size = 1024,
   ) {
-    this.target = new THREE.WebGLRenderTarget(1024, 1024, {
+    this.target = new THREE.WebGLRenderTarget(size, size, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,

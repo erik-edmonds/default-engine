@@ -12,7 +12,6 @@ import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 import { Avatar } from "@/components/models/Avatar"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
-import { Scuba } from "@/components/models/Scuba"
 
 /** The choreography lives in config/skyJourney.ts now, shared with the camera.
  *  It used to be defined here and nowhere else, which meant CameraController
@@ -29,18 +28,10 @@ export interface AvatarControllerHandle {
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
   returnHome: () => Promise<void>
-  moveToIslandEdge: () => Promise<void>
-  diveUnderwater: () => Promise<void>
 }
 
-export type ModelKind = "base" | "dragonite" | "scuba"
+export type ModelKind = "base" | "dragonite"
 
-// Island's sand/water boundary sits at x = -6. The walk stops well short of
-// it; the dive covers the rest of the approach plus the leap out over the water.
-const WALK_TARGET_X = -4.4
-const DIVE_TARGET_X = -7.5
-const DIVE_HOP_HEIGHT = 1
-const DIVE_DEPTH = 6
 
 // A small ambient sway layered on top of the choreographed Y position so
 // the avatar reads as alive (gently hovering) rather than frozen during the
@@ -278,40 +269,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           ease: "power2.inOut",
         })
       }),
-    moveToIslandEdge: () =>
-      new Promise<void>((resolve) => {
-        if (!group.current) {
-          resolve()
-          return
-        }
-        gsap.to(group.current.position, {
-          x: WALK_TARGET_X,
-          duration: tweenDuration(0.9),
-          ease: "power1.inOut",
-          onComplete: () => resolve(),
-          // Resolved on interrupt too: the unmount cleanup below kills these,
-          // and a killed tween never fires onComplete -- which would leave
-          // page.tsx awaiting a promise that can no longer settle.
-          onInterrupt: () => resolve(),
-        })
-      }),
-    diveUnderwater: () =>
-      new Promise<void>((resolve) => {
-        if (!group.current) {
-          resolve()
-          return
-        }
-        // The descent's timeline-position anchor (when it starts) must scale
-        // in lockstep with the hop's duration (when it finishes) -- both
-        // derive from tweenDuration(0.4) so the two stay synchronized under
-        // reduced motion instead of leaving a dead gap between them.
-        const hopDuration = tweenDuration(0.4)
-        gsap
-          .timeline({ onComplete: () => resolve() })
-          .to(group.current.position, { x: DIVE_TARGET_X, duration: tweenDuration(1.7), ease: "power1.inOut" }, 0)
-          .to(group.current.position, { y: "+=" + DIVE_HOP_HEIGHT, duration: hopDuration, ease: "power1.out" }, 0)
-          .to(group.current.position, { y: "-=" + (DIVE_HOP_HEIGHT + DIVE_DEPTH), duration: tweenDuration(1.3), ease: "power2.in" }, hopDuration)
-      }),
+    // moveToIslandEdge and diveUnderwater lived here -- the walk to the
+    // shoreline and the hop-and-descend that took the avatar under. Removed
+    // with the dive itself; /portfolio is entered through the Models portal
+    // now, so nothing choreographs a departure from the island any more.
   }))
 
   // Drives the sky-journey pose every frame instead of setSkyOffset applying
@@ -462,7 +423,6 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
       <Suspense fallback={null}>
         {modelKind === "base" && <Avatar scale={1.4} />}
         {modelKind === "dragonite" && <Dragonite ref={setDragoniteRef} scale={1.4} />}
-        {modelKind === "scuba" && <Scuba scale={1.4} />}
       </Suspense>
     </group>
   )

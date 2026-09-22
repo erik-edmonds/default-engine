@@ -251,9 +251,46 @@ export function registerMagneticTarget(target: MagneticTarget) {
   }
 }
 
-export function getMagneticTargets(): ReadonlySet<MagneticTarget> {
-  return magneticTargets
+/** Is full-screen chrome standing between the pointer and the scene?
+ *
+ *  True while a portal is open or the map overlay is up. Both of those cover the
+ *  scene completely, and while they do, the world behind them must be inert.
+ *
+ *  This exists because the cursor does NOT go through r3f's event system. drei's
+ *  MeshPortalMaterial already switches root-scene r3f events off when you enter
+ *  a portal (`setEvents({ enabled: !events })`), which is why clicking a cloud's
+ *  own onClick does nothing in there -- but CursorDriver projects every magnet
+ *  itself and SceneCursor fires the assisted click from a capture-phase window
+ *  listener, so neither ever consulted that flag. The clouds' and the hotspots'
+ *  magnets are `isEnabled: () => true`, so from inside a portal the lens still
+ *  opened over invisible objects and a click still started rain or a flight.
+ *
+ *  Deliberately a module-level flag rather than a prop or an atom: the two
+ *  readers below are the only chokepoints, one of them is called from a bare
+ *  window listener with no React context, and both run every frame. */
+let sceneInputSuppressed = false
+
+export function setSceneInputSuppressed(value: boolean) {
+  sceneInputSuppressed = value
+  // Drop any lock held at the instant the chrome opened. Without this the
+  // cursor keeps rendering as locked onto whatever it had, and SceneCursor's
+  // click handler still has a target to read -- suppressed at activateTarget,
+  // but visibly wrong until the next pointer move.
+  if (value) cursorLock.current = null
 }
+
+export function isSceneInputSuppressed() {
+  return sceneInputSuppressed
+}
+
+export function getMagneticTargets(): ReadonlySet<MagneticTarget> {
+  // Empty rather than filtered: nothing is acquirable while chrome is up, so
+  // the driver finds no candidate, releases its lock and falls back to free
+  // movement -- exactly the behaviour of a scene with no interactive objects.
+  return sceneInputSuppressed ? EMPTY_TARGETS : magneticTargets
+}
+
+const EMPTY_TARGETS: ReadonlySet<MagneticTarget> = new Set()
 
 // The curated raycast list for depth and surface context. Explicitly NOT
 // scene.children: this scene carries ~2000 cloud PositionMesh nodes whose
@@ -276,17 +313,26 @@ export function getCursorSurfaces(): ReadonlySet<THREE.Object3D> {
 // the eleven `document.body.style.cursor = "pointer"` writes this project had:
 // those set a native cursor we now hide, but the *signal* they carried is
 // still wanted -- it's what tells the lens to open on hover.
-const hoverSources = new Map<object, CursorTargetType>()
+//
+// Scoped, because the two report from opposite sides of the chrome: a hover on
+// a 3D prop must go quiet when a portal or the map covers the scene, while a
+// hover on the home button must not. Without the split, entering a portal froze
+// the lens open -- you enter by clicking the portal, which means the pointer is
+// over it when drei switches root-scene events off, so its pointerout never
+// arrives and its hover never clears.
+type HoverScope = "scene" | "chrome"
+const hoverSources = new Map<object, { type: CursorTargetType; scope: HoverScope }>()
 
-export function setCursorHover(token: object, type: CursorTargetType | null) {
+export function setCursorHover(token: object, type: CursorTargetType | null, scope: HoverScope = "scene") {
   if (type === null) hoverSources.delete(token)
-  else hoverSources.set(token, type)
+  else hoverSources.set(token, { type, scope })
 }
 
 /** The most significant hover currently reported, or null. */
 export function getCursorHover(): CursorTargetType | null {
   let best: CursorTargetType | null = null
-  for (const type of hoverSources.values()) {
+  for (const { type, scope } of hoverSources.values()) {
+    if (sceneInputSuppressed && scope === "scene") continue
     if (best === null || TYPE_PRIORITY[type] > TYPE_PRIORITY[best]) best = type
   }
   return best
@@ -303,6 +349,12 @@ const lastActivated = new WeakMap<MagneticTarget, number>()
  *  can arrive first and neither knows about the other, so the debounce is what
  *  stops a click that lands on both from counting twice. */
 export function activateTarget(target: MagneticTarget): boolean {
+  // The second chokepoint. Both paths into a scene object's action run through
+  // here, so one guard closes both: the cursor's assisted click (which arrives
+  // from a window listener that never sees the canvas) and the object's own r3f
+  // onClick (already dead inside a portal, but live behind the map overlay,
+  // which is DOM and leaves root-scene events switched on).
+  if (sceneInputSuppressed) return false
   const now = performance.now()
   const previous = lastActivated.get(target)
   if (previous !== undefined && now - previous < ACTIVATE_DEBOUNCE_MS) return false

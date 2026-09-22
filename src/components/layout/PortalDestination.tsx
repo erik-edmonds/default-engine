@@ -18,6 +18,10 @@ import { CONTACT_LINKS_ARE_PLACEHOLDERS, type PortalDefinition } from "@/config/
  * openable in a new tab. Troika text in the canvas is none of those.
  */
 export function PortalDestination({ portal }: { portal: PortalDefinition }) {
+  // Nothing to say when the interior is the destination -- the whole caption
+  // bar goes, not just its button, or a bare title floats over the water.
+  if (portal.destination.kind === "none") return null
+
   const d = portal.destination
   return (
     <div

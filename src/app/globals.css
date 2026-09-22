@@ -646,36 +646,217 @@ html[data-keyboard="true"] .keyboard-rail {
   border-radius: 4px;
 }
 
-/* The dive's match cut.
+/* The minimap.
  *
- * Diving used to hard-cut from the island straight to /portfolio: the avatar
- * swam off, the camera sat where it was, and the route changed. The two scenes
- * have different cameras, different worlds and different lighting, so true
- * continuity between them is not available -- but a wash in the water's own
- * deep colour, taken as the camera goes under and lifted once the underwater
- * scene has mounted, covers the join honestly.
+ * Bottom-right on desktop. The ring markers answer "what can I click"; this
+ * answers "where am I, and what is the shape of this place" -- which nothing on
+ * screen did before, so a desktop visitor never saw that the four destinations
+ * are joined by an authored route at all.
  *
- * #0c4f63 is DEEP_COLOR from OceanWater.ts, not a colour picked to look like
- * it: the frame is full of that exact water at the moment this takes over. */
-.dive-wash {
+ * Hidden until the scene has been photographed (data-ready): an empty square in
+ * the corner during a 40MB load is worse than nothing there yet. */
+.minimap {
+  position: fixed;
+  right: calc(1.5rem + var(--safe-right, 0px));
+  bottom: calc(1.5rem + var(--safe-bottom, 0px));
+  z-index: 20;
+  width: 148px;
+  height: 148px;
+  padding: 0;
+  /* No border, no radius. With the background gone there is no surface for a
+     border to be the edge OF -- it framed empty space, and a hairline rectangle
+     floating over the scene reads as a stray element rather than as chrome.
+     The focus ring below still marks the widget when it matters. */
+  border: 0;
+  /* No ground. The canvas is alpha, so the island sits straight on the scene
+     behind it -- which is the point of a HUD, and is why the widget reads as
+     part of the page rather than as a tile stuck on top of it. This carried a
+     pale grey while the map was a photograph, because a photograph has to be
+     opaque from edge to edge. A render does not. */
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  transition: opacity 260ms ease, transform 200ms ease;
+}
+.minimap[data-ready="false"] { opacity: 0 !important; pointer-events: none }
+.minimap:hover { transform: translateY(-2px) }
+.minimap:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(8, 20, 28, 0.85);
+}
+
+/* The stack: photograph, then route and stops, then the live dot. */
+.minimap-face { position: relative; width: 100%; height: 100%; display: block }
+/* R3F wraps its canvas in a div, so this direct-child selector no longer
+   matches the map's canvas -- the <Canvas> carries its own width/height style
+   instead (see Minimap.tsx), which is the documented way to size it.
+
+   Do NOT "fix" this by adding `.minimap-face > div`. That is what the first
+   attempt did, and `.minimap-you` and `.minimap-hits` are also direct children:
+   the 9px position dot was sized to the full 146px widget and rendered as a
+   giant orange disc across the corner of the map. */
+.minimap-face > canvas { width: 100%; height: 100%; display: block }
+
+/* The destinations. Divs rather than SVG circles since the map started
+   turning: they are positioned every frame by the same code that moves the
+   visitor's dot, and `left`/`top` is the one language both can speak. An SVG
+   circle is placed by geometry attributes and would have needed a second
+   mechanism for no gain.
+
+   Dark with a white ring, which is what keeps them legible over land, over the
+   sea, and over whatever the scene puts behind the transparent canvas. */
+.minimap-stop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: #0b1a24;
+  border: 1.5px solid #ffffff;
+  pointer-events: none;
+  transition: background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+/* Lit while its destination is hovered or focused, from the list OR from the
+   map's own hit target -- both report through the same `activeStop`, so the
+   two affordances cannot disagree about which one you mean. */
+.minimap-stop[data-active="true"] {
+  background: #d25a1a;
+  transform: scale(1.5);
+  box-shadow: 0 0 0 4px rgba(210, 90, 26, 0.3);
+}
+
+/* You are here. Positioned by MinimapMarker inside the canvas, every frame. */
+.minimap-you {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: #d25a1a;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 0 3px rgba(210, 90, 26, 0.35);
+  pointer-events: none;
+}
+
+/* Clickable destinations, overlay only. Transparent hit targets sized for a
+   pointer rather than drawn dots -- the dots are already in the SVG, and a
+   44px target on a 10px mark is the difference between a map you can use and
+   one you have to aim at. */
+.minimap-hits { position: absolute; inset: 0 }
+.minimap-hit {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.minimap-hit:hover { background: rgba(210, 90, 26, 0.22) }
+.minimap-hit:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px }
+
+/* --- the full-screen view --- */
+.minimap-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  background: #0c4f63;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 900ms ease-in;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 4vmin;
+  background: rgba(6, 14, 20, 0.82);
+  backdrop-filter: blur(10px);
+}
+.minimap-overlay-panel {
+  display: flex;
+  align-items: center;
+  gap: clamp(24px, 5vw, 72px);
+  width: min(1100px, 100%);
+}
+.minimap-overlay-map {
+  position: relative;
+  /* Transparent, like the corner widget -- the expanded map shows the
+     overlay's own scrim through it rather than introducing a second surface. */
+  background: transparent;
+  /* Bigger. The expanded map is the whole point of the overlay and it was
+     sitting at barely half the height available to it. The panel below stacks
+     on a short or narrow viewport, so this only has to fit alongside the
+     four-item list. */
+  flex: 0 1 min(78vh, 820px);
+  aspect-ratio: 1;
+  border: 0;
+  overflow: hidden;
 }
 
-.dive-wash[data-state="covering"] {
-  opacity: 1;
-  /* Claims the screen while the route changes underneath it. */
-  pointer-events: auto;
+.minimap-names { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0 }
+.minimap-name {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.minimap-name:hover,
+.minimap-name[data-active="true"] { color: #fff; background: rgba(255, 255, 255, 0.06); border-left-color: #d25a1a }
+.minimap-name:focus-visible { outline: 2px solid #fff; outline-offset: -2px }
+.minimap-name[aria-current="true"] { color: #ffb37a; border-left-color: #d25a1a }
+.minimap-name-index {
+  font-family: var(--font-nunito), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.minimap-name-label {
+  font-family: var(--font-nunito), sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.3rem, 3.4vw, 2.1rem);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
 }
 
-/* Lifting it is slower than dropping it -- you are arriving somewhere, and the
- * reveal is the point. */
-.dive-wash[data-state="lifting"] {
-  opacity: 0;
-  transition: opacity 1200ms ease-out;
+.minimap-close {
+  position: fixed;
+  top: calc(1.5rem + var(--safe-top, 0px));
+  right: calc(1.5rem + var(--safe-right, 0px));
+  padding: 0.55rem 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.minimap-close:hover { color: #fff; border-color: #d25a1a }
+.minimap-close:focus-visible { outline: 2px solid #fff; outline-offset: 3px }
+
+/* Narrow or short viewports stack the map over the names. The widget itself is
+   desktop-only, but the overlay still has to survive a small window. */
+@media (max-width: 760px), (max-height: 560px) {
+  .minimap-overlay-panel { flex-direction: column; gap: 18px }
+  .minimap-overlay-map { flex: 0 0 auto; width: min(58vh, 92vw) }
+  .minimap-names { flex-direction: row; flex-wrap: wrap; justify-content: center }
+  .minimap-name-label { font-size: 1rem }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minimap { transition: opacity 260ms ease }
+  .minimap:hover { transform: none }
 }

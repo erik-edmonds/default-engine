@@ -11,7 +11,7 @@ import { atom } from "jotai"
 // before any of these can fire. These are contextual nudges toward specific
 // objects, at most one on screen at a time.
 
-export type HintId = "guitar" | "clouds" | "pokeball" | "scuba" | "portalEnter" | "portalExit"
+export type HintId = "guitar" | "clouds" | "pokeball" | "portalEnter" | "portalExit"
 
 /** Where a hint pins itself.
  *
@@ -62,7 +62,6 @@ export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boole
   // (useHintDirector.ts) and neither hint can fire. Kept here, with their
   // marker positions below, so switching them back on is one line in that list.
   pokeball: { fine: "Open the Poké Ball", coarse: "Open the Poké Ball", marker: true },
-  scuba: { fine: "Take a dive", coarse: "Take a dive", marker: true },
   portalEnter: { fine: "Double-click to enter", coarse: "Press and hold to enter", marker: false },
   portalExit: { fine: "Click home to exit", coarse: "Tap home to exit", marker: false },
 }
@@ -73,11 +72,13 @@ export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boole
  *  than over it. */
 export const GUITAR_HINT_POSITION = new THREE.Vector3(0.1, -0.35, 1)
 
-/** Same lift as the guitar's, over the props' own world positions --
- *  Scene.tsx mounts the Poke Ball at [-3.25, -1.5, 0] and the gear at
- *  [-3, -1.8, 5], both inside an untransformed group. */
+/** Same lift as the guitar's, over the prop's own world position -- Scene.tsx
+ *  mounts the Poke Ball at [-3.25, -1.5, 0], inside an untransformed group.
+ *
+ *  GEAR_HINT_POSITION sat beside this and pointed at the scuba gear. Both it
+ *  and the gear are gone: /portfolio is reached through the Models portal now,
+ *  so there is no prop on the beach left to nudge anyone toward. */
 export const POKEBALL_HINT_POSITION = new THREE.Vector3(-3.25, -0.95, 0)
-export const GEAR_HINT_POSITION = new THREE.Vector3(-3, -1.15, 5)
 
 /** Where the portalExit caption starts: immediately to the right of the 56px
  *  home logo and vertically centred on it, so it reads as a label *for* the

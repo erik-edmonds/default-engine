@@ -24,18 +24,6 @@ gsap.ticker.lagSmoothing(0)
 const AVATAR_POSITION = new THREE.Vector3(-1.3, -0.65, 1)
 const ZOOM_IN_DISTANCE = 8
 
-// The dive. These mirror AvatarController's own DIVE_TARGET_X / DIVE_DEPTH --
-// the camera is following a specific avatar to a specific point, so the two
-// have to agree about where that point is.
-/** Where the avatar breaks the surface, and what the camera watches. */
-const DIVE_ENTRY = new THREE.Vector3(-7.5, -3.44, 1)
-/** Vantage the camera takes to watch it go in: back, up, and to the side, so
- *  the island edge stays in frame rather than filling it. */
-const DIVE_WATCH_OFFSET = new THREE.Vector3(5.5, 4.2, 6)
-/** How far under the surface the camera ends up. Deep enough that the frame is
- *  water on every side, which is what lets the cut be covered. */
-const DIVE_SUBMERGE_DEPTH = 5
-
 // The arrival dolly: how far back along its own view axis the camera starts,
 // and how much higher, before settling onto the island framing.
 const INTRO_PULLBACK = 7
@@ -88,7 +76,6 @@ export interface CameraControllerHandle {
   flyUp: () => Promise<void>
   /** Follow the avatar off the island edge and down through the waterline.
    *  Resolves once the camera is under. */
-  dive: () => Promise<void>
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
   /** Hands the camera back. Symmetric with beginSkyJourney, and with
@@ -346,43 +333,9 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // unlike the avatar's: the camera path's first stop is DERIVED from where
     // flyUp leaves both of them (see CAMERA_STOPS in config/skyJourney.ts), so
     // offset 0 already is the current pose and there is nothing to blend out.
-    dive: () =>
-      new Promise<void>((resolve) => {
-        beginFlight()
-        const watch = DIVE_ENTRY.clone().add(DIVE_WATCH_OFFSET)
-        const under = DIVE_ENTRY.clone().setY(DIVE_ENTRY.y - DIVE_SUBMERGE_DEPTH)
-        // Aim tracks a moving point rather than a fixed rotation: the avatar
-        // drops seven units during this, and a camera holding a fixed aim would
-        // have it leave frame at exactly the moment it is the subject.
-        const aim = DIVE_ENTRY.clone()
-        const look = () => {
-          camera.lookAt(aim)
-          setCameraBase(camera.quaternion)
-          syncOrbitTarget(camera.rotation)
-        }
-        gsap
-          .timeline({
-            onComplete: () => { endFlight(); resolve() },
-            // Resolved on interrupt too, for the same reason every other
-            // flight here is: a killed tween never fires onComplete, and the
-            // caller is awaiting this before it changes route.
-            onInterrupt: () => { endFlight(); resolve() },
-          })
-          // Move to the vantage while the avatar walks and leaps.
-          .to(camera.position, {
-            x: watch.x, y: watch.y, z: watch.z,
-            duration: tweenDuration(1.7), ease: "power2.inOut", onUpdate: look,
-          }, 0)
-          // Follow it down, then go under. The aim sinks with it.
-          .to(aim, {
-            y: DIVE_ENTRY.y - DIVE_SUBMERGE_DEPTH,
-            duration: tweenDuration(1.3), ease: "power2.in", onUpdate: look,
-          }, tweenDuration(0.4))
-          .to(camera.position, {
-            x: under.x, y: under.y, z: under.z + 2.5,
-            duration: tweenDuration(1.4), ease: "power2.in", onUpdate: look,
-          }, tweenDuration(1.2))
-      }),
+    // `dive()` lived here -- move to a vantage, follow the avatar down, go
+    // under. Removed with the dive itself; /portfolio is entered through the
+    // Models portal now.
     beginSkyJourney: () => {
       sky.current.active = true
       sky.current.target = 0

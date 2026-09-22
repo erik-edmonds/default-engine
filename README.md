@@ -1,7 +1,10 @@
 # TODO:
 - [x] Transition splash screen 
-- [ ] Add ambient beach music based on day
-    - [ ] Day, people sounds?
+- [x] Add ambient beach music based on day
+    - [x] Day, people sounds?
+- [ ] Change page notifications to bubbles that come from the avatar
+    - [ ] List of suggestions from the avatar, each click gives new suggestion
+    - [ ] There's an unread bubble above the avatar while all notificatios have not been read.
 - [ ] 404 Page
 
 # Small Tweaks needed
@@ -70,9 +73,13 @@
 
 # About 
 - [x] Add lens flare in morning or evening
+- [ ] Paper scene
+    - [ ] Paper clouds on a string
+    - [ ] Cardboard background
+        - [ ] Cardboard cutouts that drop down for my about me parts
 
 # Portfolio
-- [ ] Connect to homepage. This should be a single page app
+- [x] Connect to homepage. This should be a single page app
 - [ ] 4 Cards:
     - [ ] Make scenes with parts inside, and arts outside
     - [ ] Add scenes in cards 

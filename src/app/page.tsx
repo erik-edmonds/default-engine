@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
 import { AdaptiveDpr, PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
-import { useGLTF } from '@/helpers/useGLTF';
 import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest } from "@/helpers/StateProvider";
@@ -20,6 +19,7 @@ import { Environment } from "@/components/canvas/Environment";
 import { SunFlare } from "@/components/canvas/SunFlare";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { timeOfDay } from "@/helpers/timeOfDay";
+import { PRESETS } from "@/components/canvas/environmentPresets";
 import { PORTALS, portalById } from "@/config/portals";
 import { PortalInterior } from "@/components/canvas/PortalInteriors";
 import { PortalDestination } from "@/components/layout/PortalDestination";
@@ -40,6 +40,7 @@ import { RainRefraction } from "@/components/canvas/RainRefraction";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
+import { setSceneInputSuppressed } from "@/helpers/cursor";
 import { useShortViewport } from "@/helpers/useShortViewport";
 import {
   JOURNEY_SCROLL_SCREENS,
@@ -50,7 +51,6 @@ import {
   type JourneyStopId,
 } from "@/config/journey";
 import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES } from "@/config/skyJourney";
-import { DIVE_ARRIVAL_KEY, DIVE_WASH_MS } from "@/config/dive";
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -60,6 +60,9 @@ import { NavigationProvider } from "@/components/layout/Navigation";
 import { LoadingScreen, type LoadingScreenHandle } from "@/components/layout/LoadingScreen";
 import { InteractionHint } from "@/components/layout/InteractionHint";
 import { JourneyRail } from "@/components/layout/JourneyRail";
+import { Minimap } from "@/components/layout/Minimap";
+import { MinimapOverlay } from "@/components/layout/MinimapOverlay";
+import { MinimapMarker } from "@/components/canvas/MinimapRenderer";
 
 // Debug
 
@@ -126,14 +129,12 @@ const HOTSPOT_PORTALS = PORTALS.map((portal) => ({
   ...portalTransformFor(HOTSPOT_VIEWPOINT_BY_ID[portal.hotspotId].position, HOTSPOT_VIEWPOINT_BY_ID[portal.hotspotId].rotation),
 }));
 
-// Warms the portal interiors alongside everything else during the loading
-// screen rather than leaving them to <Preload all />'s scene-graph walk alone.
-// useGLTF.preload is a static method, not a hook, so module scope is fine.
+// Nothing to preload for the portal interiors any more.
 //
-// Only two files now, not three: the point-cloud interior is generated, and
-// the avatar interior reuses base.glb, which the island already loads for the
-// avatar stood outside.
-useGLTF.preload("/models/earth.glb");
+// This used to warm earth.glb for the About globe. All three interiors are now
+// either generated (the point cloud, which moved to About) or already in the
+// scene's cache (the avatar; the water's own assets load with WaterScene), so
+// there is no third file left to fetch.
 
 // Where the camera ends up when a portal is entered: just short of the plane,
 // on the viewpoint side. The portal material's own blend (0 -> 1) is what
@@ -229,6 +230,14 @@ export default function Page() {
   // Outside <Canvas> nothing can call wouter (see PortalRouteSync's note), so
   // the atom is how the DOM layer learns a portal has been entered.
   const openPortal = portalById(useAtomValue(openPortalId));
+  // The same value where a bare event listener can read it. onScrollTick runs
+  // from a window listener registered once, so it reads every gate through a
+  // ref rather than closing over the render's value -- see scrollNavActive.
+  const openPortalRef = useRef(openPortal);
+  // Written from an effect, not during render: the compiler's react-hooks/refs
+  // rule rejects the latter, and a one-commit lag is immaterial to a listener
+  // that only runs on a user gesture.
+  useEffect(() => { openPortalRef.current = openPortal }, [openPortal]);
   const [motion, setMotion] = useState(false);
   const [islandMounted, setIslandMounted] = useState(false);
   // Gates the loading screen: once the scene can render (sceneReady) but
@@ -249,7 +258,6 @@ export default function Page() {
   /** Neither prop publishes a "used it" signal of its own, and hasInteracted
    *  is set by every hotspot flight, so it cannot stand in for these. */
   const [pokeballUsed, setPokeballUsed] = useState(false);
-  const [scubaUsed, setScubaUsed] = useState(false);
   // Upper bound on device pixel ratio, walked by PerformanceMonitor below.
   const [dprCeiling, setDprCeiling] = useState(2);
   // Flips on the click, before burst() has even started -- `started` is 420ms
@@ -304,8 +312,21 @@ export default function Page() {
     setHotspotNav((prev) => (id === prev.current ? prev : { current: id, departingFrom: prev.current }));
   }, []);
   const [rainTriggered, setRainTriggered] = useState(false);
-  /** Covers the cut between the island and /portfolio. See .dive-wash. */
-  const [diveWash, setDiveWash] = useState<"idle" | "covering">("idle");
+  /** The island map, expanded. Desktop only -- see the Minimap mount below. */
+  const [mapOpen, setMapOpen] = useState(false);
+  // Make the world inert while full-screen chrome covers it.
+  //
+  // Both of these hide the scene completely, and until now the scene did not
+  // know: the custom cursor bypasses r3f's event system entirely, so from
+  // inside a portal it still magnetised to clouds and hotspot rings behind the
+  // portal and a click still fired them. See setSceneInputSuppressed.
+  useEffect(() => {
+    setSceneInputSuppressed(Boolean(openPortal) || mapOpen);
+    // Restoring on unmount matters more than it looks: the flag is module
+    // state, so a page that unmounted while suppressed would leave the next
+    // mount's scene dead.
+    return () => setSceneInputSuppressed(false);
+  }, [openPortal, mapOpen]);
   // Entering/leaving a portal is expressed entirely as the wouter route
   // Card.tsx's Frame already reads (`/item/:id`), so there's no separate
   // "which portal is open" state here. All wouter calls live in
@@ -474,7 +495,6 @@ export default function Page() {
     hasInteracted,
     currentHotspot: hotspotNav.current,
     pokeballUsed,
-    scubaUsed,
     portalTargets: PORTAL_HINT_TARGETS,
   });
 
@@ -631,8 +651,15 @@ export default function Page() {
     return Math.min(1, Math.max(0, window.scrollY / max));
   };
 
+  // `!openPortalRef.current` is a bug fix, not bookkeeping for the new scroll.
+  // Without it, a document scroll on touch while you are standing inside a
+  // portal called setJourney(u) -- restarting the journey spring, which then
+  // writes camera.position every frame and drags you off the portal plane while
+  // the material blend stays at 1 -- and beginHotspotTransition could flip the
+  // open portal's own `interactive` prop off underneath it.
   const scrollNavActive = () =>
-    isCoarsePointer && started && !isInSkyJourney.current && !isSequenceRunning.current && !isJumping.current;
+    isCoarsePointer && started && !isInSkyJourney.current && !isSequenceRunning.current
+    && !isJumping.current && !openPortalRef.current;
 
   // --- jumping: a direct flight to a destination ---------------------------
   //
@@ -763,38 +790,12 @@ export default function Page() {
     handleUpClick();
   };
 
-  const handleDownClick = async () => {
-    setScubaUsed(true);
-    setHasInteracted(true);
-    if (isSequenceRunning.current) return;
-    isSequenceRunning.current = true;
-    try {
-      setMusicEnabled(false);
-      await avatarControllerRef.current?.spinAndTransform("scuba");
-      await avatarControllerRef.current?.moveToIslandEdge();
-      // The camera goes with it. Before this the avatar swam off and dived
-      // while the camera sat at whatever viewpoint it happened to be on, so
-      // the set piece happened somewhere off to the side of the frame.
-      await Promise.all([
-        avatarControllerRef.current?.diveUnderwater(),
-        cameraControllerRef.current?.dive(),
-      ]);
-      // Under the surface now, so the wash takes the frame and the route
-      // changes behind it. /portfolio lifts it once its own scene has mounted.
-      setDiveWash("covering");
-      try {
-        sessionStorage.setItem(DIVE_ARRIVAL_KEY, "1");
-      } catch {
-        // Private mode, or storage disabled. The wash simply will not lift on
-        // the other side, which is a worse arrival but not a broken one --
-        // /portfolio clears it on a timeout regardless.
-      }
-      await new Promise((r) => setTimeout(r, DIVE_WASH_MS));
-    } finally {
-      isSequenceRunning.current = false;
-    }
-    startTransition(() => router.push("/portfolio"));
-  };
+  // The dive lived here: scuba swap, swim to the island edge, dive with the
+  // camera, wash, sessionStorage handshake, route to /portfolio. It is gone
+  // because /portfolio already has an entrance -- the Models portal's
+  // destination is that page. Two doors to one room, and this was the door you
+  // had to find a prop on a beach to open. The wash and DIVE_ARRIVAL_KEY went
+  // with it; nothing arrives at /portfolio mid-animation any more.
 
   /** Fly back to the establishing shot from wherever on the island you are --
    *  the same route, sound and portal-close as any other trip, because it is
@@ -1113,7 +1114,7 @@ export default function Page() {
           {islandMounted && <Suspense fallback={null}>
             <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />
             <group>
-              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} downclick={handleDownClick} onDragoniteRelease={handleDragoniteRelease} showSeagulls={currentPhase !== "night"} />
+              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} showSeagulls={currentPhase !== "night"} />
               <AvatarController ref={avatarControllerRef} />
               {/* <ContactShadows> removed. Its plane sat at y = -10, but the
                   water surface resolves to about y = -3.44 -- so it was 6.6
@@ -1131,7 +1132,13 @@ export default function Page() {
                   touch doesn't have, and most of the 4 are off-screen at
                   once on a narrow mobile viewport anyway. Touch travels by
                   scrolling instead, so it needs no markers to aim at. */}
-              {sceneReady && revealStage >= 3 && !isCoarsePointer && <>
+              {/* `!openPortal` joins the gate for a reason the others don't
+                  share: the rings draw with depthTest={false} and renderOrder
+                  998-1000, so an open portal -- which fills the screen -- had
+                  them floating ON TOP of its interior. Every other piece of
+                  chrome (the rail, the minimap, the name stamp, the hint)
+                  already checks this; the rings were the one that didn't. */}
+              {sceneReady && revealStage >= 3 && !isCoarsePointer && !openPortal && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 <CameraHotspot label={HOTSPOT_LABELS["upper"]} labelsIntro={labelsIntro} position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
                 <CameraHotspot label={HOTSPOT_LABELS["left-tree"]} labelsIntro={labelsIntro} position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
@@ -1156,6 +1163,10 @@ export default function Page() {
                   name={portal.title}
                   author={portal.credit}
                   bg={portal.bg}
+            // The colour the scene fades its own distant geometry to. A portal
+            // you have not walked up to then reads as glass in the sky rather
+            // than as the black rectangle it used to be.
+            sleepBg={PRESETS[day].fogColor}
                   // Openable only from its own hotspot. The portals are
                   // permanently in the scene, so several are in shot from
                   // home -- and entering one from there put the camera inside
@@ -1169,7 +1180,7 @@ export default function Page() {
                   interactive={hotspotNav.current === portal.hotspotId || openPortal?.id === portal.id}
                   open={openPortal?.id === portal.id}
                 >
-                  <PortalInterior kind={portal.interior} />
+                  <PortalInterior kind={portal.interior} open={openPortal?.id === portal.id} />
                 </HotspotPortal>
               ))}
             </group>
@@ -1214,6 +1225,13 @@ export default function Page() {
                 waypoints in config/journey.ts. Off unless the URL says
                 otherwise, so it can be switched on against a deployed build. */}
             {showJourneyPath && <JourneyPath />}
+            {/* Writes the camera's position onto the minimap's dot every
+                frame. Stays in THIS canvas, not the map's own: the dot says
+                where the PLAYER is, and this is the camera that knows.
+
+                Its sibling used to be MinimapRenderer, which photographed the
+                island into a 512-square texture. The map renders itself now. */}
+            {!isCoarsePointer && <MinimapMarker />}
             <Preload all />
           </Suspense>}
         </Canvas>
@@ -1221,6 +1239,41 @@ export default function Page() {
         {/* What the portal actually delivers. Entering used to blend a window
             fullscreen onto a model and stop there -- no content, nothing to do
             and no way onward. */}
+        {/* Where you are on the island, and the shape of the route joining the
+            four destinations -- neither of which anything on screen said before.
+            Desktop only: touch has the rail, and a third answer to "where am I"
+            would be one too many.
+
+            Hidden with the rest of the chrome inside a portal, and during the
+            sky journey, where the camera is 100 units above the map and the dot
+            would sit pinned to an edge claiming a position it does not have. */}
+        {/* UNMOUNTED while the overlay is open, not faded.
+            
+            The overlay renders its own MinimapFace, and each face is now a real
+            WebGL context -- on a page that already runs two (the scene, and the
+            time-of-day cube). Leaving this one alive behind the overlay would
+            make four. `visible` only ever set opacity, which was fine for a
+            photograph and is not fine for a renderer. */}
+        {!isCoarsePointer && !mapOpen && (
+          <Minimap
+            visible={sceneReady && started && !isInSkyJourneyValue && !openPortal}
+            onOpen={() => setMapOpen(true)}
+            phase={day}
+          />
+        )}
+        {!isCoarsePointer && (
+          <MinimapOverlay
+            open={mapOpen}
+            labels={HOTSPOT_LABELS}
+            currentStop={hotspotNav.current}
+            onPick={(id) => {
+              setMapOpen(false);
+              handleJump(id);
+            }}
+            onClose={() => setMapOpen(false)}
+            phase={day}
+          />
+        )}
         {/* No exit control of its own: the home button in the corner is the
             single way out of a portal. */}
         {openPortal && <PortalDestination portal={openPortal} />}
@@ -1272,9 +1325,6 @@ export default function Page() {
             and the driver does no per-frame work while the plate is up. */}
         {started && !isCoarsePointer && <SceneCursor />}
         {rainTriggered && <RainScene />}
-        {/* Only mounted once the dive commits, so it can never sit over the
-            scene by accident. */}
-        {diveWash !== "idle" && <div className="dive-wash" data-state="covering" aria-hidden="true" />}
       </div>
       {/* The scroll spacer -- now the travel axis for touch navigation, and
           still the entire reason the stage above is fixed.

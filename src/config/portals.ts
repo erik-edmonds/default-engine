@@ -14,7 +14,7 @@
 export type PortalHotspotId = "left-tree" | "moon-island" | "upper"
 
 /** Which interior renders inside the portal's own scene. */
-export type PortalInteriorKind = "points" | "globe" | "avatar"
+export type PortalInteriorKind = "points" | "water" | "avatar"
 
 export type PortalDestination =
   /** Entering offers a link out to another page. */
@@ -26,6 +26,12 @@ export type PortalDestination =
   | { kind: "prose"; paragraphs: string[] }
   /** Entering offers nothing yet, and says so rather than pretending. */
   | { kind: "pending"; note: string }
+  /** Entering shows nothing at all, because the interior IS the destination.
+   *
+   *  Models is the case: you are floating in the pool with the four projects
+   *  hanging in it. A title, a blurb and a "View the work" button on top of
+   *  that would be telling you to go and see the thing you are looking at. */
+  | { kind: "none" }
 
 export interface PortalDefinition {
   /** Matches Card.tsx's `/item/:id` route. */
@@ -87,23 +93,34 @@ export const PORTALS: PortalDefinition[] = [
     id: "01",
     hotspotId: "left-tree",
     title: "Models",
-    credit: "point cloud · live",
-    bg: "#0d1b2a",
-    // A drifting point cloud rather than a downloaded prop: it is generated,
-    // so it is the one interior that owes nobody a credit, and it is the
-    // closest thing the scene can say about the gaussian-splatting work
-    // without shipping a splat.
-    interior: "points",
+    credit: "the water · live simulation",
+    bg: "#06222b",
+    // The real underwater scene, running. Entering this portal goes to
+    // /portfolio, which IS that scene -- so the window shows its own
+    // destination rather than standing in for it. It replaced the point cloud
+    // when the dive was removed: the gear on the beach was a second entrance to
+    // this same page, and the less findable of the two.
+    interior: "water",
     blurb: "Four projects — an election map in D3, object detection, autonomous driving in CARLA, and gaussian splatting.",
-    destination: { kind: "route", href: "/portfolio", label: "View the work" },
+    // Nothing on screen once you are inside. The blurb above still describes
+    // the portal from OUTSIDE, where it is the only thing that says what the
+    // window leads to; `kind: "none"` is about what shows after you enter.
+    // This used to be a route to /portfolio -- a page that held these same four
+    // cards and has been retired, because they are in the pool now.
+    destination: { kind: "none" },
   },
   {
     id: "02",
     hotspotId: "moon-island",
     title: "About",
-    credit: "earth.glb · see CREDITS.md",
-    bg: "#f0f0f0",
-    interior: "globe",
+    credit: "point cloud · live",
+    // Dark, where the globe wanted light. The point cloud is unlit
+    // meshBasicMaterial with toneMapped off, tuned against this exact value in
+    // its old home -- on the old #f0f0f0 it washed out to nothing.
+    bg: "#0d1b2a",
+    // Moved here from Models. Generated rather than downloaded, so it is the
+    // one interior that owes nobody a credit.
+    interior: "points",
     blurb: "A bit about me.",
     destination: { kind: "prose", paragraphs: ABOUT_PARAGRAPHS },
   },

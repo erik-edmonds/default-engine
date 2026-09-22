@@ -11,7 +11,6 @@ import { ObjectTexturePass } from './lib/ObjectTexturePass'
 import { ScubaObjectModel } from './lib/ScubaObject'
 import { createRoundedBoxPoolGeometry } from './lib/CreateRoundedBoxPoolGeometry'
 import { useWaterInteraction, type WaterInteractionControls } from './useWaterInteraction'
-import { ScubaMesh } from './ScubaMesh'
 import { FRAME_COUNT, FRAME_SPACING } from '@/helpers/CameraHelpers'
 import * as roundedBoxShader from './shaders/roundedBox'
 import * as roundedBoxWaterAboveShader from './shaders/roundedBoxWaterAbove'
@@ -24,17 +23,56 @@ const AGITATION_RADIUS = 0.035
 const AGITATION_STRENGTH = 0.006
 
 const CORNER_RADIUS = 0
-const POOL_LENGTH = 3
 const CARD_HEIGHT = 1.61803398875
 const CAMERA_FOV_DEG = 75
 const CAMERA_DISTANCE_TO_FRAME_PLANE = 2
 const POOL_WIDTH_MARGIN = 1.05
 const POOL_WIDTH_SCALE = 2
-
-const WATER_Y_OFFSET = 1.4
-const POOL_FLOOR_DEPTH = (FRAME_COUNT - 1) * FRAME_SPACING + CARD_HEIGHT / 2
 const POOL_DEPTH_EXTRA = 1
-const POOL_HEIGHT = POOL_FLOOR_DEPTH + WATER_Y_OFFSET + POOL_DEPTH_EXTRA
+
+// The pool as /portfolio wants it: as wide as the viewport, as deep as the
+// four-card column is tall. These are the DEFAULTS now rather than the only
+// possible values, because the Models portal shows this same scene through a
+// 1.5 x 2.43 aperture and a 17.6-unit pool would show one arbitrary band of
+// itself. Every one of them is unchanged from what the page computed before,
+// so /portfolio gets exactly the pool it had.
+const PAGE_POOL_LENGTH = 3
+const PAGE_WATER_Y_OFFSET = 1.4
+const PAGE_POOL_FLOOR_DEPTH = (FRAME_COUNT - 1) * FRAME_SPACING + CARD_HEIGHT / 2
+
+/** How big the offscreen passes are. The page renders this full-screen and
+ *  wants the detail; a portal shows it through a small window at a distance,
+ *  where 1024-square caustics buy nothing anyone can see. */
+export type WaterQuality = "full" | "portal"
+const CAUSTICS_SIZE: Record<WaterQuality, number> = { full: 1024, portal: 256 }
+
+export interface WaterSceneProps {
+  /** Overrides the viewport-derived width. */
+  poolWidth?: number
+  poolLength?: number
+  /** Distance from the water surface down to the floor. */
+  poolFloorDepth?: number
+  /** How far above the origin the water surface sits. */
+  waterYOffset?: number
+  quality?: WaterQuality
+  /** Whether the simulation and its offscreen passes run each frame.
+   *
+   *  False leaves the water DRAWN but still: the pool, the surface and the tiles
+   *  all render, and the camera-dependent uniforms keep updating, but the three
+   *  simulation steps, the two caustics passes and the object-texture pass stop.
+   *
+   *  This exists because HotspotPortal's room wakes on `interactive` -- merely
+   *  parking at the Models viewpoint -- not on `open`. Measured there: the
+   *  median frame went from 838ms to 1156ms with the water simulating, a 38%
+   *  cost for something you are looking at through a 1.5-unit window and have
+   *  not entered. Unmounting it instead would leave the portal face empty as
+   *  you approach, which is the one thing a portal must not be. */
+  active?: boolean
+}
+
+/** Frames of simulation to run before going idle, so the surface has normals
+ *  and the caustics texture has content rather than being flat. */
+const WARMUP_FRAMES = 12
 
 function createOpticsUniforms(lightDirection: THREE.Vector3, lightDirection2: THREE.Vector3) {
   return {
@@ -89,7 +127,21 @@ function createWaterMaterial(
   return new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms, side, depthTest: true, depthWrite: true })
 }
 
-export function WaterScene() {
+export function WaterScene({
+  poolWidth: poolWidthProp,
+  poolLength: poolLengthProp,
+  poolFloorDepth: poolFloorDepthProp,
+  waterYOffset: waterYOffsetProp,
+  quality = "full",
+  active = true,
+}: WaterSceneProps = {}) {
+  // Shadowing the old module constants by name, so the several dozen uses
+  // below read exactly as they did.
+  const POOL_LENGTH = poolLengthProp ?? PAGE_POOL_LENGTH
+  const WATER_Y_OFFSET = waterYOffsetProp ?? PAGE_WATER_Y_OFFSET
+  const POOL_FLOOR_DEPTH = poolFloorDepthProp ?? PAGE_POOL_FLOOR_DEPTH
+  const POOL_HEIGHT = POOL_FLOOR_DEPTH + WATER_Y_OFFSET + POOL_DEPTH_EXTRA
+
   const { gl, camera: defaultCamera } = useThree()
   const camera = defaultCamera as THREE.PerspectiveCamera
   const size = useThree((state) => state.size)
@@ -128,25 +180,27 @@ export function WaterScene() {
 
   const objectTexturePass = useMemo(() => new ObjectTexturePass(gl, lightDirection), [gl, lightDirection])
 
+  const causticsSize = CAUSTICS_SIZE[quality]
   const causticsPass = useMemo(
-    () => new CausticsPass(gl, lightDirection, objectTexturePass.shadowTarget.texture),
-    [gl, lightDirection, objectTexturePass],
+    () => new CausticsPass(gl, lightDirection, objectTexturePass.shadowTarget.texture, causticsSize),
+    [gl, lightDirection, objectTexturePass, causticsSize],
   )
   const causticsPass2 = useMemo(
-    () => new CausticsPass(gl, lightDirection2, objectTexturePass.shadowTarget.texture),
-    [gl, lightDirection2, objectTexturePass],
+    () => new CausticsPass(gl, lightDirection2, objectTexturePass.shadowTarget.texture, causticsSize),
+    [gl, lightDirection2, objectTexturePass, causticsSize],
   )
 
   const poolWidth = useMemo(() => {
+    if (poolWidthProp !== undefined) return poolWidthProp
     const fovRad = THREE.MathUtils.degToRad(CAMERA_FOV_DEG)
     const visibleHeight = 2 * CAMERA_DISTANCE_TO_FRAME_PLANE * Math.tan(fovRad / 2)
     const visibleWidth = visibleHeight * (size.width / size.height)
     return (visibleWidth / 2) * POOL_WIDTH_MARGIN * POOL_WIDTH_SCALE
-  }, [size.width, size.height])
+  }, [size.width, size.height, poolWidthProp])
 
   const poolGeometry = useMemo(
     () => createRoundedBoxPoolGeometry(CORNER_RADIUS, poolWidth, POOL_HEIGHT, POOL_LENGTH),
-    [poolWidth],
+    [poolWidth, POOL_HEIGHT, POOL_LENGTH],
   )
   useEffect(() => {
     return () => poolGeometry.dispose()
@@ -175,7 +229,7 @@ export function WaterScene() {
         depthTest: true,
         depthWrite: true,
       }),
-    [lightDirection, lightDirection2, tileTexture, causticsPass, causticsPass2],
+    [lightDirection, lightDirection2, tileTexture, causticsPass, causticsPass2, poolWidth, POOL_HEIGHT, POOL_LENGTH],
   )
 
   const waterAboveMaterial = useMemo(
@@ -194,7 +248,7 @@ export function WaterScene() {
         true,
         { cornerRadius: { value: CORNER_RADIUS }, poolWidth: { value: poolWidth }, poolHeight: { value: POOL_HEIGHT }, poolLength: { value: POOL_LENGTH } },
       ),
-    [lightDirection, lightDirection2, tileTexture, causticsPass, causticsPass2, cubemap, objectTexturePass],
+    [lightDirection, lightDirection2, tileTexture, causticsPass, causticsPass2, cubemap, objectTexturePass, poolWidth, POOL_HEIGHT, POOL_LENGTH],
   )
 
   const waterBelowMaterial = useMemo(
@@ -213,7 +267,7 @@ export function WaterScene() {
         false,
         { cornerRadius: { value: CORNER_RADIUS }, poolWidth: { value: poolWidth }, poolHeight: { value: POOL_HEIGHT }, poolLength: { value: POOL_LENGTH } },
       ),
-    [lightDirection, lightDirection2, tileTexture, causticsPass, causticsPass2, cubemap, objectTexturePass],
+    [lightDirection, lightDirection2, tileTexture, causticsPass, causticsPass2, cubemap, objectTexturePass, poolWidth, POOL_HEIGHT, POOL_LENGTH],
   )
 
   const poolMeshRef = useRef<THREE.Mesh>(null)
@@ -238,7 +292,16 @@ export function WaterScene() {
   }, [])
 
   useEffect(() => {
-    scuba.setEnabled(true, water)
+    // The scuba figure used to be switched on here, and the mesh mounted at the
+    // bottom of the JSX. Both are gone -- it was a diver floating in a portal
+    // that is about to hold the work instead.
+    //
+    // Leaving `scuba` itself in place, disabled, rather than tearing out the
+    // dozen uniform writes that reference it: ScubaObjectModel starts
+    // `enabled = false`, its update() early-returns, every `meshEnabled`
+    // uniform goes false, and ObjectTexturePass is handed null. The shader path
+    // for a submerged object stays intact and unused, which is what you want
+    // when something else is going in the water shortly.
     water.updateNormals(poolWidth, POOL_LENGTH)
   }, [])
 
@@ -250,13 +313,21 @@ export function WaterScene() {
   }, [])
 
   useEffect(() => {
+    // Full canvas resolution, in the portal too.
+    //
+    // This used to cap at 512 on the grounds that a 1.5-unit window did not
+    // need more. It does: once you are INSIDE the portal that window fills the
+    // screen, and these are the reflection and refraction targets the water
+    // surface samples -- capping them is exactly what made the sky above the
+    // surface render as blocks. The budget comes from the four card portals
+    // that used to render their own targets in here and no longer do.
     objectTexturePass.setSize(size.width, size.height)
   }, [objectTexturePass, size.width, size.height])
 
   useEffect(() => {
     causticsPass.setPoolShape('Rounded Box', CORNER_RADIUS, poolWidth, POOL_HEIGHT, POOL_LENGTH)
     causticsPass2.setPoolShape('Rounded Box', CORNER_RADIUS, poolWidth, POOL_HEIGHT, POOL_LENGTH)
-  }, [causticsPass, causticsPass2, poolWidth])
+  }, [causticsPass, causticsPass2, poolWidth, POOL_HEIGHT, POOL_LENGTH])
 
   const poolWidthRef = useRef(poolWidth)
   useEffect(() => {
@@ -272,7 +343,7 @@ export function WaterScene() {
       poolLength: POOL_LENGTH,
       waterSurfaceY: WATER_Y_OFFSET,
     }),
-    [],
+    [POOL_FLOOR_DEPTH, POOL_LENGTH, WATER_Y_OFFSET],
   )
 
   const interaction = useWaterInteraction({
@@ -286,6 +357,7 @@ export function WaterScene() {
   const eye = useMemo(() => new THREE.Vector3(), [])
   const agitationTimer = useRef(0)
   const causticsPass2Parity = useRef(false)
+  const warmup = useRef(0)
 
   useFrame((_state, delta) => {
     const poolMat = poolMeshRef.current?.material as THREE.ShaderMaterial | undefined
@@ -297,31 +369,37 @@ export function WaterScene() {
 
     objectTexturePass.setPoolBounds(poolWidth, POOL_LENGTH)
 
-    scuba.update(
-      delta,
-      {
-        dragging: interaction.draggingObject,
-        physicsEnabled: false,
-        densityEnabled: false,
-        density: 0.9,
-        gravity: GRAVITY,
-        poolWidth,
-        poolHeight: POOL_FLOOR_DEPTH,
-        poolLength: POOL_LENGTH,
-      },
-      water,
-    )
+    // Everything below the uniform writes is the expensive half -- see `active`.
+    if (warmup.current < WARMUP_FRAMES) warmup.current++
+    const simulating = active || warmup.current < WARMUP_FRAMES
 
-    agitationTimer.current += delta
-    if (agitationTimer.current > AGITATION_INTERVAL) {
-      agitationTimer.current -= AGITATION_INTERVAL
-      const strength = Math.random() < 0.5 ? -AGITATION_STRENGTH : AGITATION_STRENGTH
-      water.addDrop(Math.random() * 2 - 1, Math.random() * 2 - 1, AGITATION_RADIUS, strength, poolWidth, POOL_LENGTH)
+    if (simulating) {
+      scuba.update(
+        delta,
+        {
+          dragging: interaction.draggingObject,
+          physicsEnabled: false,
+          densityEnabled: false,
+          density: 0.9,
+          gravity: GRAVITY,
+          poolWidth,
+          poolHeight: POOL_FLOOR_DEPTH,
+          poolLength: POOL_LENGTH,
+        },
+        water,
+      )
+
+      agitationTimer.current += delta
+      if (agitationTimer.current > AGITATION_INTERVAL) {
+        agitationTimer.current -= AGITATION_INTERVAL
+        const strength = Math.random() < 0.5 ? -AGITATION_STRENGTH : AGITATION_STRENGTH
+        water.addDrop(Math.random() * 2 - 1, Math.random() * 2 - 1, AGITATION_RADIUS, strength, poolWidth, POOL_LENGTH)
+      }
+
+      water.stepSimulation(poolWidth, POOL_LENGTH)
+      water.stepSimulation(poolWidth, POOL_LENGTH)
+      water.updateNormals(poolWidth, POOL_LENGTH)
     }
-
-    water.stepSimulation(poolWidth, POOL_LENGTH)
-    water.stepSimulation(poolWidth, POOL_LENGTH)
-    water.updateNormals(poolWidth, POOL_LENGTH)
     const waterTexture = water.textureA.texture
 
     const scubaWorldPosition = scuba.worldPosition
@@ -371,26 +449,28 @@ export function WaterScene() {
       }
     }
 
-    causticsPass.update(water, lightDirection, {
-      sphereEnabled: false,
-      sphereCenter: scubaLocalPosition,
-      sphereRadius: 0,
-      meshEnabled: scuba.enabled,
-      meshCenter: scubaLocalPosition,
-      meshBoundingRadius: scuba.boundingRadius,
-    })
-    causticsPass2Parity.current = !causticsPass2Parity.current
-    if (causticsPass2Parity.current) {
-      causticsPass2.update(water, lightDirection2, {
+    if (simulating) {
+      causticsPass.update(water, lightDirection, {
         sphereEnabled: false,
         sphereCenter: scubaLocalPosition,
         sphereRadius: 0,
-        meshEnabled: false,
+        meshEnabled: scuba.enabled,
         meshCenter: scubaLocalPosition,
         meshBoundingRadius: scuba.boundingRadius,
       })
+      causticsPass2Parity.current = !causticsPass2Parity.current
+      if (causticsPass2Parity.current) {
+        causticsPass2.update(water, lightDirection2, {
+          sphereEnabled: false,
+          sphereCenter: scubaLocalPosition,
+          sphereRadius: 0,
+          meshEnabled: false,
+          meshCenter: scubaLocalPosition,
+          meshBoundingRadius: scuba.boundingRadius,
+        })
+      }
+      objectTexturePass.update(scene, camera, scuba.enabled ? scubaGroup : null)
     }
-    objectTexturePass.update(scene, camera, scuba.enabled ? scubaGroup : null)
   })
 
   return (
@@ -400,9 +480,6 @@ export function WaterScene() {
         <mesh ref={waterAboveMeshRef} geometry={waterAboveGeometry} material={waterAboveMaterial} frustumCulled={false} />
         <mesh ref={waterBelowMeshRef} geometry={waterBelowGeometry} material={waterBelowMaterial} frustumCulled={false} />
       </group>
-      <Suspense fallback={null}>
-        <ScubaMesh ref={scubaGroupRef} lightDirection={lightDirection} causticTexture={causticsPass.texture} />
-      </Suspense>
     </>
   )
 }

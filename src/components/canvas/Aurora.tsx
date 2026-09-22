@@ -107,7 +107,7 @@ export function Aurora({ materialRef }: { materialRef: React.RefObject<THREE.Sha
   )
 
   return (
-    <mesh scale={RADIUS}>
+    <mesh name="aurora" scale={RADIUS}>
       <sphereGeometry args={[1, 64, 32]} />
       <shaderMaterial
         ref={materialRef}

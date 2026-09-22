@@ -443,7 +443,12 @@ export function Environment({
   return (
     <>
       <primitive object={fog} attach="fog" />
-      <mesh scale={800}>
+      {/* Named so the minimap can leave it out of the overhead photograph --
+          a map has no sky. The height rule that catches the sun and moon
+          cannot catch this one: it is centred on the origin, so its lowest
+          point is 800 units DOWN, nowhere near the sky ceiling. See
+          MINIMAP_EXCLUDED. */}
+      <mesh name="sky-dome" scale={800}>
         <sphereGeometry />
         <primitive object={skyMaterial} attach="material" />
       </mesh>

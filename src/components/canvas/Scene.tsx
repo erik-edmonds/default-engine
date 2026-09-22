@@ -1,33 +1,15 @@
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { Bvh } from "@react-three/drei"
-import { useCursorHover } from "@/helpers/useCursorHover"
-import {
-    MAGNETIC_SNAP_RADIUS,
-    activateTarget,
-    registerCursorSurface,
-    registerMagneticTarget,
-    type MagneticTarget,
-} from "@/helpers/cursor"
-
-/** Same reasoning as the guitar's: a prop the cursor should notice without
- *  being captured by. */
-const PROP_MAGNETIC_STRENGTH = 1.05
-const PROP_MAGNETIC_RADIUS = 155
+import { registerCursorSurface } from "@/helpers/cursor"
 
 import { Clouds } from "@/components/canvas/Sky"
-import { Speaker } from "@/components/models/Speaker"
 import { Merged } from "@/components/models/MergedScene"
-import { GreenTree } from "@/components/models/GreenTree"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
-import { BrownTree } from "@/components/models/BrownTree"
-import { ClusterTree } from "@/components/models/ClusterTree"
 import { ringClouds, CLOUD_RING_LOW, CLOUD_RING_HIGH } from "@/config/store"
 import { Pokeball } from "@/components/models/Pokeball"
 import { Waterfall } from "@/components/models/Waterfall"
-import { Gear } from "@/components/models/Gear"
 import { Charizard } from "@/components/models/Charizard"
-import { Palm } from "@/components/models/Palm"
 import { PalmTree } from "@/components/models/PalmTree"
 import { Guitar } from "@/components/models/Guitar"
 import { Gull } from "@/components/models/Gull"
@@ -35,34 +17,7 @@ import { SeagullFlock } from "@/components/canvas/SeagullFlock"
 import { Thunder } from "@/components/canvas/Thunder"
 import { RainController } from "@/components/canvas/RainController"
 
-
-export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downclick, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; downclick: () => void; showSeagulls?: boolean }) {
-    const [hovered, set] = useState(false)
-    useCursorHover(hovered)
-
-    // The Gear's hover state has always lived up here rather than in Gear.tsx
-    // (which has no pointer handling of its own), so its magnet does too. The
-    // wrapper group exists purely to give the registry something to read a
-    // world position from.
-    const gearRef = useRef<THREE.Group>(null)
-    const gearMagnet = useRef<MagneticTarget | null>(null)
-    const downclickRef = useRef(downclick)
-    downclickRef.current = downclick
-    useEffect(() => {
-        if (!gearRef.current) return
-        const target: MagneticTarget = {
-            object: gearRef.current,
-            type: "interactive",
-            strength: PROP_MAGNETIC_STRENGTH,
-            radius: PROP_MAGNETIC_RADIUS,
-            snapRadius: MAGNETIC_SNAP_RADIUS,
-            isEnabled: () => true,
-            activate: () => downclickRef.current(),
-        }
-        gearMagnet.current = target
-        return registerMagneticTarget(target)
-    }, [])
-
+export function Scene({ from, day, transitionSeconds, onDragoniteRelease, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
     // curated raycast surface rather than letting the cursor ray the whole
     // scene -- see the note on cursorSurfaces in helpers/cursor.ts for why
@@ -144,31 +99,18 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, downcl
             <Thunder />
             <RainController />
             <Guitar scale={0.25} position={[0.1,-0.7,1]} rotation={[-Math.PI/12,Math.PI/3,Math.PI/2]}/>
-            {showSeagulls && <SeagullFlock />}
-            <Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/>
+            {/* Named so the minimap can leave the birds out of its overhead
+                photograph: they are scenery, they move, and on a map they read
+                as debris scattered over the water. */}
+            <group name="birds-flock">{showSeagulls && <SeagullFlock />}</group>
+            <group name="birds-gull"><Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/></group>
             <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
-            {/* The dive's entry point, unparked now that the camera goes with
-                the avatar: before this it swam off the island edge and dived
-                while the camera stayed on whatever viewpoint it was on, and
-                then the route hard-cut to /portfolio. */}
-            {/* The position lives on the WRAPPER, not on <Gear>.
-                
-                This wrapper exists only to give the magnetic registry something
-                to read a world position from -- and with the offset on the
-                child, that world position was (0,0,0). The Gear's cursor magnet
-                was pulling toward the middle of the island, six units from the
-                Gear itself. It never showed while the whole thing was commented
-                out; unparking it is what made it matter. */}
-            <group ref={gearRef} name="dive-gear" position={[-3,-1.8,5]}>
-                <Gear
-                    onClick={() => {
-                        // Through the registry, so a direct click and the
-                        // cursor's assisted one share a debounce.
-                        if (gearMagnet.current) activateTarget(gearMagnet.current)
-                        else downclick()
-                    }}
-                    onPointerOver={() => set(true)} onPointerOut={() => set(false)} scale={1} rotation={[0, Math.PI/0.8, 0]} />
-            </group>
+            {/* The scuba gear used to stand here, and clicking it dived the
+                avatar off the island edge and cut to /portfolio. It is gone
+                because it was the second door to a room that already had one:
+                the Models portal's destination is that same page (see
+                config/portals.ts), and a portal you can see from the journey is
+                a better entrance than a prop on a beach you have to find. */}
             {/* The sky journey's entry point, unparked now that the camera
                 actually flies it: CameraController.beginSkyJourney and
                 setSkyOffset were empty functions, so releasing the Dragonite

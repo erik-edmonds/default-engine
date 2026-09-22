@@ -41,6 +41,24 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  // /portfolio is retired: the four project cards it held now hang in the pool
+  // inside the Models portal, which you scroll down through.
+  //
+  // Here rather than as a page calling `redirect()`. That version built, but
+  // the route is statically prerendered, so what shipped was a 200 with a full
+  // HTML document that redirected after hydration -- a real visitor sees a
+  // flash of nothing, and anything that does not run JavaScript (a crawler, a
+  // link unfurler, `curl`) sees a page that never goes anywhere. This is a 308
+  // from the server, before any of that.
+  //
+  // The four project pages UNDER it are untouched; `source` matches the exact
+  // path only, so /portfolio/election still resolves.
+  async redirects() {
+    return [
+      { source: "/portfolio", destination: "/item/01", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

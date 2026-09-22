@@ -1,12 +1,15 @@
 "use client"
 
-import { useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
-import { Gltf } from "@react-three/drei"
+import { easing } from "maath"
 import { SkeletonUtils } from "three-stdlib"
 import { useGLTF } from "@/helpers/useGLTF"
 
+import { WaterScene } from "@/components/canvas/water/WaterScene"
+import { useScrollOffset } from "@/helpers/useScrollOffset"
+import { CARD_GAP, CARD_TOP, PROJECTS } from "@/config/projects"
 import type { PortalInteriorKind } from "@/config/portals"
 
 // What you see through the glass.
@@ -14,9 +17,13 @@ import type { PortalInteriorKind } from "@/config/portals"
 // All three portals used to hold /models/earth.glb at scales 8, 1 and 2 -- one
 // model three times, which is why the arrival read as decoration rather than as
 // a destination. These are three genuinely different things, each one saying
-// something about where its portal goes, and none of them adds a byte to the
-// download: the point cloud is generated, and the globe and the avatar are
-// already in the scene's cache.
+// something about where its portal goes.
+//
+// Models IS the work now: the live water with the four project cards hanging
+// down it, scrollable, which is the whole of what /portfolio used to be. The
+// point cloud moved across to About, taking the globe's place. earth.glb is out
+// of the project entirely; nothing here is a downloaded prop except the avatar,
+// which is the scene's own.
 
 /** A drifting cloud of points.
  *
@@ -86,16 +93,100 @@ function PointCloudInterior({ count = 1400, accent = '#8fd4ff' }: { count?: numb
   )
 }
 
-/** The globe, turning. The one interior that is still a downloaded asset, and
- *  its portal face now says so rather than crediting it to the wrong person. */
-function GlobeInterior() {
-  const group = useRef<THREE.Group>(null)
-  useFrame((state) => {
-    if (group.current) group.current.rotation.y = state.clock.elapsedTime * 0.1
+/** How deep the pool runs below the surface: far enough to hold the whole card
+ *  column with clearance under the last one. */
+const POOL_DEPTH = -CARD_TOP + (PROJECTS.length - 1) * CARD_GAP + 2.6
+
+/** Half-extents of the pool box.
+ *
+ *  Both are larger than they look like they need to be, and the reason is the
+ *  same for each: the camera sits INSIDE this box and cannot move, so the box
+ *  has to reach past whatever the camera can see.
+ *
+ *  Length has a hard floor. The camera parks 0.3 in front of the portal plane
+ *  and the group sits at z -3, so the pool's near wall must land behind z +0.3
+ *  or the camera is outside the box looking at its tiled exterior -- which is
+ *  exactly what the first attempt at "move it further back" produced: a dark
+ *  frame with a sliver of pool wall in one corner. 4.5 puts the near wall at
+ *  +1.5, comfortably behind the camera, and the far wall at -7.5.
+ *
+ *  Width is set by the far wall. At 50 degrees of FOV the camera sees 11.6
+ *  units across at that distance, so anything narrower than that shows the
+ *  world past the pool's sides. */
+const POOL_HALF_WIDTH = 6
+const POOL_HALF_LENGTH = 4.5
+
+/** How far the column can travel before the floor is in shot. */
+const SCROLL_RANGE = POOL_DEPTH - 3
+
+/** The work, underwater. The whole of it -- there is nowhere else to go.
+ *
+ *  The real WaterScene, the same simulation that used to fill /portfolio, as an
+ *  empty pool you scroll down through. The project cards that hung in it have
+ *  been taken out: each was a portal inside this portal, and the items are
+ *  going into the water directly instead. This is still why the portal prints
+ *  no title, no blurb and no "View the work" button -- you are inside the work,
+ *  and the page that button pointed at was a second copy of it and is retired.
+ *
+ *  Sized for the aperture, which is the only reason WaterScene takes dimensions
+ *  at all -- its own defaults build a pool as wide as the viewport around a
+ *  five-stop card column, and through a 1.5 x 2.43 window you would see one
+ *  arbitrary band of that.
+ *
+ *  `quality="portal"` drops the caustics from 1024 square to 256 and caps the
+ *  reflection targets. Those passes run every frame the room is awake, and the
+ *  full-screen sizes bought nothing at this scale. */
+function WaterInterior({ open = false }: { open?: boolean }) {
+  const column = useRef<THREE.Group>(null)
+  const displayY = useRef(0)
+
+  // Scroll descends the pool. The camera CANNOT descend -- it is parked 0.3 in
+  // front of the portal plane, and the interior is a separate scene rendered
+  // with that same camera -- so the pool rises past the window instead. The
+  // effect through the glass is identical and it needs no camera authority,
+  // which the island page would fight for anyway.
+  //
+  // The range is NEGATIVE and the sign flips on the way out, which keeps the
+  // hook's convention identical to Rig's: there, scrolling down drives the
+  // offset negative and the camera descends with it. Here the same negative
+  // offset has to raise the column, so it is negated at the one place it is
+  // applied. Getting this backwards clamps instantly at the top and the pool
+  // simply refuses to move, which is how the first version behaved.
+  const { target, reset } = useScrollOffset({ min: -SCROLL_RANGE, max: 0, speed: 0.004, enabled: open })
+  useEffect(() => { if (!open) reset() }, [open, reset])
+
+  useFrame((_state, delta) => {
+    if (!column.current) return
+    easing.damp(displayY, "current", target.current, 0.25, delta)
+    column.current.position.y = -displayY.current
   })
+
   return (
-    <group ref={group} position={[0, -2, -3]}>
-      <Gltf src="/models/earth.glb" />
+    // Further back than the first version's -2.4, so the window looks into the
+    // volume rather than pressing against the near wall -- but not so far that
+    // the camera leaves the box. See POOL_HALF_LENGTH.
+    <group position={[0, 0.35, -3]}>
+      <group ref={column}>
+        <WaterScene
+          poolWidth={POOL_HALF_WIDTH}
+          poolLength={POOL_HALF_LENGTH}
+          poolFloorDepth={POOL_DEPTH}
+          waterYOffset={0.9}
+          quality="portal"
+          // Still water until you are actually in it. The room wakes as soon as
+          // you park at the viewpoint, and simulating from there cost 38% of the
+          // frame for a window you have not stepped through -- see `active`.
+          active={open}
+        />
+        {/* The four project cards hung here, each one a MeshPortalMaterial with
+            a point cloud inside it -- a portal inside a portal, four extra
+            render targets drawn every frame inside another portal's own render.
+            They are gone; the items go straight into the water instead.
+
+            The column, its depth and its scroll all stay. CARD_TOP, CARD_GAP
+            and CARD_SCALE in config/projects.ts are the geometry whatever goes
+            in next will hang on, which is why that file is still here. */}
+      </group>
     </group>
   )
 }
@@ -142,8 +233,8 @@ function AvatarInterior() {
   )
 }
 
-export function PortalInterior({ kind, accent, count }: { kind: PortalInteriorKind; accent?: string; count?: number }) {
+export function PortalInterior({ kind, accent, count, open }: { kind: PortalInteriorKind; accent?: string; count?: number; open?: boolean }) {
   if (kind === "points") return <PointCloudInterior accent={accent} count={count} />
-  if (kind === "globe") return <GlobeInterior />
+  if (kind === "water") return <WaterInterior open={open} />
   return <AvatarInterior />
 }

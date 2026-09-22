@@ -26,7 +26,15 @@ export class Water {
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer
 
-    const size = 256
+    // 512, not the 256 this shipped with.
+    //
+    // This is the ping-ponged height field the surface normals are derived
+    // from, so it is the resolution of the WATER ITSELF -- at 256 across a pool
+    // that fills the screen once you are inside the portal, the underside of
+    // the surface reads as visible blocks. Doubling it quadruples the texels
+    // stepped three times a frame, which is why it is worth measuring rather
+    // than raising again on feel.
+    const size = 512
     const textureType = this.getSimulationTextureType()
     const options: THREE.RenderTargetOptions = {
       type: textureType,

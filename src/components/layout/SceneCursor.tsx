@@ -42,7 +42,7 @@ const TEXT_RECT_REFRESH_MS = 400
 // because the lit core is what makes it read as a lens rather than a sticker.
 const INK = "#12283a"
 const ACCENT = "#c2490d"
-/** The scene's props -- guitar, scuba gear, pokeball -- turn the cursor red. */
+/** The scene's props -- the guitar and the Poke Ball -- turn the cursor red. */
 const RED = "#b5231b"
 /** The camera hotspots turn it black. Near-black rather than pure #000, which
  *  goes flat and dead next to the scene's warm light. */
@@ -344,7 +344,18 @@ export function SceneCursor() {
     // pointer may be tens of pixels off it, and without this the lock would be
     // a lie. activateTarget debounces, so a click landing on the object anyway
     // still counts once.
-    const onClick = () => {
+    const onClick = (event: MouseEvent) => {
+      // Not when the click landed on a real control.
+      //
+      // This listener is on window, in the capture phase, so it sees every
+      // click on the page -- including the ones that belong to the home button,
+      // the sound toggle and the minimap. If a scene magnet happened to be
+      // locked at that moment, clicking one of those fired BOTH: measured,
+      // opening the map overlay also started a 37-unit camera flight, because a
+      // hotspot ring projected near the widget and the lock was still on it.
+      // A click that lands on a button belongs to that button.
+      const el = event.target as Element | null
+      if (el?.closest?.(DOM_HOVER_SELECTOR)) return
       const target = cursorLock.current
       if (target?.activate) activateTarget(target)
     }
@@ -359,7 +370,10 @@ export function SceneCursor() {
         setOverChrome(false)
         return
       }
-      setCursorHover(domHoverToken.current, "interactive")
+      // "chrome" scope: this hover survives an open portal or map overlay,
+      // where every 3D-prop hover is suppressed. It has to -- the home button
+      // and the overlay's own controls are the things you reach for in there.
+      setCursorHover(domHoverToken.current, "interactive", "chrome")
       // Remember that this hover came from a piece of DOM chrome rather than
       // from something in the 3D scene -- the artwork differs, see the gem.
       setOverChrome(true)

@@ -10,7 +10,6 @@ import {
   DISCOVER_IDLE_MS,
   GUITAR_HINT_POSITION,
   POKEBALL_HINT_POSITION,
-  GEAR_HINT_POSITION,
   DISCOVER_REARM_IDLE_MS,
   HINT_ABANDON_MS,
   HINT_MAX_VISIBLE_MS,
@@ -32,13 +31,14 @@ import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 // This list is also the switch for WHICH discovery hints are live at all -- a
 // hint absent from it is never even considered.
 //
-// `pokeball` and `scuba` are deliberately absent: both props are commented out
-// of Scene.tsx until the sky and underwater scenes are finished, and the
-// director happily went on nudging visitors to click two things that are not in
-// the scene. Everything else about them is left intact (their copy in HINTS,
-// their marker positions, the pokeballUsed/scubaUsed inputs and the `done`
-// bookkeeping below), so re-enabling them is putting them back on this line --
-// the same edit, in the same breath, as uncommenting them in Scene.tsx.
+// `pokeball` is deliberately absent: the prop is in the scene now, but the
+// director would nudge toward it before the sky journey it opens is finished.
+// Everything else about it is intact (its copy in HINTS, its marker position,
+// the pokeballUsed input and the `done` bookkeeping below), so re-enabling it
+// is putting it back on this line.
+//
+// `scuba` used to sit here too. It is not parked, it is deleted -- the gear and
+// the dive are gone, and /portfolio is reached through the Models portal.
 //
 // Discovery order among the live ones is deliberate: the guitar and the clouds
 // change something in place rather than replacing the page, which is the right
@@ -61,7 +61,6 @@ export interface HintDirectorInput {
    *  props report to a single callback each and nothing else -- and
    *  hasInteracted is far too coarse, since every hotspot flight sets it. */
   pokeballUsed: boolean
-  scubaUsed: boolean
   /** Where each portal-bearing hotspot's hint should pin itself, keyed by
    *  hotspot id. Hotspots with no portal (home) are simply absent. */
   portalTargets: Record<string, THREE.Vector3>
@@ -78,7 +77,7 @@ export interface HintDirectorInput {
 // Runs on an interval rather than purely on dependency changes because most of
 // the conditions are *elapsed time* (idle for long enough, arrived long enough
 // ago) and nothing re-renders when time passes.
-export function useHintDirector({ started, hasInteracted, currentHotspot, pokeballUsed, scubaUsed, portalTargets }: HintDirectorInput) {
+export function useHintDirector({ started, hasInteracted, currentHotspot, pokeballUsed, portalTargets }: HintDirectorInput) {
   const setActive = useSetAtom(activeHint)
   const musicOn = useAtomValue(musicEnabled)
   const rainCount = useAtomValue(rainRequest)
@@ -105,7 +104,6 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
     guitar: false,
     clouds: false,
     pokeball: false,
-    scuba: false,
     portalEnter: false,
     portalExit: false,
   })
@@ -135,9 +133,6 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
     if (pokeballUsed) done.current.pokeball = true
   }, [pokeballUsed])
   useEffect(() => {
-    if (scubaUsed) done.current.scuba = true
-  }, [scubaUsed])
-  useEffect(() => {
     if (openPortal !== null) {
       done.current.portalEnter = true
       if (enteredAt.current === null) enteredAt.current = performance.now()
@@ -154,7 +149,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
   // portal, or the first pointer move that dismisses InteractionHint.
   useEffect(() => {
     idleSince.current = performance.now()
-  }, [musicOn, rainCount, pokeballUsed, scubaUsed, currentHotspot, openPortal, introFinished, started])
+  }, [musicOn, rainCount, pokeballUsed, currentHotspot, openPortal, introFinished, started])
 
   // Flight edges. A hotspot hint waits for the camera to actually land.
   useEffect(() => {
@@ -195,8 +190,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
         // stretch.
         case "guitar":
         case "clouds":
-        case "pokeball":
-        case "scuba": {
+        case "pokeball": {
           if (!state.introFinished || state.currentHotspot !== "home") return null
           if (state.flying || state.openPortal !== null) return null
           // The first nudge waits out a full idle stretch; later ones re-arm
@@ -206,7 +200,6 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
           if (now - idleSince.current < idleNeeded) return null
           if (id === "guitar") return { id, target: { kind: "world", position: GUITAR_HINT_POSITION } }
           if (id === "pokeball") return { id, target: { kind: "world", position: POKEBALL_HINT_POSITION } }
-          if (id === "scuba") return { id, target: { kind: "world", position: GEAR_HINT_POSITION } }
           // Cloud positions are randomised per load, so there may be no cloud
           // in frame to point at. Spending the hint on one that's off-screen
           // would burn it silently.
