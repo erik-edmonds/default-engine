@@ -9,14 +9,32 @@ import { Water } from './lib/Water'
 import { CausticsPass } from './lib/CausticsPass'
 import { ObjectTexturePass } from './lib/ObjectTexturePass'
 import { ScubaObjectModel } from './lib/ScubaObject'
+import { CursorProbe } from './lib/CursorProbe'
 import { createRoundedBoxPoolGeometry } from './lib/CreateRoundedBoxPoolGeometry'
 import { useWaterInteraction, type WaterInteractionControls } from './useWaterInteraction'
 import { FRAME_COUNT, FRAME_SPACING } from '@/helpers/CameraHelpers'
+import { cursorScreen } from '@/helpers/cursor'
 import * as roundedBoxShader from './shaders/roundedBox'
 import * as roundedBoxWaterAboveShader from './shaders/roundedBoxWaterAbove'
 import * as roundedBoxWaterBelowShader from './shaders/roundedBoxWaterBelow'
 
 const GRAVITY = new THREE.Vector3(0, -4, 0)
+
+/** The cursor probe.
+ *
+ *  RADIUS is the one number that sets how big the ripple reads, because the
+ *  displacement falls off in units of it. 0.6 in a 12 x 9 pool is a disturbance
+ *  a little wider than a hand -- big enough to see through a 1.5-unit aperture,
+ *  small enough not to slosh the whole surface.
+ *
+ *  FORWARD is how far in front of the camera the probe floats. The camera is
+ *  parked inside the pool with its far wall 7.5 away, so 4 puts the cursor in
+ *  open water rather than against the glass or through the back. Tracking the
+ *  cursor on a plane at a fixed distance -- rather than intersecting the
+ *  surface -- is what makes it follow the pointer 1:1 across the window; a
+ *  surface intersection from a near-horizontal ray runs away to the far wall. */
+const CURSOR_PROBE_RADIUS = 0.6
+const CURSOR_PROBE_FORWARD = 4
 
 const AGITATION_INTERVAL = 0.15
 const AGITATION_RADIUS = 0.035
@@ -273,7 +291,24 @@ export function WaterScene({
   const poolMeshRef = useRef<THREE.Mesh>(null)
   const waterAboveMeshRef = useRef<THREE.Mesh>(null)
   const waterBelowMeshRef = useRef<THREE.Mesh>(null)
-  const scubaGroupRef = useRef<THREE.Group>(null)
+  const poolGroupRef = useRef<THREE.Group>(null)
+  const probeGroupRef = useRef<THREE.Mesh>(null)
+
+  const probe = useMemo(() => new CursorProbe(CURSOR_PROBE_RADIUS), [])
+  const probeRay = useMemo(() => new THREE.Raycaster(), [])
+  const probeNdc = useMemo(() => new THREE.Vector2(), [])
+  const probeRayLocal = useMemo(() => new THREE.Ray(), [])
+  const probeHit = useMemo(() => new THREE.Vector3(), [])
+  const probeSurface = useMemo(() => new THREE.Vector3(), [])
+  const probeRender = useMemo(() => new THREE.Vector3(), [])
+  const poolInverse = useMemo(() => new THREE.Matrix4(), [])
+  const probeGeometry = useMemo(() => new THREE.SphereGeometry(CURSOR_PROBE_RADIUS, 12, 8), [])
+  const probeMaterial = useMemo(() => new THREE.MeshBasicMaterial(), [])
+
+  /** The canvas' position on the page, so the cursor's client pixels can be
+   *  turned into NDC. Read on resize rather than per frame -- a
+   *  getBoundingClientRect() inside useFrame forces layout every frame. */
+  const canvasRect = useRef({ left: 0, top: 0, width: 1, height: 1 })
 
   useEffect(() => {
     return () => {
@@ -311,6 +346,26 @@ export function WaterScene({
     }
     water.updateNormals(poolWidth, POOL_LENGTH)
   }, [])
+
+  useEffect(() => {
+    const rect = gl.domElement.getBoundingClientRect()
+    canvasRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+  }, [gl, size.width, size.height])
+
+  useEffect(() => {
+    if (active) return
+    // Hand the surface back what the probe was holding open. Without this the
+    // dent under the cursor is simply abandoned when the portal closes, and the
+    // pool keeps a divot exactly where you left the pointer.
+    probe.leave(water, poolWidth, POOL_LENGTH)
+  }, [active, probe, water, poolWidth, POOL_LENGTH])
+
+  useEffect(() => {
+    return () => {
+      probeGeometry.dispose()
+      probeMaterial.dispose()
+    }
+  }, [probeGeometry, probeMaterial])
 
   useEffect(() => {
     // Full canvas resolution, in the portal too.
@@ -389,6 +444,77 @@ export function WaterScene({
         water,
       )
 
+      // ---------------------------------------------------- the cursor, submerged
+      //
+      // Tracked on a plane a fixed distance in front of the camera, in the
+      // pool's OWN space -- the portal translates the pool and the scroll moves
+      // it every frame, so anything computed in world coordinates drifts as you
+      // scroll. Inverting the pool group's matrix each frame costs one 4x4 and
+      // makes the whole chain (portal offset, scroll, water offset) cancel.
+      const poolGroup = poolGroupRef.current
+      let probeTracked = false
+      if (poolGroup && cursorScreen.started) {
+        poolGroup.updateWorldMatrix(true, false)
+        poolInverse.copy(poolGroup.matrixWorld).invert()
+        objectTexturePass.setPoolMatrix(poolGroup.matrixWorld)
+
+        const rect = canvasRect.current
+        probeNdc.set(
+          ((cursorScreen.x - rect.left) / rect.width) * 2 - 1,
+          -((cursorScreen.y - rect.top) / rect.height) * 2 + 1,
+        )
+        if (Math.abs(probeNdc.x) <= 1 && Math.abs(probeNdc.y) <= 1) {
+          probeRay.setFromCamera(probeNdc, camera)
+          probeRayLocal.copy(probeRay.ray).applyMatrix4(poolInverse)
+
+          // Where the sphere hangs: near the viewer, so its shadow drops BELOW
+          // the cursor rather than landing on top of it.
+          probeRayLocal.at(CURSOR_PROBE_FORWARD, probeHit)
+          const limitX = Math.max(0, poolWidth - probe.radius)
+          const limitZ = Math.max(0, POOL_LENGTH - probe.radius)
+          probeRender.set(
+            THREE.MathUtils.clamp(probeHit.x, -limitX, limitX),
+            THREE.MathUtils.clamp(probeHit.y, -POOL_FLOOR_DEPTH + probe.radius, -probe.radius),
+            THREE.MathUtils.clamp(probeHit.z, -limitZ, limitZ),
+          )
+
+          // Where the RIPPLE goes: the point the cursor's ray crosses the water
+          // surface. Every point on that ray projects back to the cursor's own
+          // screen position, so a disturbance there appears centred on the
+          // pointer -- which is the whole ask. Driving it from the sphere
+          // instead puts the ripple wherever the surface happens to be above a
+          // point four units in front of the camera, i.e. not under the cursor
+          // at all.
+          const dirY = probeRayLocal.direction.y
+          let wakeX = probeRender.x
+          let wakeZ = probeRender.z
+          if (Math.abs(dirY) > 1e-5) {
+            const tSurface = -probeRayLocal.origin.y / dirY
+            if (tSurface > 0) {
+              probeRayLocal.at(tSurface, probeSurface)
+              if (Math.abs(probeSurface.x) < poolWidth && Math.abs(probeSurface.z) < POOL_LENGTH) {
+                wakeX = probeSurface.x
+                wakeZ = probeSurface.z
+              }
+            }
+          }
+
+          probe.moveTo(
+            water,
+            THREE.MathUtils.clamp(wakeX, -limitX, limitX),
+            THREE.MathUtils.clamp(wakeZ, -limitZ, limitZ),
+            probeRender,
+            poolWidth,
+            POOL_LENGTH,
+            delta,
+          )
+          probeTracked = true
+        }
+      }
+      // Pointer off the canvas: take the displacement back out rather than
+      // leaving the last dent open.
+      if (!probeTracked && probe.enabled) probe.leave(water, poolWidth, POOL_LENGTH)
+
       agitationTimer.current += delta
       if (agitationTimer.current > AGITATION_INTERVAL) {
         agitationTimer.current -= AGITATION_INTERVAL
@@ -402,18 +528,21 @@ export function WaterScene({
     }
     const waterTexture = water.textureA.texture
 
-    const scubaWorldPosition = scuba.worldPosition
-    const scubaLocalPosition = scubaWorldPosition.clone()
-    scubaLocalPosition.y -= WATER_Y_OFFSET
+    // The probe's positions are already pool-local -- that is the space it is
+    // computed in -- so unlike the diver there is no offset to undo here.
+    const probeCenter = probe.renderPosition
 
     poolMat.uniforms.water.value = waterTexture
     poolMat.uniforms.light.value.copy(lightDirection)
     poolMat.uniforms.light2.value.copy(lightDirection2)
     poolMat.uniforms.poolWidth.value = poolWidth
-    poolMat.uniforms.meshEnabled.value = scuba.enabled
-    poolMat.uniforms.meshCenter.value.copy(scubaLocalPosition)
-    poolMat.uniforms.meshBoundingRadius.value = scuba.boundingRadius
-    poolMat.uniforms.meshShadowRadius.value = scuba.boundingRadius
+    // The soft near-field darkening on the floor and walls, which is the half of
+    // the shadow that reads when the cursor is close to a surface. The sharp
+    // half arrives through the caustics texture's green channel below.
+    poolMat.uniforms.meshEnabled.value = probe.enabled
+    poolMat.uniforms.meshCenter.value.copy(probeCenter)
+    poolMat.uniforms.meshBoundingRadius.value = probe.radius
+    poolMat.uniforms.meshShadowRadius.value = probe.radius
 
     camera.getWorldPosition(eye)
     eye.setY(eye.y - WATER_Y_OFFSET)
@@ -423,62 +552,75 @@ export function WaterScene({
       material.uniforms.light2.value.copy(lightDirection2)
       material.uniforms.eye.value.copy(eye)
       material.uniforms.poolWidth.value = poolWidth
-      material.uniforms.meshEnabled.value = scuba.enabled
-      material.uniforms.meshCenter.value.copy(scubaLocalPosition)
-      material.uniforms.meshBoundingRadius.value = scuba.boundingRadius
-      material.uniforms.meshShadowRadius.value = scuba.boundingRadius
-    }
-
-    const scubaGroup = scubaGroupRef.current
-    if (scubaGroup) {
-      scubaGroup.position.copy(scubaWorldPosition)
-      scubaGroup.visible = scuba.enabled
-
-      let scubaMat: THREE.ShaderMaterial | undefined
-      scubaGroup.traverse((child) => {
-        if (!scubaMat && child instanceof THREE.Mesh && child.material instanceof THREE.ShaderMaterial) {
-          scubaMat = child.material
-        }
-      })
-      if (scubaMat) {
-        scubaMat.uniforms.water.value = waterTexture
-        scubaMat.uniforms.light.value.copy(lightDirection)
-        scubaMat.uniforms.poolWidth.value = poolWidth
-        scubaMat.uniforms.poolHeight.value = POOL_FLOOR_DEPTH
-        scubaMat.uniforms.poolLength.value = POOL_LENGTH
-      }
+      // Deliberately false. These two branches sample the reflection and
+      // refraction targets to draw the object IN the surface, and the probe is
+      // a collider the user must never see -- switching this on paints a
+      // clear-coloured ghost of it across the water.
+      material.uniforms.meshEnabled.value = false
+      material.uniforms.meshCenter.value.copy(probeCenter)
+      material.uniforms.meshBoundingRadius.value = probe.radius
+      material.uniforms.meshShadowRadius.value = probe.radius
     }
 
     if (simulating) {
       causticsPass.update(water, lightDirection, {
         sphereEnabled: false,
-        sphereCenter: scubaLocalPosition,
+        sphereCenter: probeCenter,
         sphereRadius: 0,
-        meshEnabled: scuba.enabled,
-        meshCenter: scubaLocalPosition,
-        meshBoundingRadius: scuba.boundingRadius,
+        // This is what puts the real shadow on the floor: the branch it selects
+        // samples objectShadowTex along the refracted light and writes the
+        // result into the caustics texture's green channel, which the pool
+        // shader multiplies its lighting by.
+        meshEnabled: probe.enabled,
+        meshCenter: probeCenter,
+        meshBoundingRadius: probe.radius,
       })
       causticsPass2Parity.current = !causticsPass2Parity.current
       if (causticsPass2Parity.current) {
         causticsPass2.update(water, lightDirection2, {
           sphereEnabled: false,
-          sphereCenter: scubaLocalPosition,
+          sphereCenter: probeCenter,
           sphereRadius: 0,
           meshEnabled: false,
-          meshCenter: scubaLocalPosition,
-          meshBoundingRadius: scuba.boundingRadius,
+          meshCenter: probeCenter,
+          meshBoundingRadius: probe.radius,
         })
       }
-      objectTexturePass.update(scene, camera, scuba.enabled ? scubaGroup : null)
+
+      // Visible only for the duration of the shadow pass. The probe has to be
+      // in the scene graph for ObjectTexturePass to render it, and must not be
+      // in the frame the user sees -- so it is switched on immediately before
+      // and off immediately after, inside the same callback, which r3f runs
+      // before it draws.
+      const probeMesh = probeGroupRef.current
+      if (probeMesh) {
+        probeMesh.position.copy(probeCenter)
+        probeMesh.visible = probe.enabled
+      }
+      objectTexturePass.update(scene, camera, probe.enabled ? probeMesh : null, true)
+      if (probeMesh) probeMesh.visible = false
     }
   })
 
   return (
     <>
-      <group position={[0, WATER_Y_OFFSET, 0]}>
+      <group ref={poolGroupRef} position={[0, WATER_Y_OFFSET, 0]}>
         <mesh ref={poolMeshRef} geometry={poolGeometry} material={poolMaterial} frustumCulled={false} />
         <mesh ref={waterAboveMeshRef} geometry={waterAboveGeometry} material={waterAboveMaterial} frustumCulled={false} />
         <mesh ref={waterBelowMeshRef} geometry={waterBelowGeometry} material={waterBelowMaterial} frustumCulled={false} />
+        {/* The cursor's collider. Never drawn for the viewer -- it is switched
+            visible for one offscreen pass per frame and switched straight back
+            (see the shadow pass above). It sits in this group because the probe
+            is computed in this group's space, so its transform needs no
+            correction. frustumCulled off: it is invisible when three does the
+            culling, and a culled object casts nothing. */}
+        <mesh
+          ref={probeGroupRef}
+          geometry={probeGeometry}
+          material={probeMaterial}
+          visible={false}
+          frustumCulled={false}
+        />
       </group>
     </>
   )

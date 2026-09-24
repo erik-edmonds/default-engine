@@ -41,6 +41,26 @@ export const clicked = atom(true)
 export const hovered = atom(false)
 export const raining = atom(false)
 export const inSkyJourney = atom(false)
+
+/** True from the moment the fly-up BEGINS, not from when the journey takes
+ *  over -- which is the whole point of it existing separately.
+ *
+ *  The paper world is ~22MB of texture across two GLBs plus a troika font
+ *  atlas. Mounted on `inSkyJourney` it all resolved on the single frame the
+ *  camera handed over, landing a stall on the same frame that already carried
+ *  the rotation hand-over and the avatar's first bob. Mounted on this instead,
+ *  it resolves during the five seconds of the climb, while nothing else is
+ *  asking for the main thread. */
+export const skyWorldMounted = atom(false)
+
+/** True from the instant the Poke Ball is clicked, false again on the way home.
+ *
+ *  Distinct from `inSkyJourney`, which only turns true once the camera has
+ *  finished climbing -- roughly seven seconds later. Page chrome that belongs
+ *  to the island, the name stamp above all, has to leave when the sequence
+ *  STARTS rather than when it ends; gated on the journey it sat over the
+ *  screen for the whole zoom and climb. */
+export const skySequenceStarted = atom(false)
 export const goHomeRequest = atom(0) // incrementing counter -- bumped to request a return-home
 export const thunder = atom(0) // incrementing counter -- bumped on cloud click to trigger a thunder burst
 

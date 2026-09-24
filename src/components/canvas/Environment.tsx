@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
+import { useAtomValue } from "jotai"
+import {
+  PAPER_SKY,
+  PAPER_FADE_IN,
+  PAPER_FADE_OUT,
+  PAPER_FADE_MAX_DELTA,
+  skyAltitudeShare,
+} from "@/config/paperSky"
+import { inSkyJourney, skySequenceStarted } from "@/helpers/StateProvider"
 import { useFrame } from "@react-three/fiber"
 // NOT drei's <Sky> -- the sky here is the custom two-colour smoothstep dome
 // below. (That import was dead and has been removed.)
@@ -130,6 +139,23 @@ const CAMPFIRE_GLOW_DAMP = 2.5
 const AURORA_SUN_OPACITY_FLOOR = 0.05
 const AURORA_SUN_OPACITY_CEIL = 0.2
 
+/** How far the island's four-role rig is dimmed once the paper world is fully
+ *  up. Not to zero: the avatar is still a 3D character in the middle of the
+ *  frame and losing all of its modelling makes it read as a sticker. */
+const ISLAND_RIG_DIM = 0.75
+
+/** The paper world's own light. Neutral, nearly frontal, and flat -- the
+ *  cutouts carry their colour in their own textures and want to be lit evenly,
+ *  not modelled. Placed in front and slightly above the corridor so the cloud
+ *  normals read without any one edge catching a hot highlight. */
+const PAPER_LIGHT = {
+  ambient: "#e8f1fb",
+  ambientIntensity: 1.5,
+  key: "#ffffff",
+  keyIntensity: 1.6,
+  keyPosition: [6, 14, 26] as [number, number, number],
+} as const
+
 const skyVertexShader = /* glsl */ `
   varying vec3 vPos;
   void main() {
@@ -141,6 +167,12 @@ const skyVertexShader = /* glsl */ `
 const skyFragmentShader = /* glsl */ `
   uniform vec3 uTop;
   uniform vec3 uHorizon;
+  /** 0 = the island's sky, 1 = the paper backdrop. Crossfaded, never switched:
+   *  a cut here is exactly the abrupt hand-over the journey used to have. */
+  uniform float uPaper;
+  uniform vec3 uPaperBase;
+  uniform vec3 uPaperStripe;
+  uniform float uStripeFreq;
   varying vec3 vPos;
   void main() {
     // Single monotonic curve, horizon (lightest) to zenith (darkest) -- no
@@ -153,9 +185,49 @@ const skyFragmentShader = /* glsl */ `
     // everywhere (no seam); the window below is tuned to where the camera
     // actually looks, so most of the visible sky (not just a thin sliver
     // right at the horizon) shows real gradient contrast.
-    float y = normalize(vPos).y;
+    vec3 dir = normalize(vPos);
+    float y = dir.y;
     float t = smoothstep(-0.2, 0.55, y);
-    gl_FragColor = vec4(mix(uHorizon, uTop, t), 1.0);
+    vec3 sky = mix(uHorizon, uTop, t);
+
+    // ---------------------------------------------------------- construction paper
+    //
+    // The sky journey's destination is a flat paper world, so the dome turns
+    // into the sheet it is pinned to rather than a second dome being mounted
+    // over the first: one mesh, one material, one writer, and a uniform to
+    // cross between them.
+    //
+    // Stripes run with the AZIMUTH, not with world x. A plane of constant x
+    // cuts a sphere in a circle that closes over the top, so world-x stripes
+    // converge to a point at the zenith and read as a beach ball; by azimuth
+    // they stay parallel all the way up, which is what a sheet of striped
+    // paper behind the scene looks like.
+    float az = atan(dir.x, dir.z);
+    // uStripeFreq is stripes per FULL TURN, and it must be an even integer --
+    // that is the whole seam fix. atan returns (-PI, PI], so the two sides of
+    // the wrap are the same direction in space but +PI and -PI in the formula.
+    // The old value was stripes per RADIAN (16), which is 100.53 per turn, so
+    // the two sides evaluated to fract(+50.27) = 0.265 and fract(-50.27) =
+    // 0.735 -- a hard vertical discontinuity from zenith to nadir, which is the
+    // "two uneven pieces of texture" in the backdrop. With an even integer
+    // count both sides land on fract(+/-N/2) = 0 and the seam cannot exist.
+    float s = fract(az * uStripeFreq / 6.283185307179586);
+    // Soft-edged bands. The reference paper has a slight sheen rather than a
+    // hard print edge, so this is a smoothstep pair, not a step().
+    float band = smoothstep(0.0, 0.22, s) * (1.0 - smoothstep(0.5, 0.72, s));
+    vec3 paper = mix(uPaperBase, uPaperStripe, band * 0.55);
+
+    // Paper is lit by the room it is in: a little brighter toward the middle,
+    // falling off at the top and the edges. Without this it reads as a flat
+    // fill and the cutouts in front of it have nothing to sit against.
+    paper *= 1.0 - 0.28 * smoothstep(0.1, 0.95, abs(y));
+    // No horizontal vignette. It used to key off abs(dir.x), a WORLD axis --
+    // harmless when the camera never turned, but the flight banks now, so it
+    // would slide across the backdrop as the heading changes. A vignette that
+    // moves relative to the paper it is printed on reads as a lighting bug.
+
+
+    gl_FragColor = vec4(mix(sky, paper, uPaper), 1.0);
   }
 `
 
@@ -189,6 +261,28 @@ export function Environment({
    *  were handed for this same change, or they visibly desync. */
   transitionSeconds?: number
 }) {
+  // Read through a ref: this component's work is one useFrame writing uniforms
+  // every frame, and re-rendering it on a state change would be the expensive
+  // way to learn one boolean.
+  const inSkyJourneyValue = useAtomValue(inSkyJourney)
+  const inSkyJourneyRef = useRef(inSkyJourneyValue)
+  // The sequence flag, not the arrival flag: the paper world starts appearing
+  // partway UP the climb, which is long before `inSkyJourney` is true.
+  const skySequenceValue = useAtomValue(skySequenceStarted)
+  const skySequenceRef = useRef(skySequenceValue)
+  /** 0 on the island, 1 in the paper world, and every value between during the
+   *  hand-over. One number drives the backdrop, the celestials and the fog, so
+   *  they cannot get out of step with each other. */
+  const paperBlendRef = useRef(inSkyJourneyValue ? 1 : 0)
+  // Scratch colours, reused rather than allocated each frame -- same reason as
+  // keyDir below.
+  const paperAmbientRef = useRef<THREE.AmbientLight>(null)
+  const paperKeyRef = useRef<THREE.DirectionalLight>(null)
+  const fogScratch = useRef(new THREE.Color())
+  const paperFogColor = useRef(new THREE.Color(PAPER_SKY.base))
+  useEffect(() => { inSkyJourneyRef.current = inSkyJourneyValue }, [inSkyJourneyValue])
+  useEffect(() => { skySequenceRef.current = skySequenceValue }, [skySequenceValue])
+
   // The single continuously-tweened source of truth. A ref (not state) --
   // this is read imperatively every frame in useFrame below, same pattern
   // as EarthIntro's shader-uniform updates, so a 60fps gsap tween doesn't
@@ -290,6 +384,10 @@ export function Environment({
         uniforms: {
           uTop: { value: new THREE.Color(PRESETS[target].skyTop) },
           uHorizon: { value: new THREE.Color(PRESETS[target].skyHorizon) },
+          uPaper: { value: 0 },
+          uPaperBase: { value: new THREE.Color(PAPER_SKY.base) },
+          uPaperStripe: { value: new THREE.Color(PAPER_SKY.stripe) },
+          uStripeFreq: { value: PAPER_SKY.stripeFreq },
         },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -326,6 +424,45 @@ export function Environment({
   useFrame((state, delta) => {
     const b = blendRef.current
 
+    // How much of the paper world is showing. Damped toward the journey's
+    // state so the two worlds pass through each other rather than cutting --
+    // ONE number, read by the backdrop, the light rig, the celestials and the
+    // fog, so none of them can get out of step with the others.
+    //
+    // Computed here, at the top of the frame, because the light rig below
+    // reads it. It used to sit further down, next to the celestials.
+    // Driven by ALTITUDE, so the backdrop arrives with the climb rather than
+    // switching on when the camera stops. See PAPER_FADE_START_Y. The journey
+    // flag only says the sequence is running at all -- while it is off, and on
+    // the island, this is zero whatever height anything else is at.
+    const paperTarget = skySequenceRef.current ? skyAltitudeShare(state.camera.position.y) : 0
+    paperBlendRef.current = THREE.MathUtils.damp(
+      paperBlendRef.current,
+      paperTarget,
+      // Leaving is quicker than arriving: coming home you have already decided
+      // to go, and a slow dissolve there reads as lag rather than as grace.
+      paperTarget > paperBlendRef.current ? 1 / PAPER_FADE_IN : 1 / PAPER_FADE_OUT,
+      // Clamped: an unclamped damp takes a visible bite out of the fade on a
+      // long frame, and the hand-over is where the long frames are.
+      Math.min(delta, PAPER_FADE_MAX_DELTA),
+    )
+    const paperShare = paperBlendRef.current
+    skyMaterial.uniforms.uPaper.value = paperShare
+
+    // The island's cinematic rig, dimmed as the paper world arrives.
+    //
+    // It is a FOUR-ROLE rig aimed at the island: key, fill, rim, kick, with a
+    // shadow target at y -4. Directional lights are position-independent, so
+    // every one of those angles and intensities hits a prop 160 units up
+    // exactly as it hits the island -- and at evening the key is #ff9d5c at
+    // 2.6 and the rim #ff7a6b at 1.9, which is a strong orange raking light
+    // across what is meant to read aswhite paper. It is dimmed rather than cut so
+    // the avatar keeps some of its own modelling on the way up.
+    const islandLight = 1 - paperShare * ISLAND_RIG_DIM
+
+    if (paperAmbientRef.current) paperAmbientRef.current.intensity = PAPER_LIGHT.ambientIntensity * paperShare
+    if (paperKeyRef.current) paperKeyRef.current.intensity = PAPER_LIGHT.keyIntensity * paperShare
+
     skyMaterial.uniforms.uTop.value.set(b.skyTop)
     skyMaterial.uniforms.uHorizon.value.set(b.skyHorizon)
 
@@ -335,17 +472,17 @@ export function Environment({
 
     if (ambientRef.current) {
       ambientRef.current.color.set(b.ambientColor)
-      ambientRef.current.intensity = b.ambientIntensity
+      ambientRef.current.intensity = b.ambientIntensity * islandLight
     }
     if (hemiRef.current) {
       hemiRef.current.color.set(b.hemiSky)
       hemiRef.current.groundColor.set(b.hemiGround)
-      hemiRef.current.intensity = b.hemiIntensity
+      hemiRef.current.intensity = b.hemiIntensity * islandLight
     }
     // KEY -- the sun/moon, and the only shadow caster in the scene.
     if (dirRef.current) {
       dirRef.current.color.set(b.dirColor)
-      dirRef.current.intensity = b.dirIntensity
+      dirRef.current.intensity = b.dirIntensity * islandLight
       keyDir.current.set(b.dirX, b.dirY, b.dirZ).normalize().multiplyScalar(KEY_DISTANCE)
       dirRef.current.position.copy(keyDir.current)
     }
@@ -353,19 +490,19 @@ export function Environment({
     // isn't a fill any more, it's a second key.
     if (fillRef.current) {
       fillRef.current.color.set(b.fillColor)
-      fillRef.current.intensity = b.fillIntensity
+      fillRef.current.intensity = b.fillIntensity * islandLight
       fillRef.current.position.set(b.fillX, b.fillY, b.fillZ)
     }
     // RIM -- behind, and now on the opposite side of frame from the key.
     if (rimRef.current) {
       rimRef.current.color.set(b.rimColor)
-      rimRef.current.intensity = b.rimIntensity
+      rimRef.current.intensity = b.rimIntensity * islandLight
       rimRef.current.position.set(b.rimX, b.rimY, b.rimZ)
     }
     // KICK -- low front quarter on the key's side; sand/water bounce.
     if (kickRef.current) {
       kickRef.current.color.set(b.kickColor)
-      kickRef.current.intensity = b.kickIntensity
+      kickRef.current.intensity = b.kickIntensity * islandLight
       kickRef.current.position.set(b.kickX, b.kickY, b.kickZ)
     }
     // Apparent exposure. This still reaches the image even though
@@ -408,32 +545,92 @@ export function Environment({
       // the (fixed) home camera position every frame instead keeps it
       // face-on from that vantage point for the whole arc.
       sunGroupRef.current.lookAt(ISLAND_CAMERA_POSITION)
-      // Hand the sun's live position (and how much glare it should throw) to
-      // SunFlare.tsx, which is mounted in page.tsx's <EffectComposer> --
-      // outside the <Suspense> this component lives in, so a module-level
-      // singleton is the cheapest bridge. See helpers/sunTracker.ts.
+      // Hand the sun's live position to SunFlare.tsx, which is mounted in
+      // page.tsx's <EffectComposer> -- outside the <Suspense> this component
+      // lives in, so a module-level singleton is the cheapest bridge. See
+      // helpers/sunTracker.ts.
+      //
+      // How much glare it throws is written further down, with the rest of the
+      // sky furniture, because it has to fade out with the body casting it.
       sunState.position.copy(sunGroupRef.current.position)
-      sunState.flare = b.flareOpacity
     }
     if (moonGroupRef.current) {
       const rad = (b.moonAngle * Math.PI) / 180
       moonGroupRef.current.position.set(ARC_CENTER_X + ARC_RADIUS * Math.cos(rad), ARC_CENTER_Y + ARC_RADIUS * Math.sin(rad), b.moonZ)
       moonGroupRef.current.lookAt(ISLAND_CAMERA_POSITION)
     }
+    // The sky FURNITURE leaves early; the backdrop keeps blending after it has
+    // gone. Two curves, not one, because they are solving different problems.
+    //
+    // The backdrop wants a long dissolve -- that is the whole point of the
+    // crossfade. The sun and moon do not: from the journey camera they sit
+    // about 23 degrees BELOW the viewer (they ride a world-fixed arc the
+    // journey rises past), so a slow fade means several seconds of a sunset
+    // glowing underneath your feet. Gone by the time the dissolve is half done
+    // reads as the island's sky being drawn away first.
+    const furnitureShare = Math.max(0, 1 - paperShare / 0.45)
+
     // Hidden outright when faded out, not merely transparent. Both materials
     // are `transparent` with depthWrite left on, so an opacity-0 disc was
     // still submitted and still wrote depth -- an invisible solid object
     // parked in the sky. Three of the four phases have the moon at 0.
-    if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity
-    if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity
-    if (sunGroupRef.current) sunGroupRef.current.visible = b.sunOpacity > 0.01
-    if (moonGroupRef.current) moonGroupRef.current.visible = b.moonOpacity > 0.01
-    if (starsGroupRef.current) starsGroupRef.current.visible = b.starsOpacity > 0.5
+    if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity * furnitureShare
+    if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity * furnitureShare
+    // Everything celestial is world-fixed at ground level, so the sky journey
+    // rises PAST it rather than toward it.
+    //
+    // The sun and moon ride an arc centred at (6, -8) of radius 80; from the
+    // journey camera the day sun sits about 23 degrees BELOW the horizon and
+    // 28 across -- inside a 25/40-degree half-frustum, i.e. in the lower right
+    // of frame, underneath the viewer. Night puts the moon in the same spot,
+    // and evening is worst because it is the one phase with a lens flare, so
+    // SunFlare throws one from a sun beneath your feet.
+    //
+    // Stars is a shell of radius 100-150 centred on the origin and the camera
+    // climbs to roughly that radius, so half the field ends up behind it with
+    // the nearest stars a few units away. Sparkles is a 50-unit cube at the
+    // origin, which becomes a glitter slab far below.
+    //
+    // Hiding them is deterministic; flying higher only pushes the sun further
+    // down until it happens to clear the frustum edge.
+    // (blend computed above, before the opacities that read it)
+    // Crossfaded, not switched. As a boolean this was the abrupt hand-over:
+    // the island's whole sky -- moon, stars, aurora -- vanished on one frame
+    // while the camera was still climbing, and what it vanished INTO was an
+    // empty gradient, because the paper world did not exist yet. Now the two
+    // worlds pass through each other over PAPER_FADE seconds.
+    // The glare leaves with the sun that casts it.
+    //
+    // This was the "weird evening glare on the avatar". SunFlare is inside the
+    // composer with no journey gate at all, and the celestial fade above only
+    // hid the DISC. Evening is the one phase with flareOpacity 1, and from the
+    // journey camera the sun sits ~119 units below -- so an invisible sun went
+    // on throwing a full-strength flare, and the library mirrors its ghosts
+    // through frame centre (-lensPosition * 0.25 and * 1.25), which lands them
+    // squarely on the avatar. FLARE_GAIN is (22, 12, 6), added before Bloom and
+    // before AgX, so it is not subtle.
+    sunState.flare = b.flareOpacity * furnitureShare
+
+    if (sunGroupRef.current) sunGroupRef.current.visible = b.sunOpacity * furnitureShare > 0.01
+    if (moonGroupRef.current) moonGroupRef.current.visible = b.moonOpacity * furnitureShare > 0.01
+    if (starsGroupRef.current) starsGroupRef.current.visible = b.starsOpacity * furnitureShare > 0.5
     if (auroraMaterialRef.current) {
       auroraMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime
       const auroraVisibility = 1 - THREE.MathUtils.smoothstep(b.sunOpacity, AURORA_SUN_OPACITY_FLOOR, AURORA_SUN_OPACITY_CEIL)
-      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity * auroraVisibility
+      // The aurora's band height comes from direction-from-the-origin, so
+      // rising 160 units sinks the curtain toward the horizon. Faded out with
+      // the rest of the sky furniture.
+      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity * auroraVisibility * furnitureShare
     }
+
+    // The island's fog is depth cue for a world with depth. The paper world is
+    // a flat sheet a few units behind flat cutouts, and fog over that reads as
+    // a smear -- so it is pushed out of range as the paper arrives rather than
+    // switched off, which would pop.
+    fogScratch.current.set(b.fogColor)
+    fog.color.lerpColors(fogScratch.current, paperFogColor.current, paperShare)
+    fog.near = THREE.MathUtils.lerp(b.fogNear, 600, paperShare)
+    fog.far = THREE.MathUtils.lerp(b.fogFar, 1400, paperShare)
 
     const lit = campfireLitRef.current
     if (litCampfireRef.current) litCampfireRef.current.visible = lit
@@ -459,6 +656,18 @@ export function Environment({
           first frame before that runs. */}
       <ambientLight ref={ambientRef} />
       <hemisphereLight ref={hemiRef} />
+
+      {/* The paper world's own rig, crossfading in as the island's dims out.
+          Neutral and nearly frontal on purpose: these props are flat cutouts
+          and the look is even, printed colour, not modelling. Two lights, both
+          cheap, neither casting. */}
+      <ambientLight ref={paperAmbientRef} color={PAPER_LIGHT.ambient} intensity={0} />
+      <directionalLight
+        ref={paperKeyRef}
+        color={PAPER_LIGHT.key}
+        intensity={0}
+        position={PAPER_LIGHT.keyPosition}
+      />
 
       {/* KEY */}
       <directionalLight

@@ -6,6 +6,8 @@ import { useFrame } from "@react-three/fiber"
 import { Billboard, Text } from "@react-three/drei"
 import { suspend } from "suspend-react"
 import gsap from "gsap"
+import { useAtomValue } from "jotai"
+import { cameraFlying } from "@/helpers/StateProvider"
 import { useSfx } from "@/helpers/useSfx"
 import { MAGNETIC_RADIUS, MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, setCursorHover, type MagneticTarget } from "@/helpers/cursor"
 
@@ -52,6 +54,7 @@ export function CameraHotspot({
   position,
   onClick,
   hidden,
+  viewpoint,
   pendingOffscreen,
   onOffscreen,
 }: {
@@ -67,6 +70,14 @@ export function CameraHotspot({
    * camera is currently at/heading to, or it's the one just departed and
    * hasn't yet cleared the offscreen gate below. */
   hidden: boolean
+  /** The camera pose this marker flies you to.
+   *
+   *  `hidden` is decided in page.tsx from the journey's SCROLL INDEX, which is
+   *  not the same thing as where the camera is: drag to orbit and the index
+   *  still says you are at the destination while the camera has swung right
+   *  away from it. So the marker checks for itself, and only honours `hidden`
+   *  while the camera is actually near this pose. */
+  viewpoint: THREE.Vector3
   /** True while this marker is hidden specifically because it's waiting to
    * scroll out of the camera's view before it's allowed to reappear. */
   pendingOffscreen: boolean
@@ -74,6 +85,16 @@ export function CameraHotspot({
    * camera's view frustum while `pendingOffscreen`. */
   onOffscreen: () => void
 }) {
+  // HOW FAR FROM ITS OWN VIEWPOINT COUNTS AS "NOT THERE ANY MORE".
+  //
+  // A distance, and deliberately not a bearing: orbiting swings the camera's
+  // POSITION a long way from the authored pose while its distance to the
+  // marker itself barely changes, so position is the thing that moves.
+  // Hysteresis because this gates a visible pop -- without it a camera resting
+  // near the boundary flickers the marker on and off.
+  const AT_VIEWPOINT_RADIUS = 6
+  const LEFT_VIEWPOINT_RADIUS = 8
+
   const groupRef = useRef<THREE.Group>(null)
   const hitMeshRef = useRef<THREE.Mesh>(null)
   const ringMeshRef = useRef<THREE.Mesh>(null)
@@ -81,6 +102,11 @@ export function CameraHotspot({
   const dotMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
   const labelRef = useRef<THREE.Mesh>(null)
   const [hovered, setHovered] = useState(false)
+  // Whether the camera has left this marker's own viewpoint. Flipped from the
+  // frame loop, not from render, and only on a threshold crossing -- so it
+  // re-renders on the two frames it actually changes rather than every frame.
+  const [strayed, setStrayed] = useState(false)
+  const flying = useAtomValue(cameraFlying)
   const seed = useMemo(() => Math.random() * Math.PI * 2, [])
   const play = useSfx()
   const scaleTweenRef = useRef<gsap.core.Tween | null>(null)
@@ -93,8 +119,18 @@ export function CameraHotspot({
 
   // Latest props, read by the magnetic target below without re-registering it
   // every time they change. `hidden` in particular flips often.
-  const latest = useRef({ hidden, onClick, play })
-  latest.current = { hidden, onClick, play }
+  // WHAT THE MARKER ACTUALLY DOES, as opposed to what page.tsx asked for.
+  //
+  // `hidden` covers two cases and they behave differently once the camera is
+  // free to move on its own:
+  //   - "you are at this destination" -- only true while the camera really is
+  //     there, hence `!strayed`;
+  //   - "you are leaving this one" (pendingOffscreen) -- straying is the whole
+  //     point of departing, so that case is honoured unconditionally until the
+  //     marker has cleared the frame.
+  const effectiveHidden = hidden && (pendingOffscreen || !strayed)
+  const latest = useRef({ hidden: effectiveHidden, onClick, play })
+  latest.current = { hidden: effectiveHidden, onClick, play }
   // Stable identity for this marker's hover report. Several things can be
   // hovered at once, so the cursor's hover registry is keyed rather than a
   // single flag.
@@ -133,6 +169,18 @@ export function CameraHotspot({
   }, [])
 
   useFrame((state, delta) => {
+    // While a flight is in progress the camera is BY DEFINITION far from the
+    // pose it is heading for, so straying is meaningless then -- and honouring
+    // it would leave the ring you just clicked hanging in the middle of the
+    // screen for the whole flight, which is the snap the hide exists to avoid.
+    if (flying) {
+      if (strayed) setStrayed(false)
+    } else {
+      const d = state.camera.position.distanceTo(viewpoint)
+      if (!strayed && d > LEFT_VIEWPOINT_RADIUS) setStrayed(true)
+      else if (strayed && d < AT_VIEWPOINT_RADIUS) setStrayed(false)
+    }
+
     const group = groupRef.current
     if (!group) return
     group.position.y = position[1] + Math.sin(state.clock.elapsedTime * BOB_SPEED + seed) * BOB_AMPLITUDE
@@ -181,20 +229,20 @@ export function CameraHotspot({
 
     if (!didMountRef.current) {
       didMountRef.current = true
-      group.visible = !hidden
-      group.scale.setScalar(hidden ? 0 : (hovered ? HOVER_SCALE : BASE_SCALE))
-      if (hitMeshRef.current) hitMeshRef.current.visible = !hidden
+      group.visible = !effectiveHidden
+      group.scale.setScalar(effectiveHidden ? 0 : (hovered ? HOVER_SCALE : BASE_SCALE))
+      if (hitMeshRef.current) hitMeshRef.current.visible = !effectiveHidden
       return
     }
 
     scaleTweenRef.current?.kill()
 
-    if (hidden) {
+    if (effectiveHidden) {
       group.visible = false
       group.scale.setScalar(0)
       if (hitMeshRef.current) hitMeshRef.current.visible = false
-      // A marker can be hidden mid-hover (it was just clicked, or another
-      // click elsewhere forced it into the departure-hidden state) without
+      // A marker can be effectiveHidden mid-hover (it was just clicked, or another
+      // click elsewhere forced it into the departure-effectiveHidden state) without
       // ever getting a pointerout -- clear the stale hover so it doesn't
       // reappear later already orange/pulsing/grown for a cursor that isn't
       // there.
@@ -218,7 +266,7 @@ export function CameraHotspot({
         if (hitMeshRef.current) hitMeshRef.current.visible = true
       },
     })
-  }, [hidden, hovered])
+  }, [effectiveHidden, hovered])
 
   // Idle pulse -- hover-triggered only. Starts the instant the cursor lands
   // on the ring, and winds back down to the static idle look (rather than

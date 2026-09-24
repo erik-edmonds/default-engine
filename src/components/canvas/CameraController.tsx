@@ -3,12 +3,15 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame, useThree } from "@react-three/fiber"
-import { useSetAtom } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import gsap from "gsap"
 import { easing } from "maath"
+import { publishSkyDisplay, resetSkyScroll } from "@/helpers/skyScroll"
+import { CAMERA_LOOK_ABOVE, setFlightBaseHeading } from "@/config/flightFrame"
+import { ISLAND_FOV_Y, SKY_FOV_Y, skyAltitudeShare } from "@/config/paperSky"
 
 import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
-import { cameraFlying } from "@/helpers/StateProvider"
+import { cameraFlying, skySequenceStarted } from "@/helpers/StateProvider"
 import { cameraBase, initCameraBase, setCameraBase, setCameraBaseFromEuler } from "@/helpers/cameraBase"
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
 import { journeyPose, trapezoid, type Route } from "@/config/journey"
@@ -18,11 +21,34 @@ import {
   SKY_SCROLL_SMOOTH_TIME,
   avatarSkyPose,
   cameraSkyPose,
+  resetSkyEntryStop,
+  setSkyEntryStop,
+  smoothstep,
 } from "@/config/skyJourney"
 
 gsap.ticker.lagSmoothing(0)
-const AVATAR_POSITION = new THREE.Vector3(-1.3, -0.65, 1)
+/** Where zoomIn aims, DERIVED from the one statement of where the avatar is.
+ *
+ *  This was a fourth independent hardcode -- `(-1.3, -0.65, 1)` -- and its y
+ *  disagreed with config/skyJourney.ts by 0.65. That disagreement was not
+ *  cosmetic: the sky driver aims at `AVATAR_BASE_POSITION[1] + LOOK_ABOVE`, so
+ *  the climb ended aiming 0.65 units above where the journey was about to aim,
+ *  which at the 5.70-unit entry distance is atan(0.65 / 5.70) = 6.50 degrees of
+ *  pitch that the hand-over then had to absorb. Deriving it means there is
+ *  nothing to absorb. */
+const AVATAR_POSITION = new THREE.Vector3(
+  AVATAR_BASE_POSITION[0],
+  AVATAR_BASE_POSITION[1] + CAMERA_LOOK_ABOVE,
+  AVATAR_BASE_POSITION[2],
+)
 const ZOOM_IN_DISTANCE = 8
+/** How long the camera takes to climb to the sky, alone. */
+const CLIMB_SECONDS = 3.2
+
+/** How long the camera takes to blend out of flyUp's frozen aim and into the
+ *  sky path's own. Long enough that ~12 degrees reads as a settle rather than a
+ *  snap; short enough that it is over before the first caption. */
+const SKY_ENTRY_BLEND_SECONDS = 0.7
 
 // The arrival dolly: how far back along its own view axis the camera starts,
 // and how much higher, before settling onto the island framing.
@@ -105,6 +131,12 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
   // earlier one is still running), and the first to finish must not report
   // "done" on behalf of the one still going.
   const activeFlights = useRef(0)
+  // Read for the lens, not for the path: the sky's narrower field of view comes
+  // in with ALTITUDE during the climb, which starts long before the journey
+  // flag flips.
+  const skySequenceValue = useAtomValue(skySequenceStarted)
+  const skySequenceRef = useRef(skySequenceValue)
+  useEffect(() => { skySequenceRef.current = skySequenceValue }, [skySequenceValue])
   // Held so a real flight can supersede it. Both tween camera.position, and
   // gsap's default overwrite:false would let them fight -- the hotspot rings
   // become clickable slightly before the arrival dolly has finished.
@@ -160,7 +192,17 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
   // constants would let the camera and the avatar slide apart while the wheel
   // is moving, and this whole sequence is the camera holding the avatar in
   // frame.
-  const sky = useRef({ active: false, target: 0, display: 0 })
+  /** Scratch for the entry blend -- see the note at its use. */
+  const skyEntryTarget = useMemo(() => new THREE.Quaternion(), [])
+  const sky = useRef({
+    active: false,
+    target: 0,
+    display: 0,
+    /** 0 while handing over from flyUp's frozen aim, 1 once the sky driver
+     *  owns the rotation outright. See the slerp in the frame callback. */
+    entryBlend: 1,
+    entryQuaternion: new THREE.Quaternion(),
+  })
   const skyScratch = useMemo(() => ({ position: new THREE.Vector3(), look: new THREE.Vector3() }), [])
 
   useFrame((_state, delta) => {
@@ -172,6 +214,24 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // it.
     const s = sky.current
     if (s.active) {
+      // THE LENS. Narrower in the sky than on the island.
+      //
+      // Driven by the same altitude share as the backdrop crossfade, so the
+      // two arrive together and neither changes state on the frame the climb
+      // ends -- which is the whole reason that share exists as one function.
+      // Outside the sky sequence the share is zero and this writes the island
+      // value, so there is nothing to restore on the way home.
+      if (camera instanceof THREE.PerspectiveCamera) {
+        const share = skySequenceRef.current ? skyAltitudeShare(camera.position.y) : 0
+        const fov = ISLAND_FOV_Y + (SKY_FOV_Y - ISLAND_FOV_Y) * share
+        // Guarded: updateProjectionMatrix is not free, and on the island this
+        // would otherwise run every frame for a value that never changes.
+        if (Math.abs(camera.fov - fov) > 0.001) {
+          camera.fov = fov
+          camera.updateProjectionMatrix()
+        }
+      }
+
       if (activeFlights.current === 0) {
         if (prefersReducedMotion()) {
           s.display = s.target
@@ -186,16 +246,53 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
         const pose = avatarSkyPose(s.display)
         cameraSkyPose(
           s.display,
-          { x: pose.x, y: AVATAR_BASE_POSITION[1] + SKY_RISE + pose.yOffset, z: pose.z },
+          { x: pose.x, y: pose.y, z: pose.z },
           skyScratch.position,
           skyScratch.look,
         )
         camera.position.copy(skyScratch.position)
         camera.lookAt(skyScratch.look)
+
+        // Blend OUT of the aim flyUp left us with, instead of cutting to this
+        // one.
+        //
+        // This is the jump at the top of the climb. flyUp tweens position only
+        // and deliberately freezes rotation, so at the top the camera is still
+        // aiming where zoomIn pointed it -- and this line aims it at the sky
+        // look point instead. Measured, the two differ by about 9.9 degrees of
+        // yaw plus 6.5 of pitch: SKY_CAMERA_RISE_X drifts the camera sideways
+        // during the rise while the aim stays welded to the old point, and the
+        // old point's height was a third, independent hardcode of where the
+        // avatar is. Roughly 12 degrees, applied between two frames, which is
+        // exactly the "avatar jumps back" in the recording.
+        //
+        // POSITION needs no blend: flyUp now climbs to this exact pose, so the
+        // first sky frame writes the position the camera is already at. Only
+        // the aim is left, and only in pitch -- flyUp froze the yaw and the sky
+        // is built around that same yaw.
+        if (s.entryBlend < 1) {
+          s.entryBlend = Math.min(1, s.entryBlend + delta / SKY_ENTRY_BLEND_SECONDS)
+          const k = smoothstep(s.entryBlend)
+          // Through a scratch quaternion, because the destination IS the
+          // target. `camera.quaternion.slerpQuaternions(entry, camera.quaternion, k)`
+          // looks right and is not: three implements it as
+          // `this.copy(qa).slerp(qb, t)`, so when qb aliases `this` the first
+          // statement overwrites the target with the start and every frame
+          // slerps the entry pose to itself. Measured: the camera held the old
+          // aim for the whole blend and then cut 11.05 degrees in one frame --
+          // the same snap this was written to remove, just delayed.
+          skyEntryTarget.copy(camera.quaternion)
+          camera.quaternion.copy(s.entryQuaternion).slerp(skyEntryTarget, k)
+        }
+
         // Published like every other rotation writer, or CameraLook composes
         // its cursor offset onto a stale aim.
         setCameraBase(camera.quaternion)
         syncOrbitTarget(camera.rotation)
+        // And published for the paper world and the velocity lines, which move
+        // with the scroll. Reading the DAMPED value, not the target -- see
+        // helpers/skyScroll.ts.
+        publishSkyDisplay(s.display, delta)
       }
       return
     }
@@ -320,13 +417,51 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     flyUp: () =>
       new Promise<void>((resolve) => {
         const fixedRotation = camera.rotation.clone()
+        // beginFlight/endFlight, which this used to skip. The sky driver's only
+        // guard is `activeFlights.current === 0`, so for the whole 5s of this
+        // tween the island journey spring could re-arm and fight it.
+        beginFlight()
+
+        // Build the sky around the heading the climb is about to freeze, and
+        // then CLIMB TO THE SKY'S OWN ENTRY POSE rather than to "up a bit".
+        //
+        // This is the remaining jump at the top. The camera used to rise by
+        // SKY_RISE holding x and z, which left it wherever zoomIn's 8-unit
+        // dolly had put it -- about 2 units off the avatar -- and the sky pose
+        // then placed it at CAMERA_BEHIND, 5.7. Nothing blended that: the
+        // position was simply written on the first sky frame, so the avatar
+        // changed size between two frames. The old comment claiming position
+        // was already continuous described setSkyEntryStop, which became a
+        // no-op when the orbit was deleted; the comment outlived its mechanism.
+        //
+        // Ending the climb ON the entry pose makes position continuous by
+        // construction, with nothing to blend. And it costs no aiming error,
+        // which is the reason this is safe to do while the aim is frozen:
+        // zoomIn dollies along the camera's own forward, and the sky pose sits
+        // back along that same forward, so the two are on one view line and
+        // pulling back along it does not change where the camera points.
+        const aim = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraBase)
+        setFlightBaseHeading(Math.atan2(aim.x, aim.z))
+        const pose = avatarSkyPose(0)
+        cameraSkyPose(
+          0,
+          { x: pose.x, y: pose.y, z: pose.z },
+          skyScratch.position,
+          skyScratch.look,
+        )
+
         gsap.to(camera.position, {
-          x: "+=1",
-          y: "+=100",
-          duration: tweenDuration(5),
+          x: skyScratch.position.x,
+          y: skyScratch.position.y,
+          z: skyScratch.position.z,
+          // Shorter than the avatar's whole entry on purpose -- the camera
+          // arrives, settles, and the cutout follows it up a beat later. See
+          // AvatarController's SKY_ENTRY_* constants for the other half.
+          duration: tweenDuration(CLIMB_SECONDS),
           ease: "power2.inOut",
           onUpdate: () => syncOrbitTarget(fixedRotation),
-          onComplete: () => resolve(),
+          onComplete: () => { endFlight(); resolve() },
+          onInterrupt: () => { endFlight(); resolve() },
         })
       }),
     // Takes up the camera at the top of the fly-up. No pose is captured here,
@@ -337,9 +472,46 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // under. Removed with the dive itself; /portfolio is entered through the
     // Models portal now.
     beginSkyJourney: () => {
+      // Pin the path's first stop to where the camera ACTUALLY is.
+      //
+      // The old version trusted a stop derived from ISLAND_CAMERA_POSITION and
+      // then hard-wrote the camera to it on the first frame -- an 8.000-unit
+      // snap from Home (exactly the zoomIn dolly, undone) and up to 39 units
+      // from another viewpoint. Measuring here is the same thing the avatar
+      // already does with skyBaseY, and it makes the hand-off correct from
+      // wherever the Poke Ball happened to be clicked.
+      // The flight heading is NOT captured here -- flyUp sets it, because that
+      // is where the climb's aim is frozen and flyUp has to know the entry pose
+      // to climb to it. Re-capturing here would give the same answer (the aim
+      // does not move during the climb) but would be a second statement of one
+      // fact, and the two could drift.
+      const pose = avatarSkyPose(0)
+      const avatarY = pose.y
+      const dx = camera.position.x - pose.x
+      const dz = camera.position.z - pose.z
+      setSkyEntryStop({
+        angle: Math.atan2(dx, dz),
+        distance: Math.hypot(dx, dz),
+        height: camera.position.y - avatarY,
+      })
+      // The aim flyUp is leaving us with, so the first sky frames can blend out
+      // of it rather than cut. Position is made continuous by the stop above;
+      // this is the other half.
+      // From cameraBase, NOT camera.quaternion.
+      //
+      // camera.quaternion at this instant still carries CameraLook's live
+      // cursor parallax -- up to 4 degrees of yaw and 3 of pitch, depending on
+      // where the pointer happens to be. Capturing that as the blend's start
+      // bakes it in, and CameraLook then composes its own offset on top of the
+      // blended result for the frame or two before its ramp catches up, so the
+      // tilt is briefly counted twice. Every other capture site in this file
+      // already reads cameraBase for exactly this reason.
+      sky.current.entryQuaternion.copy(cameraBase)
+      sky.current.entryBlend = 0
       sky.current.active = true
       sky.current.target = 0
       sky.current.display = 0
+      resetSkyScroll()
     },
     setSkyOffset: (offset) => {
       sky.current.target = offset
@@ -357,6 +529,8 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // taken up on desktop -- so relying on it left the camera stuck at
     // altitude on every desktop return.
     endSkyJourney: () => {
+      // Put the entry stop back, or a second trip inherits the first one's.
+      resetSkyEntryStop()
       sky.current.active = false
       sky.current.target = 0
       sky.current.display = 0

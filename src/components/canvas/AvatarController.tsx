@@ -6,11 +6,13 @@ import type { Group, Mesh, Object3D } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
-import { AVATAR_BASE_POSITION, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose } from "@/config/skyJourney"
+import { AVATAR_BASE_POSITION, SKY_RISE, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose, setSkyOrigin } from "@/config/skyJourney"
 import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 import { Avatar } from "@/components/models/Avatar"
+//import { CardboardDragonite } from "@/components/models/CardboardDragonite"
+import { FlyingDragonite } from "@/components/models/FlyingDragonite"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
 
 /** The choreography lives in config/skyJourney.ts now, shared with the camera.
@@ -24,20 +26,45 @@ const BASE_ROTATION: [number, number, number] = [0, 0, 0]
 export interface AvatarControllerHandle {
   spinAndTransform: (target: ModelKind) => Promise<void>
   materializeDragonite: () => Promise<void>
-  flyUp: () => Promise<void>
+  /** Rise into the sky AFTER the camera is already there -- as the cardboard
+   *  cutout, up from below the bottom edge of the frame. */
+  riseIntoSky: () => Promise<void>
+  /** Anchor the sky sequence to the avatar's live position. Must be called
+   *  before anything climbs, because the camera's target derives from it. */
+  captureSkyOrigin: () => void
   beginSkyJourney: () => void
   setSkyOffset: (offsetZ: number) => void
   returnHome: () => Promise<void>
 }
 
-export type ModelKind = "base" | "dragonite"
+export type ModelKind = "base" | "dragonite" | "cardboard"
 
 
 // A small ambient sway layered on top of the choreographed Y position so
 // the avatar reads as alive (gently hovering) rather than frozen during the
 // held pose, without being noticeable against the larger directed motion
 // elsewhere in the journey.
+/** The cardboard hand-off.
+ *
+ *  DROP is how far below its sky pose the cutout starts, in world units. At the
+ *  camera's 6.3-unit standoff the frame is about 4.1 units tall at the subject
+ *  and the subject is 2.7 of them, so seven units is comfortably out of sight
+ *  underneath it at any of the lens settings this scene has had.
+ *
+ *  Going up, the cutout waits for the camera to settle and then rises. Coming
+ *  home it goes FIRST and faster, so that by the time the camera has finished
+ *  its own descent the cutout is long gone and the 3D Dragonite is already
+ *  standing on the island in its place. */
+const SKY_ENTRY_DROP = 7
+const SKY_ENTRY_DELAY_SECONDS = 0.6
+const SKY_ENTRY_RISE_SECONDS = 1.5
+const SKY_EXIT_DROP = 9
+const SKY_EXIT_SECONDS = 1.4
+
 const SKY_IDLE_BOB_AMPLITUDE = 0.06
+/** How long the idle bob takes to reach full amplitude once the journey
+ *  starts. Without a ramp the motion switches on at full size on one frame. */
+const SKY_IDLE_BOB_RAMP_SECONDS = 1.1
 const SKY_IDLE_BOB_SPEED = 0.7
 
 // How far the gaze swings at the very edge of the screen. Generous compared
@@ -120,11 +147,12 @@ function applyGaze(bone: Object3D, store: GazeStore, worldDelta: THREE.Quaternio
 export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref) => {
   const group = useRef<Group>(null)
   const [modelKind, setModelKind] = useState<ModelKind>("base")
-  const skyBaseY = useRef(0)
   const targetSkyOffset = useRef(0)
   const displaySkyOffset = useRef(0)
   const isSkyJourneyActive = useRef(false)
-  const skyBobSeed = useMemo(() => Math.random() * Math.PI * 2, [])
+  /** Seconds since the journey began, which is what the idle bob's phase is
+   *  measured from -- see the note where it is used. */
+  const skyBobTime = useRef(0)
   const dragoniteInstanceRef = useRef<DragoniteHandle | null>(null)
   const materializeResolveRef = useRef<(() => void) | null>(null)
   const isCoarsePointer = useCoarsePointer()
@@ -206,25 +234,46 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
         // here on its own.
         tryStartMaterialize()
       }),
-    flyUp: () =>
+    riseIntoSky: () =>
       new Promise<void>((resolve) => {
         if (!group.current) {
           resolve()
           return
         }
+        // THE CUTOUT COMES UP INTO A SKY THAT IS ALREADY THERE.
+        //
+        // The camera and the avatar used to climb together for five seconds,
+        // which meant the whole journey up was spent watching a character hang
+        // in the middle of the frame with nothing happening around it. Now the
+        // camera goes alone and settles, and a beat later the cardboard
+        // Dragonite rises into the shot from under the bottom edge.
+        //
+        // It is placed absolutely from avatarSkyPose(0) rather than tweened by
+        // a delta: that pose is what the camera is already framing (the camera
+        // derives its own from the same function), so landing on it exactly is
+        // what puts the subject where the shot expects it.
+        setModelKind("cardboard")
+        const pose = avatarSkyPose(0)
+        group.current.position.set(pose.x, pose.y - SKY_ENTRY_DROP, pose.z)
+        group.current.rotation.y = pose.rotY
         gsap.to(group.current.position, {
-          y: "+=100",
-          duration: tweenDuration(5),
-          ease: "power2.inOut",
+          y: pose.y,
+          duration: tweenDuration(SKY_ENTRY_RISE_SECONDS),
+          delay: tweenDuration(SKY_ENTRY_DELAY_SECONDS),
+          ease: "power2.out",
           onComplete: () => resolve(),
-          // Resolved on interrupt too: the unmount cleanup below kills these,
-          // and a killed tween never fires onComplete -- which would leave
-          // page.tsx awaiting a promise that can no longer settle.
           onInterrupt: () => resolve(),
         })
       }),
+    /** Anchor the whole sky sequence to where the avatar actually is, BEFORE
+     *  anything climbs. The camera's flyUp target is derived from this, so it
+     *  has to be set first -- page.tsx calls it between zoomIn and the climb. */
+    captureSkyOrigin: () => {
+      if (!group.current) return
+      setSkyOrigin(group.current.position.x, group.current.position.y, group.current.position.z)
+    },
     beginSkyJourney: () => {
-      if (group.current) skyBaseY.current = group.current.position.y
+      skyBobTime.current = 0
       isSkyJourneyActive.current = true
     },
     setSkyOffset: (offset: number) => {
@@ -248,25 +297,28 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           resolve()
           return
         }
-        const duration = tweenDuration(2.5)
+        // THE CUTOUT LEAVES BEFORE THE CAMERA DOES.
+        //
+        // It drops out of the bottom of the frame in 1.4s -- well inside the
+        // camera's own descent -- and only once it is out of sight does it
+        // become the 3D Dragonite again and take the island pose. So the
+        // camera never sees the swap: it arrives to find the real model
+        // already standing there, which is the point of doing it this way
+        // round rather than cross-fading two models in view.
+        //
+        // The Dragonite -> human change is still the separate spinAndTransform
+        // that page.tsx runs after the flight; this only undoes the cardboard.
         gsap.to(group.current.position, {
-          x: BASE_POSITION[0],
-          y: BASE_POSITION[1],
-          z: BASE_POSITION[2],
-          duration,
-          ease: "power2.inOut",
-          onComplete: () => resolve(),
-          // Resolved on interrupt too: the unmount cleanup below kills these,
-          // and a killed tween never fires onComplete -- which would leave
-          // page.tsx awaiting a promise that can no longer settle.
+          y: group.current.position.y - SKY_EXIT_DROP,
+          duration: tweenDuration(SKY_EXIT_SECONDS),
+          ease: "power2.in",
+          onComplete: () => {
+            setModelKind("dragonite")
+            group.current?.position.set(BASE_POSITION[0], BASE_POSITION[1], BASE_POSITION[2])
+            group.current?.rotation.set(BASE_ROTATION[0], BASE_ROTATION[1], BASE_ROTATION[2])
+            resolve()
+          },
           onInterrupt: () => resolve(),
-        })
-        gsap.to(group.current.rotation, {
-          x: BASE_ROTATION[0],
-          y: BASE_ROTATION[1],
-          z: BASE_ROTATION[2],
-          duration,
-          ease: "power2.inOut",
         })
       }),
     // moveToIslandEdge and diveUnderwater lived here -- the walk to the
@@ -291,15 +343,46 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     if (reduced) {
       displaySkyOffset.current = targetSkyOffset.current
     } else {
-      easing.damp(displaySkyOffset, "current", targetSkyOffset.current, SKY_SCROLL_SMOOTH_TIME, delta)
+      // Clamped like the camera's, which passes Math.min(delta, MAX_DELTA).
+      // Two damps of the same offset with different deltas diverge on any frame
+      // longer than 33ms -- and the camera then frames a COMPUTED avatar
+      // position that is not where the avatar actually is. Small, but it lands
+      // precisely on stall frames, which is where a jerk shows most.
+      easing.damp(
+        displaySkyOffset,
+        "current",
+        targetSkyOffset.current,
+        SKY_SCROLL_SMOOTH_TIME,
+        Math.min(delta, MAX_DELTA),
+      )
     }
 
     const offset = displaySkyOffset.current
     const pose = avatarSkyPose(offset)
-    const idleBob = reduced ? 0 : Math.sin(state.clock.elapsedTime * SKY_IDLE_BOB_SPEED + skyBobSeed) * SKY_IDLE_BOB_AMPLITUDE
 
+    // The bob starts AT ZERO and grows in, rather than cutting in at whatever
+    // phase the clock happens to be at.
+    //
+    // It used to sample sin(elapsedTime * speed + randomSeed) from the first
+    // sky frame, so the avatar's y stepped by up to the full amplitude between
+    // the last frame of the climb and the first frame of the journey -- a
+    // visible twitch, landing on exactly the frame that already had a rotation
+    // snap on it. Phase is now measured from when the journey starts, so the
+    // first sample is sin(0) = 0, and the amplitude eases in over a second so
+    // the motion appears rather than switches on.
+    skyBobTime.current += delta
+    const bobRamp = Math.min(1, skyBobTime.current / SKY_IDLE_BOB_RAMP_SECONDS)
+    const idleBob = reduced
+      ? 0
+      : Math.sin(skyBobTime.current * SKY_IDLE_BOB_SPEED) * SKY_IDLE_BOB_AMPLITUDE * bobRamp
+
+    // All three absolute, and all three from the SAME pose -- which is now
+    // anchored to where the avatar actually was (see setSkyOrigin). x and z
+    // used to be written straight from the table while only y was relative,
+    // and that asymmetry teleported the avatar away from the camera on the
+    // first sky frame.
     group.current.position.x = pose.x
-    group.current.position.y = skyBaseY.current + pose.yOffset + idleBob
+    group.current.position.y = pose.y + idleBob
     group.current.position.z = pose.z
     group.current.rotation.y = pose.rotY
   })
@@ -322,6 +405,10 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   useFrame((state, delta) => {
     const head = headBone.current
     if (!head || isCoarsePointer || prefersReducedMotion()) return
+    // Not in the sky. Up there the avatar is choreographed by the journey and
+    // the visitor's pointer is for scrolling -- a head that keeps turning to
+    // follow it reads as the model being distracted mid-flight.
+    if (isSkyJourneyActive.current) return
 
     const engaged = pointerState.seen && pointerState.inWindow
     const ndcX = engaged ? (pointerState.x / state.size.width) * 2 - 1 : 0
@@ -419,10 +506,21 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   })
 
   return (
-    <group ref={group} position={BASE_POSITION} rotation={BASE_ROTATION}>
+    // Named so the scene graph says which subtree is the subject.
+    //
+    // It used to be findable only by its skeleton -- "the skinned mesh with 23
+    // bones" -- which stopped working the moment the sky's subject became a
+    // flat cutout with no skeleton at all. A name survives whichever model is
+    // mounted inside it, which is the whole point of the swap.
+    <group ref={group} name="avatar-root" position={BASE_POSITION} rotation={BASE_ROTATION}>
       <Suspense fallback={null}>
         {modelKind === "base" && <Avatar scale={1.4} />}
         {modelKind === "dragonite" && <Dragonite ref={setDragoniteRef} scale={1.4} />}
+        {/* Same 1.4 as the Dragonite, and not a coincidence: the cutout is
+            1.899 units tall in its own file against the Dragonite's 1.9, and
+            both have their bounding box centred on the group origin, so the
+            two occupy the same space on screen. */}
+        {modelKind === "cardboard" && <FlyingDragonite scale={2.5} position={[-1.5, -0.5, 0]} rotation={[0, Math.PI, 0]} />}
       </Suspense>
     </group>
   )

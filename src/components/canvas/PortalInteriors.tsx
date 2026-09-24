@@ -165,7 +165,7 @@ function WaterInterior({ open = false }: { open?: boolean }) {
     // Further back than the first version's -2.4, so the window looks into the
     // volume rather than pressing against the near wall -- but not so far that
     // the camera leaves the box. See POOL_HALF_LENGTH.
-    <group position={[0, 0.35, -3]}>
+    <group position={[0, 1.15, -3]}>
       <group ref={column}>
         <WaterScene
           poolWidth={POOL_HALF_WIDTH}

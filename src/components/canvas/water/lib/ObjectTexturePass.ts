@@ -9,11 +9,19 @@ const float IOR_WATER = 1.333;
 uniform vec3 light;
 uniform float poolWidth;
 uniform float poolLength;
+// World -> pool-local. The caustics shader samples this target with a UV built
+// from its own POOL-LOCAL position, so the two only agree if the projection
+// here is done in that same space. It used to be done in world space, which is
+// correct exactly while the pool sits on the origin -- true of the standalone
+// page this was ported from, and false the moment the pool went inside a portal
+// that translates it and scrolls it. The symptom is a shadow that tracks the
+// object but lands somewhere else entirely.
+uniform mat4 poolInverse;
 
 void main() {
-  vec3 worldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+  vec3 poolPosition = (poolInverse * modelMatrix * vec4(position, 1.0)).xyz;
   vec3 refractedLight = refract(-normalize(light), vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);
-  vec2 projected = 0.75 * (worldPosition.xz - worldPosition.y * refractedLight.xz / refractedLight.y);
+  vec2 projected = 0.75 * (poolPosition.xz - poolPosition.y * refractedLight.xz / refractedLight.y);
   gl_Position = vec4(projected.x / poolWidth, projected.y / poolLength, 0.0, 1.0);
 }
 `
@@ -75,6 +83,7 @@ export class ObjectTexturePass {
         light: { value: lightDirection.clone() },
         poolWidth: { value: 1.0 },
         poolLength: { value: 1.0 },
+        poolInverse: { value: new THREE.Matrix4() },
       },
       depthTest: false,
       depthWrite: false,
@@ -87,6 +96,14 @@ export class ObjectTexturePass {
     this.shadowMaterial.uniforms.poolLength.value = poolLength
   }
 
+  /** The world matrix of the group the pool meshes live in. Inverted here and
+   *  handed to the shadow vertex shader, which has to project in pool-local
+   *  space -- see the note on `poolInverse`. Pass the pool's own group, not the
+   *  object being shadowed. */
+  setPoolMatrix(matrixWorld: THREE.Matrix4) {
+    ;(this.shadowMaterial.uniforms.poolInverse.value as THREE.Matrix4).copy(matrixWorld).invert()
+  }
+
   setSize(width: number, height: number) {
     const scale = Math.min(1, 1024 / Math.max(width, height))
     this.reflectionTarget.setSize(Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale)))
@@ -94,7 +111,17 @@ export class ObjectTexturePass {
     this.refractionTarget.setSize(Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale)))
   }
 
-  update(scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderableObject: THREE.Object3D | null) {
+  /** @param shadowOnly Render only the shadow target, leaving reflection,
+   *  clipped reflection and refraction cleared. For an object that casts but is
+   *  never seen -- the cursor probe -- those three passes each re-render the
+   *  whole scene to produce an image of something invisible, and the water
+   *  surface must not sample them anyway or it draws a ghost of the probe. */
+  update(
+    scene: THREE.Scene,
+    camera: THREE.PerspectiveCamera,
+    renderableObject: THREE.Object3D | null,
+    shadowOnly = false,
+  ) {
     this.updateViewProjection(camera)
 
     if (!renderableObject) {
@@ -116,9 +143,15 @@ export class ObjectTexturePass {
 
     this.withOnlyObjectVisible(scene, renderableObject, () => {
       this.withTransparentClear(() => {
-        this.renderRefraction(scene, camera, materials)
-        this.renderReflection(scene, camera, materials)
-        this.renderClippedReflection(scene, materials)
+        if (shadowOnly) {
+          this.clearTarget(this.reflectionTarget)
+          this.clearTarget(this.clippedReflectionTarget)
+          this.clearTarget(this.refractionTarget)
+        } else {
+          this.renderRefraction(scene, camera, materials)
+          this.renderReflection(scene, camera, materials)
+          this.renderClippedReflection(scene, materials)
+        }
         this.renderShadow(scene)
       })
     })

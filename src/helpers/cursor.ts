@@ -232,6 +232,21 @@ export function publishCursorView(state: CursorState, tier: CursorSpeedTier, tar
   cursorViewListener?.({ state, tier, target })
 }
 
+/** Where the cursor is actually DRAWN, in client pixels, after magnetism and
+ *  damping have had their say.
+ *
+ *  Not the same thing as `pointerState`, and the difference is the whole point:
+ *  pointerState is where the mouse is, this is where the thing the user can see
+ *  ended up. While a magnet is bending the cursor toward a target the two are
+ *  far apart on screen, so anything in the 3D scene that has to line up with
+ *  the cursor -- the water probe's ripple and its shadow -- has to follow this
+ *  one, or it tracks a cursor that isn't there.
+ *
+ *  Written by CursorDriver on the same frame it writes the transform, so the
+ *  two can never disagree. Plain module state rather than an atom for the same
+ *  reason `cursorLock` is: this changes every frame and must not re-render. */
+export const cursorScreen = { x: 0, y: 0, started: false }
+
 /** The target the cursor is currently locked onto, or null. Published by
  *  CursorDriver so SceneCursor's click handler knows what an assisted click
  *  should fire. */

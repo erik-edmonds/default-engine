@@ -33,6 +33,7 @@ import {
   getCursorSurfaces,
   getMagneticTargets,
   publishCursorView,
+  cursorScreen,
   isTreeVisible,
   pointerState,
   magneticFalloff,
@@ -321,6 +322,11 @@ export function CursorDriver() {
 
     // ---------------------------------------------------------- write
     el.style.transform = `translate3d(${cursor.current.x}px, ${cursor.current.y}px, 0)`
+    // Published on the same frame as the transform, so nothing in the scene can
+    // read a cursor position the user is not looking at. See cursorScreen.
+    cursorScreen.x = cursor.current.x
+    cursorScreen.y = cursor.current.y
+    cursorScreen.started = cursor.current.started
     // CSS custom properties rather than classes for the continuous values, so
     // the stylesheet owns how each one looks and this file owns only the
     // numbers. Rounded to keep the style string stable between frames.

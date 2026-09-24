@@ -7,7 +7,7 @@ import { Clouds } from "@/components/canvas/Sky"
 import { Merged } from "@/components/models/MergedScene"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 import { ringClouds, CLOUD_RING_LOW, CLOUD_RING_HIGH } from "@/config/store"
-import { Pokeball } from "@/components/models/Pokeball"
+import { Pokeball, type PokeballHandle } from "@/components/models/Pokeball"
 import { Waterfall } from "@/components/models/Waterfall"
 import { Charizard } from "@/components/models/Charizard"
 import { PalmTree } from "@/components/models/PalmTree"
@@ -16,13 +16,20 @@ import { Gull } from "@/components/models/Gull"
 import { SeagullFlock } from "@/components/canvas/SeagullFlock"
 import { Thunder } from "@/components/canvas/Thunder"
 import { RainController } from "@/components/canvas/RainController"
-import { PaperCloud } from "@/components/models/CardboardCloud"
+import { PaperSky } from "@/components/canvas/PaperSky"
+import { skyWorldMounted } from "@/helpers/StateProvider"
+import { useAtomValue } from "jotai"
 
-export function Scene({ from, day, transitionSeconds, onDragoniteRelease, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; showSeagulls?: boolean }) {
+export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
     // curated raycast surface rather than letting the cursor ray the whole
     // scene -- see the note on cursorSurfaces in helpers/cursor.ts for why
     // scene.children is not an option here.
+    // The paper world is mounted only for the journey. Reading the atom here
+    // rather than threading a prop: it is already the global "we are up there"
+    // signal and several components read it the same way.
+    const inSky = useAtomValue(skyWorldMounted)
+
     const islandRef = useRef<THREE.Group>(null)
     useEffect(() => {
         if (!islandRef.current) return
@@ -117,7 +124,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, showSe
                 setSkyOffset were empty functions, so releasing the Dragonite
                 used to leave the camera sitting still while the avatar and the
                 captions ran the whole sequence without it. */}
-            <Pokeball scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
+            <Pokeball ref={pokeballRef} scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth
                 raycast (plus every r3f pointer event on the island) pays for
@@ -125,6 +132,11 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, showSe
                 actually qualify for acceleration -- the instanced clouds in
                 the Bvh above do not, which is why that one buys almost
                 nothing. */}
+            {/* The destination. Nothing paper exists on the island -- the
+                whole world mounts with the journey and unmounts with it, so
+                the island's own Clouds and its cloud-placement constants are
+                untouched. See components/canvas/PaperSky.tsx. */}
+            <PaperSky active={inSky} />
             <Bvh firstHitOnly>
                 {/* Named so the scene graph says which subtree is the solid
                     world. The journey path's clearance check needs to measure

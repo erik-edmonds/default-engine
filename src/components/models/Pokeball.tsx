@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import React, { useRef, useEffect, useState, useMemo } from 'react'
+import React, { forwardRef, useRef, useEffect, useImperativeHandle, useState, useMemo } from 'react'
 import { useAnimations } from '@react-three/drei'
 import { useGLTF } from '@/helpers/useGLTF'
 import { useCursorHover } from '@/helpers/useCursorHover'
@@ -23,7 +23,20 @@ const BEAM_DIRECTION: [number, number, number] = [
 const BEAM_HOLD_SECONDS = 2.8
 const BEAM_RETRACT_SECONDS = 0.45
 
-export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key: string]: any }) {
+export interface PokeballHandle {
+  /** Shut the lid and arm it to be opened again.
+   *
+   *  Without this the ball could not be closed at all: `click` was a bare
+   *  toggle and the open clip was hard-paused at half its duration, so after a
+   *  trip to the sky the lid stayed open AND `click` stayed true. The next
+   *  click merely toggled it false -- beam off, lid still open, onRelease NOT
+   *  fired -- and only the one after that re-entered the sky. That is the
+   *  double-click. */
+  close: () => void
+}
+
+export const Pokeball = forwardRef<PokeballHandle, { onRelease?: () => void; [key: string]: any }>(
+function Pokeball({ onRelease, ...props }, ref) {
   const rootRef = useRef<THREE.Group>(null)
   const ballGroupRef = useRef<THREE.Group>(null)
   const beamRef = useRef<THREE.Mesh>(null)
@@ -56,6 +69,31 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
       setShowEnergy(true)
       uProgress.current = 0
       beamElapsed.current = 0
+      // EVERYTHING THE LAST FIRING LEFT BEHIND.
+      //
+      // This component is mounted permanently (Scene.tsx renders it under an
+      // `islandMounted` that never flips back), so every ref and every material
+      // instance survives a trip to the sky and home again. Two pieces of state
+      // were written on the way out and never put back, which is why the beam
+      // was wrong on the SECOND firing and every one after:
+      //
+      //   - the retract walks beamRef/beamGlowRef out to BEAM_LOCAL_TARGET,
+      //     which is over by the avatar, and always completes (hold 2.8s +
+      //     retract 0.45s, long before you go home). The close path below
+      //     resets scale but not position, so the next firing grew the beam
+      //     from the avatar's position instead of out of the ball.
+      //   - the sparkles' opacity is decayed to 0 by the frame loop and only
+      //     ever forced to 0 again when idle, never back to 1. The material is
+      //     built once from JSX, so the burst fired exactly once per page load.
+      //
+      // Dragonite.tsx does the same thing for its own whiteMaterial on every
+      // materialize(); this is that pattern, applied to the pieces that needed
+      // it and did not have it.
+      beamRef.current?.position.set(0, 0, 0)
+      beamGlowRef.current?.position.set(0, 0, 0)
+      if (particlesRef.current) {
+        ;(particlesRef.current.material as THREE.PointsMaterial).opacity = 1
+      }
       onRelease?.()
 
       const velocities: THREE.Vector3[] = []
@@ -78,10 +116,32 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
       return () => clearTimeout(timer)
     } else {
       setShowEnergy(false)
-      if (beamRef.current) beamRef.current.scale.set(0, 0, 0)
-      if (beamGlowRef.current) beamGlowRef.current.scale.set(0, 0, 0)
+      // Position as well as scale -- see the reset list in the open branch.
+      if (beamRef.current) {
+        beamRef.current.scale.set(0, 0, 0)
+        beamRef.current.position.set(0, 0, 0)
+      }
+      if (beamGlowRef.current) {
+        beamGlowRef.current.scale.set(0, 0, 0)
+        beamGlowRef.current.position.set(0, 0, 0)
+      }
+      // Rewind the lid.
+      //
+      // This branch used to kill the beam and the sparkles and leave the clip
+      // exactly where the open path parked it -- paused at half its duration,
+      // i.e. open -- so the ball never actually shut in either state.
+      // `paused = false` comes first, because a stopped-but-paused action just
+      // stays where it is.
+      const action = actions["Pokeball"]
+      if (action) {
+        action.paused = false
+        action.stop()
+        action.reset()
+      }
     }
   }, [click, actions])
+
+  useImperativeHandle(ref, () => ({ close: () => setClicked(false) }), [])
 
   useFrame((state, delta) => {
     if (showEnergy) {
@@ -129,8 +189,13 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
         particlesRef.current.geometry.attributes.position.needsUpdate = true
 
         const pointsMat = particlesRef.current.material as THREE.PointsMaterial
+        // Clamped at zero. A long frame takes more than the whole remaining
+        // opacity in one step -- measured at -0.95 under a slow renderer -- and
+        // an opacity below zero is not a value the material has any meaning
+        // for. It also masks the reset above: a burst that is re-armed to 1 and
+        // then driven negative looks identical to one that never fired.
         if (pointsMat.opacity > 0) {
-          pointsMat.opacity -= delta * 1.3
+          pointsMat.opacity = Math.max(0, pointsMat.opacity - delta * 1.3)
         }
       }
     } else {
@@ -291,6 +356,6 @@ export function Pokeball({ onRelease, ...props }: { onRelease?: () => void; [key
 
     </group>
   )
-}
+})
 
 useGLTF.preload('/models/pokeball.glb')

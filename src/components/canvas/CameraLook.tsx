@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
@@ -8,6 +8,8 @@ import { easing } from "maath"
 import { cameraBase, cameraShakeActive, initCameraBase } from "@/helpers/cameraBase"
 import { pointerState } from "@/helpers/cursor"
 import { prefersReducedMotion } from "@/helpers/motion"
+import { useAtomValue } from "jotai"
+import { inSkyJourney } from "@/helpers/StateProvider"
 
 // How far the view swings at the very edge of the screen. Small on purpose:
 // this is parallax, not a camera control. Past about 6 degrees the island
@@ -48,7 +50,14 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0)
  *  device has no hovering pointer to follow -- the gyroscope is the equivalent
  *  there, and is a separate pass. */
 export function CameraLook() {
-  const offset = useRef({ yaw: 0, pitch: 0 })
+  const offset = useRef({ yaw: 0, pitch: 0, amplitude: 1 })
+  // Read as a ref, not as a prop: this changes once per journey and must not
+  // re-render a component that writes the camera every frame.
+  const skyJourneyValue = useAtomValue(inSkyJourney)
+  const skyJourney = useRef(skyJourneyValue)
+  useEffect(() => {
+    skyJourney.current = skyJourneyValue
+  }, [skyJourneyValue])
   const scratch = useMemo(
     () => ({
       yawQuat: new THREE.Quaternion(),
@@ -79,11 +88,26 @@ export function CameraLook() {
     const ndcY = engaged ? 1 - (pointerState.y / size.height) * 2 : 0
 
     const dt = Math.min(delta, MAX_DELTA)
+
+    // Parallax is eased OUT before the sky journey takes the camera, rather
+    // than disappearing with the component.
+    //
+    // This used to be mounted on `!isInSkyJourneyValue`, so at the moment the
+    // journey began it unmounted holding up to 4 degrees of yaw and 3 of pitch
+    // -- and unmounting unwinds nothing, so that offset vanished in a single
+    // frame. It landed on exactly the frame that already carried the camera's
+    // hand-over, adding to a step that was already the biggest in the
+    // sequence. Now the component stays mounted and its amplitude goes to
+    // zero, so the swing is given back smoothly and there is nothing left to
+    // drop.
+    const amplitude = skyJourney.current ? 0 : 1
+    easing.damp(offset.current, "amplitude", amplitude, SMOOTH_TIME, dt)
+
     // Targets are zero when the pointer leaves, so the view eases back to the
     // composed framing rather than staying stuck at whatever tilt the pointer
     // held as it crossed the edge.
-    easing.damp(offset.current, "yaw", -ndcX * MAX_YAW, SMOOTH_TIME, dt)
-    easing.damp(offset.current, "pitch", ndcY * MAX_PITCH, SMOOTH_TIME, dt)
+    easing.damp(offset.current, "yaw", -ndcX * MAX_YAW * offset.current.amplitude, SMOOTH_TIME, dt)
+    easing.damp(offset.current, "pitch", ndcY * MAX_PITCH * offset.current.amplitude, SMOOTH_TIME, dt)
 
     // Column 0 of the camera's world matrix is its right axis. Read from the
     // aim rather than from the live matrix so the axis does not itself wobble

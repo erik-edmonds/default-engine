@@ -660,8 +660,11 @@ html[data-keyboard="true"] .keyboard-rail {
   right: calc(1.5rem + var(--safe-right, 0px));
   bottom: calc(1.5rem + var(--safe-bottom, 0px));
   z-index: 20;
-  width: 148px;
-  height: 148px;
+  /* 222 = 148 x 1.5. The camera is framed in WORLD units, so the picture just
+     scales -- but the dots below are absolute pixels and had to grow with it,
+     each keeping `margin: -size/2` or it drifts off its own coordinate. */
+  width: 222px;
+  height: 222px;
   padding: 0;
   /* No border, no radius. With the background gone there is no surface for a
      border to be the edge OF -- it framed empty space, and a hairline rectangle
@@ -710,9 +713,9 @@ html[data-keyboard="true"] .keyboard-rail {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
   border-radius: 50%;
   background: #0b1a24;
   border: 1.5px solid #ffffff;
@@ -734,9 +737,9 @@ html[data-keyboard="true"] .keyboard-rail {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  margin: -4.5px 0 0 -4.5px;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
   border-radius: 50%;
   background: #d25a1a;
   border: 1.5px solid #ffffff;

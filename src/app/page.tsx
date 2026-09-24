@@ -6,10 +6,12 @@ import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStor
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
-import { AdaptiveDpr, PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
+import { PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
+import { budgetPortalTargets } from '@/helpers/usePortalTargetBudget'
+import { skyScroll, resetSkyScroll } from '@/helpers/skyScroll'
 import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest } from "@/helpers/StateProvider";
+import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest , skyWorldMounted, skySequenceStarted} from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
 import { Scene } from "@/components/canvas/Scene";
@@ -40,6 +42,7 @@ import { RainRefraction } from "@/components/canvas/RainRefraction";
 import { SceneCursor } from "@/components/layout/SceneCursor";
 import { useHintDirector } from "@/helpers/useHintDirector";
 import { useCoarsePointer } from "@/helpers/useCoarsePointer";
+import type { PokeballHandle } from "@/components/models/Pokeball";
 import { setSceneInputSuppressed } from "@/helpers/cursor";
 import { useShortViewport } from "@/helpers/useShortViewport";
 import {
@@ -51,6 +54,36 @@ import {
   type JourneyStopId,
 } from "@/config/journey";
 import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES } from "@/config/skyJourney";
+// The island's lens. The sky narrows to SKY_FOV_Y during the climb (see
+// CameraController), and the corridor's geometry is derived from THAT.
+import { ISLAND_FOV_Y } from "@/config/paperSky";
+
+/** N8AO's intensity while the paper world is up.
+ *
+ *  NOT zero, and the difference is the black spots. n8ao's composite shader
+ *  ends with `float finalAo = pow(texel.r, intensity)` (n8ao/dist/N8AO.js:671),
+ *  and pow(0.0, 0.0) is explicitly UNDEFINED in the GLSL ES spec. Drivers
+ *  typically evaluate pow as exp2(y * log2(x)), so x=0 gives log2(0) = -inf,
+ *  0 * -inf = NaN, and every fully-occluded pixel comes out NaN. <Bloom
+ *  mipmapBlur levels={7}> then averages that NaN across seven mip levels and
+ *  AgX clamps the result to black -- which is how a handful of bad pixels
+ *  becomes the big soft black blobs that flicker in and out. Undefined
+ *  behaviour is per-driver, which is why it looked intermittent.
+ *
+ *  Small enough to be invisible (pow(x, 1e-3) is within 0.7% of 1 for any x
+ *  above 0.001), large enough to be defined. */
+const AO_OFF = 0.001
+
+/** The camera's depth range.
+ *
+ *  Left at r3f's defaults (0.1 / 1000) this is a 10,000:1 ratio, and N8AO
+ *  reconstructs view-space position from that depth buffer -- at the sky
+ *  journey's altitude, against an 800-unit sky dome, the precision left at
+ *  the far end is coarser than the 1.2-unit AO radius being asked for. Nothing
+ *  in the scene is closer to the camera than the water surface inside a portal,
+ *  so a half-unit near plane costs nothing and buys back four bits of depth. */
+const CAMERA_NEAR = 0.5
+const CAMERA_FAR = 1000
 import { requestSceneFullscreen } from "@/helpers/fullscreen";
 import { tweenDuration } from "@/helpers/motion";
 import RainScene from "@/components/canvas/RainScene";
@@ -93,7 +126,10 @@ const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
 const HOTSPOT_LABELS: Record<string, string> = {
   home: "Home",
   "left-tree": "Models",
-  "moon-island": "Donate",
+  // Was "Donate". config/portals.ts has said `title: "About"` for this same
+  // hotspot all along, so the ring, both rails and the minimap were disagreeing
+  // with the panel you land on.
+  "moon-island": "About",
   upper: "Contact",
 };
 const HOME_VIEWPOINT_POSITION = ISLAND_CAMERA_POSITION;
@@ -226,6 +262,15 @@ export default function Page() {
   // loader simply sat there. These are the URLs that will never arrive.
   const assetErrors = useProgress((state) => state.errors);
   const { lost: contextLost, onCreated: watchContext } = useContextLoss();
+  /** Both bits of renderer setup that have to happen before the first bind:
+   *  the context-loss listener, and zeroing the multisampling on drei's
+   *  offscreen targets (see helpers/usePortalTargetBudget.ts -- done here
+   *  rather than in an effect because an effect is already too late, and one
+   *  93.8MB target escaped that way). */
+  const onCanvasCreated = useCallback((state: Parameters<typeof watchContext>[0]) => {
+    budgetPortalTargets(state.gl)
+    watchContext(state)
+  }, [watchContext]);
   // Which portal is open, published by PortalRouteSync from the wouter route.
   // Outside <Canvas> nothing can call wouter (see PortalRouteSync's note), so
   // the atom is how the DOM layer learns a portal has been entered.
@@ -233,6 +278,8 @@ export default function Page() {
   // The same value where a bare event listener can read it. onScrollTick runs
   // from a window listener registered once, so it reads every gate through a
   // ref rather than closing over the render's value -- see scrollNavActive.
+  /** The Poke Ball, so returning home can shut it. */
+  const pokeballRef = useRef<PokeballHandle>(null);
   const openPortalRef = useRef(openPortal);
   // Written from an effect, not during render: the compiler's react-hooks/refs
   // rule rejects the latter, and a one-commit lag is immaterial to a listener
@@ -285,7 +332,6 @@ export default function Page() {
   useEffect(() => { setTitleScreenActive(!started); }, [started, setTitleScreenActive]);
   const [nameStamped, setNameStamped] = useState(false);
   const [skyText, setSkyText] = useState("");
-  const [skyTextAlign, setSkyTextAlign] = useState<"left" | "right" | "center">("center");
   const [active, setActive] = useState(0);
   // A marker is hidden in exactly two cases:
   // - `current`: wherever the camera is at/heading to right now -- its own
@@ -300,6 +346,16 @@ export default function Page() {
     current: "home",
     departingFrom: null,
   });
+  // Hidden while you are AT its destination, and while you are leaving it.
+  //
+  // "At its destination" is decided by the MARKER, from the live camera -- see
+  // CameraHotspot's `viewpoint` prop. It cannot be decided here: this reads the
+  // journey's scroll index, and the index and the camera come apart the moment
+  // you drag to orbit. Keyed to the index alone the Home ring stayed hidden
+  // after you had swung the camera right away from Home, which is exactly when
+  // you want it; exempting Home from the rule instead -- which is what I tried
+  // -- left it showing while you were standing at Home, which is exactly when
+  // you do not. Both are the same bug, and the fix is to ask the camera.
   const isHotspotHidden = (id: string) => hotspotNav.current === id || hotspotNav.departingFrom === id;
   const isHotspotPendingOffscreen = (id: string) => hotspotNav.departingFrom === id;
   const handleHotspotOffscreen = useCallback((id: string) => {
@@ -379,6 +435,23 @@ export default function Page() {
   const rotate = useAtomValue(clicked);
   const [dragged, setDragged] = useAtom(pointer);
   const setInSkyJourneyAtom = useSetAtom(inSkyJourney);
+  const setSkyWorldMounted = useSetAtom(skyWorldMounted);
+  // Mounted once the island is running, NOT on the Poke Ball click.
+  //
+  // The paper world is ~22MB of texture across two GLBs plus a font atlas, and
+  // building it stalls the main thread. Mounted at the click that stall landed
+  // inside zoomIn's tween -- and gsap runs with lagSmoothing(0) here, so a
+  // tween advances by wall clock and comes out of a stall already further along
+  // than it should be. That is the jump reported the instant the ball is
+  // clicked. Moved to a beat after the scene starts, the same work happens
+  // while nothing is animating.
+  useEffect(() => {
+    if (!started) return
+    const id = window.setTimeout(() => setSkyWorldMounted(true), 2500)
+    return () => window.clearTimeout(id)
+  }, [started, setSkyWorldMounted]);
+  const setSkySequenceStarted = useSetAtom(skySequenceStarted);
+  const skySequenceValue = useAtomValue(skySequenceStarted);
   // Read, not just written: the journey rail hides while the sky sequence
   // owns the camera, since the scroll no longer means anything then.
   const isInSkyJourneyValue = useAtomValue(inSkyJourney);
@@ -515,13 +588,16 @@ export default function Page() {
       skyOffset.current = Math.min(Math.max(skyOffset.current + deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE);
       cameraControllerRef.current?.setSkyOffset(skyOffset.current);
       avatarControllerRef.current?.setSkyOffset(skyOffset.current);
+      // And published, so the paper world and the velocity lines can travel
+      // with it. They read the DAMPED value the camera publishes, not this
+      // one -- see helpers/skyScroll.ts.
+      skyScroll.target = skyOffset.current;
 
       const activeCue = [...SKY_TEXT_CUES].reverse().find((cue) => skyOffset.current >= cue.threshold);
       const nextText = activeCue?.text ?? "";
       if (nextText !== skyTextRef.current) {
         skyTextRef.current = nextText;
         setSkyText(nextText);
-        setSkyTextAlign(activeCue?.align ?? "center");
       }
     };
 
@@ -772,13 +848,34 @@ export default function Page() {
     isSequenceRunning.current = true;
     try {
       setMusicEnabled(false);
+      // The stamp and the rest of the island's chrome leave NOW, not when the
+      // camera finally arrives seven seconds later.
+      setSkySequenceStarted(true);
       await avatarControllerRef.current?.materializeDragonite();
       await cameraControllerRef.current?.zoomIn();
-      await Promise.all([cameraControllerRef.current?.flyUp(), avatarControllerRef.current?.flyUp()]);
+      // Anchor the sky to where the avatar actually stands before anything
+      // climbs. The camera's flyUp target is derived from the avatar's sky
+      // pose, so this has to happen first -- otherwise the sequence assumes
+      // AVATAR_BASE_POSITION and the avatar teleports away from the camera on
+      // the first sky frame, halving its size between two frames.
+      avatarControllerRef.current?.captureSkyOrigin();
+      // THE CAMERA GOES UP ALONE, AND ARRIVES FIRST.
+      //
+      // These used to run together for five seconds, so the whole ascent was
+      // spent looking at a character parked in the middle of the frame. Now
+      // the camera climbs by itself, settles on the paper sky, and only then
+      // does the cardboard cutout rise into the shot from under the bottom
+      // edge. The sky is handed to the camera the moment it lands -- it can
+      // frame where the subject WILL be, because cameraSkyPose derives from
+      // the same avatarSkyPose(0) the rise targets.
+      await cameraControllerRef.current?.flyUp();
       cameraControllerRef.current?.beginSkyJourney();
-      avatarControllerRef.current?.beginSkyJourney();
       isInSkyJourney.current = true;
       setInSkyJourneyAtom(true);
+      await avatarControllerRef.current?.riseIntoSky();
+      // After its own rise, not the camera's: until this the entry tween owns
+      // the avatar's position and the sky driver would fight it for it.
+      avatarControllerRef.current?.beginSkyJourney();
     } finally {
       isSequenceRunning.current = false;
     }
@@ -838,6 +935,7 @@ export default function Page() {
     try {
       isInSkyJourney.current = false;
       setInSkyJourneyAtom(false);
+      setSkySequenceStarted(false);
       // Before the flight below, so the sky driver stops writing the camera
       // and flyTo owns the descent outright.
       cameraControllerRef.current?.endSkyJourney();
@@ -853,6 +951,13 @@ export default function Page() {
       ]);
       await avatarControllerRef.current?.spinAndTransform("base");
       skyOffset.current = 0;
+      resetSkyScroll();
+      // Shut the ball. It has no self-closing path: the open clip is parked
+      // paused at half its duration, so without this the lid stayed open and
+      // `click` stayed true -- and the next click merely toggled the beam off
+      // without firing onRelease, which is why it took two clicks to come back
+      // up here.
+      pokeballRef.current?.close();
       setMotion(false);
       // Put the scroll navigation back at the top with the camera, or the next
       // swipe would be read against a scroll position left over from before the
@@ -958,8 +1063,15 @@ export default function Page() {
             aria-hidden and pointer-events-none together keep it out of the
             way of a screen reader and the cursor while it is invisible. */}
         <div
-          aria-hidden={revealStage < 1 || !!openPortal}
-          className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${revealStage < 1 || openPortal ? "opacity-0" : "opacity-100"}`}
+          aria-hidden={revealStage < 1 || !!openPortal || skySequenceValue}
+          // Gone from the CLICK, not from the arrival.
+          //
+          // This was gated on `inSkyJourney`, which only turns true once the
+          // camera has finished climbing -- so the stamp sat over the zoom and
+          // the whole five-second rise, roughly seven seconds of a sequence it
+          // has no business being in. `skySequenceStarted` flips on the Poke
+          // Ball click, which is the moment the island stops being the subject.
+          className={`pointer-events-none absolute z-10 transition-opacity duration-300 ${revealStage < 1 || openPortal || skySequenceValue ? "opacity-0" : "opacity-100"}`}
           style={
             isShortViewport
               ? {
@@ -984,9 +1096,21 @@ export default function Page() {
             narration of the sky journey and a screen reader heard none of it.
             polite rather than assertive: they are commentary on a sequence the
             visitor is driving, not an interruption. */}
-        <div role="status" aria-live="polite" className={`pointer-events-none fixed inset-0 z-10 flex items-center px-6 sm:px-12 md:px-20 scene-type text-2xl sm:text-3xl md:text-5xl font-bold text-white transition-opacity duration-500 ${skyTextAlign === "left" ? "justify-start" : skyTextAlign === "right" ? "justify-end" : "justify-center"}`}
-          style={{ opacity: skyText ? 1 : 0 }}>
-          <span className="max-w-xl">{skyText}</span>
+        {/* The caption cues, for screen readers ONLY.
+            
+            These are now drawn in the scene as paper cards on strings (see
+            PaperSky's Caption), so a second, full-screen DOM copy of the same
+            words was being painted over the top -- which is the text that kept
+            appearing across the Dragonite in every screenshot. The 3D card was
+            correctly off to its own side the whole time; this was the thing
+            covering the character.
+            
+            It stays in the DOM rather than being deleted: the 3D text is not
+            announced by anything, so this live region is the only thing telling
+            a non-sighted visitor what the sequence says. sr-only takes it out
+            of the picture without taking it out of the accessibility tree. */}
+        <div role="status" aria-live="polite" className="sr-only">
+          <span>{skyText}</span>
         </div>
         <div
           className={`flex flex-row items-center gap-2 absolute z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}
@@ -1061,24 +1185,44 @@ export default function Page() {
             softness Environment.tsx's directional light relies on comes
             from its own shadow-radius, not this type. */}
         <SceneBoundary label="island-scene">
-        <Canvas id="three-scene-canvas" onCreated={watchContext} shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: 50 }}
+        <Canvas id="three-scene-canvas" onCreated={onCanvasCreated} shadows="percentage" camera={{ position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION, fov: ISLAND_FOV_Y, near: CAMERA_NEAR, far: CAMERA_FAR }}
           onPointerDown={() => {
             setDragged(true)
           }}
           onPointerUp={() => setDragged(false)}
           dpr={[1, dprCeiling]} style={{ width: "100%", height: "100dvh" }}>
-          {/* No runtime quality adaptation existed: a 2019 integrated GPU got the
-              same composer, AO and shadow map as an M4 Max. PerformanceMonitor
-              watches the real frame rate and walks dpr down a step at a time;
-              AdaptiveDpr drops resolution while the camera is moving and
-              restores it when things settle. */}
+          {/* ONE writer for dpr, deliberately.
+
+              This used to be two: PerformanceMonitor walking `dprCeiling` (React
+              state, feeding the `dpr` prop above) AND <AdaptiveDpr>, which calls
+              setDpr itself off its own reading of the same frame times. Two
+              independent controllers reacting to one signal oscillate, and every
+              oscillation is not free: a dpr change resizes the composer's
+              buffers, N8AO's chain, Bloom's seven mip levels and all of the
+              portals' render targets. On a machine already running slowly
+              PerformanceMonitor's onDecline fires about every 2.5s, so the
+              scene was reallocating most of its GPU memory on a loop -- which
+              is its own source of dropped and half-drawn frames.
+
+              PerformanceMonitor is the one kept: it is explicit, bounded to
+              [1, 2], and steps rather than scales. */}
           <PerformanceMonitor
             onDecline={() => setDprCeiling((d) => Math.max(1, +(d - 0.25).toFixed(2)))}
             onIncline={() => setDprCeiling((d) => Math.min(2, +(d + 0.25).toFixed(2)))}
           />
-          <AdaptiveDpr pixelated />
           <EffectComposer>
-            <N8AO halfRes aoRadius={1.2} intensity={1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
+            {/* Turned DOWN in the paper world, not unmounted. Ambient occlusion
+                is exactly what a cutout must not have -- it puts contact shading
+                into the gaps between flat shapes and turns a sheet of paper back
+                into an object -- but mounting and unmounting a child of
+                <EffectComposer> rebuilds its whole pass chain mid-session, and
+                the frame that came back after it did was the island's sky with
+                the entire paper world missing from it, while the scene graph
+                said every prop was present and visible. Turning it down costs
+                one uniform and leaves the chain alone.
+
+                Down, though -- NOT to zero. See AO_OFF. */}
+            <N8AO halfRes aoRadius={1.2} intensity={isInSkyJourneyValue ? AO_OFF : 1.2} distanceFalloff={1} quality={isCoarsePointer ? "performance" : "medium"} />
             {/* Before Bloom, so the flare's hot core blooms like any other
                 highlight rather than sitting flat on top of the image. */}
             <SunFlare />
@@ -1114,7 +1258,7 @@ export default function Page() {
           {islandMounted && <Suspense fallback={null}>
             <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />
             <group>
-              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} showSeagulls={currentPhase !== "night"} />
+              <Scene from={dayFrom} day={day} transitionSeconds={transitionSeconds} onDragoniteRelease={handleDragoniteRelease} pokeballRef={pokeballRef} showSeagulls={currentPhase !== "night"} />
               <AvatarController ref={avatarControllerRef} />
               {/* <ContactShadows> removed. Its plane sat at y = -10, but the
                   water surface resolves to about y = -3.44 -- so it was 6.6
@@ -1140,10 +1284,10 @@ export default function Page() {
                   already checks this; the rings were the one that didn't. */}
               {sceneReady && revealStage >= 3 && !isCoarsePointer && !openPortal && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
-                <CameraHotspot label={HOTSPOT_LABELS["upper"]} labelsIntro={labelsIntro} position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
-                <CameraHotspot label={HOTSPOT_LABELS["left-tree"]} labelsIntro={labelsIntro} position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
-                <CameraHotspot label={HOTSPOT_LABELS["moon-island"]} labelsIntro={labelsIntro} position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} hidden={isHotspotHidden("moon-island")} pendingOffscreen={isHotspotPendingOffscreen("moon-island")} onOffscreen={() => handleHotspotOffscreen("moon-island")} />
-                <CameraHotspot label={HOTSPOT_LABELS["home"]} labelsIntro={labelsIntro} position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} hidden={isHotspotHidden("home")} pendingOffscreen={isHotspotPendingOffscreen("home")} onOffscreen={() => handleHotspotOffscreen("home")} />
+                <CameraHotspot label={HOTSPOT_LABELS["upper"]} labelsIntro={labelsIntro} position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} viewpoint={HOTSPOT_VIEWPOINTS["upper"].position} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
+                <CameraHotspot label={HOTSPOT_LABELS["left-tree"]} labelsIntro={labelsIntro} position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} viewpoint={HOTSPOT_VIEWPOINTS["left-tree"].position} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
+                <CameraHotspot label={HOTSPOT_LABELS["moon-island"]} labelsIntro={labelsIntro} position={MOON_ISLAND_HOTSPOT_POSITION} onClick={handleMoonIslandHotspotClick} hidden={isHotspotHidden("moon-island")} viewpoint={HOTSPOT_VIEWPOINTS["moon-island"].position} pendingOffscreen={isHotspotPendingOffscreen("moon-island")} onOffscreen={() => handleHotspotOffscreen("moon-island")} />
+                <CameraHotspot label={HOTSPOT_LABELS["home"]} labelsIntro={labelsIntro} position={HOME_HOTSPOT_POSITION} onClick={handleHomeHotspotClick} hidden={isHotspotHidden("home")} viewpoint={HOTSPOT_VIEWPOINTS["home"].position} pendingOffscreen={isHotspotPendingOffscreen("home")} onOffscreen={() => handleHotspotOffscreen("home")} />
               </>}
               {/* Outside the ring-marker gate above: the portals are real
                   objects standing in the world, not overlay markers, so they
@@ -1220,7 +1364,13 @@ export default function Page() {
                 desktop-only gate as CursorDriver -- it reads the same
                 pointerState, which SceneCursor only populates where there is a
                 hovering pointer to read. */}
-            {started && !isCoarsePointer && <CameraLook />}
+            {/* Not during the sky journey: the cursor parallax swings the view a few
+                degrees, and up there the sky driver owns the camera outright. */}
+            {/* Stays mounted through the journey. It eases its own amplitude to zero
+              when the journey starts -- unmounting it instead dropped up to 4
+              degrees of yaw in one frame, onto the frame that already carried
+              the camera's hand-over. */}
+          {started && !isCoarsePointer && <CameraLook />}
             {/* The scroll journey's path, drawn in the scene, for tuning the
                 waypoints in config/journey.ts. Off unless the URL says
                 otherwise, so it can be switched on against a deployed build. */}

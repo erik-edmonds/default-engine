@@ -1,8 +1,9 @@
-import React, { useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
+// The repo's typed wrapper, not drei's -- gltfjsx writes `nodes.Foo.geometry`
+// and r3f types `nodes` as bare Object3D. See helpers/useGLTF.ts.
+import { useGLTF } from '@/helpers/useGLTF'
 
 export function CardboardStar(props: React.ComponentProps<'group'>) {
-  const { nodes, materials } = useGLTF('/models/cardboard_star.glb')
+  const { nodes } = useGLTF('/models/cardboard_star.glb')
   return (
     <group {...props} dispose={null}>
       <mesh
