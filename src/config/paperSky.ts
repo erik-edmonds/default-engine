@@ -72,7 +72,7 @@ export const PAPER_ORIGIN: [number, number, number] = [
  *  have to fit inside. */
 export const ISLAND_FOV_Y = 50
 // Two successive 15% reductions, both asked for after seeing the scene.
-export const SKY_FOV_SHRINK = 0.85 * 0.85
+export const SKY_FOV_SHRINK = 0.8 * 0.8
 export const SKY_FOV_Y = ISLAND_FOV_Y * SKY_FOV_SHRINK
 /** The aspect the corridor is designed against -- a desktop 16:10. The
  *  horizontal field of view depends on it, and every lateral number here is
@@ -89,8 +89,8 @@ const DEG = Math.PI / 180
  *  STIFFNESS is gravity over rope length -- a longer string swings slower, as
  *  it should. DAMPING brings it to rest in about three swings, which reads as
  *  paper rather than as a pendulum in a vacuum. */
-export const SWING_STIFFNESS = 9
-export const SWING_DAMPING = 1.35
+export const SWING_STIFFNESS = 13
+export const SWING_DAMPING = 2
 /** How hard lateral motion of the anchor throws the prop. */
 export const SWING_DRIVE = 0.55
 /** Radians. A cutout that swings past this reads as tumbling, not hanging.
@@ -161,7 +161,7 @@ const CLOUD_NATIVE_HEIGHT = 128
 /** Scale range for the clouds. Bigger and narrower than before -- the brief is
  *  a few large masses, so the small end is raised rather than the large end
  *  pushed further. */
-export const CLOUD_SCALE: readonly [number, number] = [0.105, 0.145]
+export const CLOUD_SCALE: readonly [number, number] = [0.3, 0.4]
 
 /** The largest half-extent any prop presents, INCLUDING its swing.
  *
@@ -286,14 +286,14 @@ export const CORRIDOR_HALF_HEIGHT = FULL_FRAME_AXIAL * Math.tan(HALF_FOV_V) - PR
 
 /** For the stars, whose model is about 2.4 units wide natively. Smaller than
  *  the clouds, so the envelope above bounds them too. */
-export const STAR_SCALE: readonly [number, number] = [3.3, 5.4]
+export const STAR_SCALE: readonly [number, number] = [15, 20]
 
 // --- the strings -----------------------------------------------------------
 
 /** How far above its prop each string's anchor sits, in world units. */
 /** Retained only so the pendulum has a length to swing at; the string's
  *  VISIBLE length now runs from STRING_TOP, not from here. */
-export const ROPE_LENGTH: readonly [number, number] = [4, 9]
+export const ROPE_LENGTH: readonly [number, number] = [8, 15]
 
 /** How far a prop falls when it is dropped in, in world units. Its anchor
  *  descends by this much as the prop comes into view. */

@@ -11,7 +11,6 @@ import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 import { Avatar } from "@/components/models/Avatar"
-//import { CardboardDragonite } from "@/components/models/CardboardDragonite"
 import { FlyingDragonite } from "@/components/models/FlyingDragonite"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
 
