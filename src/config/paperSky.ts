@@ -132,7 +132,7 @@ export const CORRIDOR_NEAR_AXIAL = 10
  *  so the promise is: from first appearance until it is this close, no part of
  *  a prop is off any edge. After that it exits through the SIDE, which is
  *  motion, not clipping. */
-export const FULL_FRAME_AXIAL = 75
+export const FULL_FRAME_AXIAL = 85
 
 /** How near the flight axis a prop's nearest edge may come, and from what
  *  distance inward that must hold.
@@ -151,7 +151,7 @@ export const AVATAR_SAFE_AXIAL = 50
 export const AVATAR_CLEAR_ANGLE = 11.5 * DEG
 /** How much wider than the inner bound the band is. Narrow on purpose: the
  *  clouds are meant to pass close to the subject, not fan out to the edges. */
-export const CORRIDOR_WIDTH_RATIO = 1.45
+export const CORRIDOR_WIDTH_RATIO = 2.5
 
 /** The cloud model's native size, in its own file's units. The scales below are
  *  hundredths because of the first number. */
