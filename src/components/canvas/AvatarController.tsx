@@ -1,17 +1,19 @@
 "use client"
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, Suspense } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, Suspense } from "react"
 import * as THREE from "three"
 import type { Group, Mesh, Object3D } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
-import { AVATAR_BASE_POSITION, SKY_RISE, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose, setSkyOrigin } from "@/config/skyJourney"
+import { AVATAR_BASE_POSITION, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose, setSkyOrigin } from "@/config/skyJourney"
 import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 import { Avatar } from "@/components/models/Avatar"
 import { FlyingDragonite } from "@/components/models/FlyingDragonite"
+import { Rope } from "@/components/canvas/PaperSky"
+import { ROPE_RADIUS_NEAR, STRING_TOP } from "@/config/paperSky"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
 
 /** The choreography lives in config/skyJourney.ts now, shared with the camera.
@@ -25,6 +27,9 @@ const BASE_ROTATION: [number, number, number] = [0, 0, 0]
 export interface AvatarControllerHandle {
   spinAndTransform: (target: ModelKind) => Promise<void>
   materializeDragonite: () => Promise<void>
+  /** Leave the ground. Runs BEFORE the camera climbs, so the ascent starts
+   *  with the subject already in the air rather than pulling away from it. */
+  liftOff: () => Promise<void>
   /** Rise into the sky AFTER the camera is already there -- as the cardboard
    *  cutout, up from below the bottom edge of the frame. */
   riseIntoSky: () => Promise<void>
@@ -54,9 +59,34 @@ export type ModelKind = "base" | "dragonite" | "cardboard"
  *  home it goes FIRST and faster, so that by the time the camera has finished
  *  its own descent the cutout is long gone and the 3D Dragonite is already
  *  standing on the island in its place. */
-const SKY_ENTRY_DROP = 7
-const SKY_ENTRY_DELAY_SECONDS = 0.6
-const SKY_ENTRY_RISE_SECONDS = 1.5
+/** ONE ASCENT, FROM THE SAND TO THE SKY POSE, THAT NEVER STOPS.
+ *
+ *  What this replaces was three moves pretending to be one: the Dragonite rose
+ *  34 units over 5.5 seconds, HELD there while the camera carried on to 160,
+ *  was teleported to just under the sky pose, and rose the last 7 units. The
+ *  hold is the fault -- "the dragonite is stopping in the air while ascending,
+ *  it should never be seen stopping". It is plainly visible: at t+9s in the
+ *  recording the camera is still climbing and the Dragonite is hanging
+ *  motionless off to one side of the frame, waiting.
+ *
+ *  Now it is a single tween onto avatarSkyPose(0), which is exactly where the
+ *  old teleport was going anyway -- at offset 0 that pose is the captured
+ *  origin plus SKY_RISE, so x and z do not move and only y does.
+ *
+ *  It is longer than the camera's CLIMB_SECONDS and shares its ease, so the
+ *  camera is ahead at every instant of the climb and arrives about a second
+ *  and a half first. The subject falls out of the bottom of the frame early,
+ *  is out of sight for the middle of the climb, and rises back into the shot
+ *  from under the bottom edge once the camera has settled -- still moving,
+ *  never having stopped. */
+const SKY_ASCENT_SECONDS = 8
+
+/** How far past the bottom edge of the frame the subject must be before the
+ *  model may be swapped for its cardboard cutout, as a multiple of the
+ *  frame's own half-height at that distance. 1.15 is a fifteen-percent margin.
+ *  Behind the camera counts too, and unconditionally -- see the swap. */
+const MODEL_SWAP_CLEARANCE = 1.15
+
 const SKY_EXIT_DROP = 9
 const SKY_EXIT_SECONDS = 1.4
 
@@ -143,9 +173,72 @@ function applyGaze(bone: Object3D, store: GazeStore, worldDelta: THREE.Quaternio
   store.active = true
 }
 
+/** THE SKY SUBJECT, measured rather than eyeballed.
+ *
+ *  flying_dragonite.glb's geometry is not centred on its own origin: its box
+ *  runs x -0.951..-0.283, y -0.356..0.575. The model is drawn with
+ *  rotation [0, PI, 0], which mirrors x to the other side. So at scale S and
+ *  position P the figure's centre lands at P.x - S * -0.617, and its top at
+ *  P.y + S * 0.575 -- not at P.
+ *
+ *  These are constants rather than numbers inlined in the JSX because the rope
+ *  has to be tied to the figure, and the figure has been resized twice. Both
+ *  times the rope stayed where the old size put it: once a unit and a half off
+ *  to the side of the thing it is meant to be holding, and once floating a
+ *  tenth of a unit above its head. Derived, a resize moves the rope with it. */
+const SUBJECT_SCALE = 2
+const SUBJECT_POSITION: [number, number, number] = [-1.25, -0.5, 0]
+const SUBJECT_NATIVE_CENTRE_X = -0.617
+/** NOT the bounding box's top, which is 0.575 and is the tip of the two
+ *  antennae -- two thin horns with empty air between them. A rope ended there
+ *  hangs into that gap and touches nothing, which is the "it doesn't attach
+ *  properly" in the photo. 0.46 is the crown of the head, so the cord runs
+ *  down between the antennae and lands on the figure. */
+const SUBJECT_NATIVE_TOP = 0.46
+/** Where the rope is tied on, in the avatar group's own space. A shade below
+ *  the top of the cutout, so the end of the cord is hidden behind the artwork
+ *  rather than butting against its edge. */
+const ROPE_ANCHOR_X = SUBJECT_POSITION[0] - SUBJECT_SCALE * SUBJECT_NATIVE_CENTRE_X
+const ROPE_ANCHOR_Y = SUBJECT_POSITION[1] + SUBJECT_SCALE * (SUBJECT_NATIVE_TOP - 0.02)
+/** The cord scales WITH the subject. Its radius was set against a figure drawn
+ *  at 2.5; left alone through the resize it would read as a heavier rope on a
+ *  smaller Dragonite. */
+const SUBJECT_ROPE_RADIUS = ROPE_RADIUS_NEAR * (SUBJECT_SCALE / 2.5)
+/** How near its final height the camera has to be before the cord is there at
+ *  all, and how quickly it then arrives. */
+const ROPE_ARRIVAL_MARGIN = 6
+const ROPE_FADE_LAMBDA = 3.5
+
 export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref) => {
   const group = useRef<Group>(null)
+  // Constant: the cutout holds station at the corridor origin, and STRING_TOP
+  // is measured from there, so its rope never changes length.
+  const dragoniteRopeRef = useRef(STRING_TOP - ROPE_ANCHOR_Y)
+  /** THE CORD DOES NOT EXIST UNTIL THE CAMERA IS THERE.
+   *
+   *  The cutout is swapped in early -- as soon as the subject drops below the
+   *  frame, so the change is never seen -- and its rope runs from the cutout
+   *  up to STRING_TOP, some eighty units above the corridor. That put a length
+   *  of cord hanging in the open sky for the whole climb, with the camera
+   *  rising past it: "the rope appears all the way while the camera is still
+   *  going up". It fades up once the camera has actually arrived. */
+  const ropeOpacity = useRef(0)
+  /** The single ascent's state: whether it has landed, and whoever is waiting
+   *  on it (riseIntoSky). See SKY_ASCENT_SECONDS. */
+  const ascentDone = useRef(false)
+  const ascentResolve = useRef<(() => void) | null>(null)
+  /** Armed by liftOff, fired by the frame loop once the subject is below the
+   *  frame, so the 3D Dragonite becomes its cardboard cutout unseen. */
+  const swapToCardboard = useRef(false)
+  const swapProbe = useRef<THREE.Vector3 | null>(null)
   const [modelKind, setModelKind] = useState<ModelKind>("base")
+  /** The same value, readable from the imperative handle -- which is built
+   *  once and would otherwise close over the first render's. */
+  const modelKindRef = useRef<ModelKind>("base")
+  modelKindRef.current = modelKind
+  /** Work that must happen on the commit that swaps the model, not before it.
+   *  See returnHome. */
+  const reseatOnSwap = useRef<(() => void) | null>(null)
   const targetSkyOffset = useRef(0)
   const displaySkyOffset = useRef(0)
   const isSkyJourneyActive = useRef(false)
@@ -207,6 +300,16 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     gsap.killTweensOf(group.current.scale)
   }, [])
 
+  // Layout, not passive: it runs before the browser paints the commit that
+  // mounted the new model, so there is no frame in which the Dragonite is up
+  // but still standing where the cutout was.
+  useLayoutEffect(() => {
+    const reseat = reseatOnSwap.current
+    if (!reseat) return
+    reseatOnSwap.current = null
+    reseat()
+  }, [modelKind])
+
   useImperativeHandle(ref, () => ({
     spinAndTransform: (target: ModelKind) =>
       new Promise<void>((resolve) => {
@@ -233,36 +336,56 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
         // here on its own.
         tryStartMaterialize()
       }),
-    riseIntoSky: () =>
+    liftOff: () =>
       new Promise<void>((resolve) => {
         if (!group.current) {
           resolve()
           return
         }
-        // THE CUTOUT COMES UP INTO A SKY THAT IS ALREADY THERE.
-        //
-        // The camera and the avatar used to climb together for five seconds,
-        // which meant the whole journey up was spent watching a character hang
-        // in the middle of the frame with nothing happening around it. Now the
-        // camera goes alone and settles, and a beat later the cardboard
-        // Dragonite rises into the shot from under the bottom edge.
-        //
-        // It is placed absolutely from avatarSkyPose(0) rather than tweened by
-        // a delta: that pose is what the camera is already framing (the camera
-        // derives its own from the same function), so landing on it exactly is
-        // what puts the subject where the shot expects it.
-        setModelKind("cardboard")
+        // Absolute, not a delta: avatarSkyPose(0) is the captured origin plus
+        // SKY_RISE, so this is the same destination the old teleport had, just
+        // travelled to instead of jumped to.
         const pose = avatarSkyPose(0)
-        group.current.position.set(pose.x, pose.y - SKY_ENTRY_DROP, pose.z)
-        group.current.rotation.y = pose.rotY
+        ascentDone.current = false
+        // Armed here and fired by the frame loop, once the subject is below
+        // the frame -- see MODEL_SWAP_NDC_Y.
+        swapToCardboard.current = true
+        const finish = () => {
+          ascentDone.current = true
+          const waiting = ascentResolve.current
+          ascentResolve.current = null
+          waiting?.()
+        }
         gsap.to(group.current.position, {
           y: pose.y,
-          duration: tweenDuration(SKY_ENTRY_RISE_SECONDS),
-          delay: tweenDuration(SKY_ENTRY_DELAY_SECONDS),
-          ease: "power2.out",
-          onComplete: () => resolve(),
-          onInterrupt: () => resolve(),
+          duration: tweenDuration(SKY_ASCENT_SECONDS),
+          // The camera's own ease, over a longer span. Matching the SHAPE is
+          // what guarantees the camera is ahead at every instant rather than
+          // only at the end -- two different curves can cross.
+          ease: "power2.inOut",
+          onComplete: finish,
+          onInterrupt: finish,
         })
+        // Resolves at once, while the tween runs on: the caller wants to know
+        // the subject is off the ground so it can start the camera, not that
+        // the ascent is over. Waiting for the end is riseIntoSky's job.
+        resolve()
+      }),
+    riseIntoSky: () =>
+      new Promise<void>((resolve) => {
+        // NOTHING TO START -- the rise has been running since liftOff.
+        //
+        // This used to be the second half of a two-stage entry: teleport the
+        // subject to just under the sky pose and tween the last seven units.
+        // The teleport is what the hold existed to hide. Now there is one
+        // ascent and this simply waits for its end, which lands about a second
+        // and a half after the camera because the ascent is that much longer
+        // than the climb.
+        if (ascentDone.current || !group.current) {
+          resolve()
+          return
+        }
+        ascentResolve.current = resolve
       }),
     /** Anchor the whole sky sequence to where the avatar actually is, BEFORE
      *  anything climbs. The camera's flyUp target is derived from this, so it
@@ -312,12 +435,47 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
           duration: tweenDuration(SKY_EXIT_SECONDS),
           ease: "power2.in",
           onComplete: () => {
-            setModelKind("dragonite")
-            group.current?.position.set(BASE_POSITION[0], BASE_POSITION[1], BASE_POSITION[2])
-            group.current?.rotation.set(BASE_ROTATION[0], BASE_ROTATION[1], BASE_ROTATION[2])
+            // THE POSE WAITS FOR THE MODEL, not the other way round.
+            //
+            // This used to set the island pose and ask for the swap in the same
+            // tick. setModelKind is a state update, so the cardboard cutout is
+            // still what is mounted when that line returns -- and the line
+            // after it had already teleported the group to the island. For
+            // however many frames React took to commit, the cutout stood on the
+            // island in full view. Measured at four frames coming home.
+            //
+            // The reseat is handed to a layout effect keyed on modelKind, so it
+            // runs on the commit that actually mounts the Dragonite. The group
+            // is hidden across the gap: if anything delays that commit, the
+            // reader sees nothing rather than the wrong model.
+            if (group.current) group.current.visible = false
+            const reseat = () => {
+              group.current?.position.set(BASE_POSITION[0], BASE_POSITION[1], BASE_POSITION[2])
+              group.current?.rotation.set(BASE_ROTATION[0], BASE_ROTATION[1], BASE_ROTATION[2])
+              if (group.current) group.current.visible = true
+              resolve()
+            }
+            // NOTHING TO WAIT FOR IF IT IS ALREADY THE 3D MODEL.
+            //
+            // The reseat is normally handed to a layout effect that runs on
+            // the commit which mounts the Dragonite. But setModelKind to the
+            // value it already holds is a no-op: no render, no commit, no
+            // effect -- and returnHome's promise never settles. handleGoHome
+            // awaits it, so the whole trip home stops there, with the Poke
+            // Ball never told to close and its beam left parked out by the
+            // avatar. That happens whenever the cutout swap did not fire on
+            // the way up, which is a case this sequence must survive rather
+            // than assume away.
+            if (modelKindRef.current === "dragonite") reseat()
+            else {
+              reseatOnSwap.current = reseat
+              setModelKind("dragonite")
+            }
+          },
+          onInterrupt: () => {
+            if (group.current) group.current.visible = true
             resolve()
           },
-          onInterrupt: () => resolve(),
         })
       }),
     // moveToIslandEdge and diveUnderwater lived here -- the walk to the
@@ -342,18 +500,18 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     if (reduced) {
       displaySkyOffset.current = targetSkyOffset.current
     } else {
-      // Clamped like the camera's, which passes Math.min(delta, MAX_DELTA).
-      // Two damps of the same offset with different deltas diverge on any frame
-      // longer than 33ms -- and the camera then frames a COMPUTED avatar
-      // position that is not where the avatar actually is. Small, but it lands
-      // precisely on stall frames, which is where a jerk shows most.
-      easing.damp(
-        displaySkyOffset,
-        "current",
-        targetSkyOffset.current,
-        SKY_SCROLL_SMOOTH_TIME,
-        Math.min(delta, MAX_DELTA),
-      )
+      // THE RAW DELTA, and the camera passes the raw delta too.
+      //
+      // Two damps of the same offset with different deltas diverge on any
+      // frame longer than the clamp -- and the camera then frames a COMPUTED
+      // avatar position that is not where the avatar actually is. Both were
+      // clamped for that reason; both are unclamped now, for the reason given
+      // where the camera does it: an exponential damp cannot go unstable over
+      // a long step, and clamping only makes it follow the frame rate instead
+      // of the clock. What matters here is that they still MATCH. Unclamping
+      // one alone put the subject 0.54 off the midline on a slow renderer,
+      // where the pair of them holds it at 0.15.
+      easing.damp(displaySkyOffset, "current", targetSkyOffset.current, SKY_SCROLL_SMOOTH_TIME, delta)
     }
 
     const offset = displaySkyOffset.current
@@ -384,6 +542,72 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     group.current.position.y = pose.y + idleBob
     group.current.position.z = pose.z
     group.current.rotation.y = pose.rotY
+  })
+
+  // The rope's top stays on the STRING_TOP line while the cutout moves.
+  //
+  // The rope is a child of the avatar group, so left at a fixed length it
+  // travels with the cutout -- and while the cutout is still below the frame
+  // that puts the rope's upper end in the middle of an empty sky, attached to
+  // nothing. Measuring from the corridor origin each frame keeps the anchor
+  // where the puppeteer's hand is and lets the rope pay out as the cutout
+  // comes up, which is the whole idea.
+  useFrame((state, delta) => {
+    if (swapToCardboard.current && group.current) {
+      // IN CAMERA SPACE, not in projected NDC.
+      //
+      // "Out of frame" has to account for the standoff and the lens, both of
+      // which change during the climb -- so it cannot be a height difference.
+      // It cannot be the PROJECTED height either, which is what this was: the
+      // perspective divide flips sign for anything behind the camera, so a
+      // point below and behind reads as high above. On a slow frame the
+      // subject crosses from below-and-in-front to behind between two
+      // samples and the test never sees it low at all -- the swap then never
+      // fires and the 3D model rides all the way into the paper sky, T-pose
+      // and all. Seen three times in a row on a software renderer, and it is
+      // the same hazard on any machine that drops a frame at the wrong
+      // moment.
+      //
+      // Camera space has no such discontinuity: -z is the distance in front,
+      // y the height, and behind the camera is simply z >= 0.
+      const probe = (swapProbe.current ??= new THREE.Vector3())
+      probe.copy(group.current.position)
+      state.camera.worldToLocal(probe)
+      const behind = probe.z > -0.1
+      const ahead = Math.max(0.001, -probe.z)
+      const perspective = state.camera as THREE.PerspectiveCamera
+      const halfHeight = Math.tan(((perspective.fov ?? 50) * Math.PI) / 360) * ahead
+      const below = probe.y < -halfHeight * MODEL_SWAP_CLEARANCE
+      if (behind || below) {
+        swapToCardboard.current = false
+        // Where it happened, kept on the group. The swap is a single frame in
+        // a sequence this renderer samples once or twice a second, so a probe
+        // trying to catch the transition between two readings misses it as
+        // often as not. Recorded, the claim -- that the model never changes in
+        // view -- is checkable at any frame rate.
+        // Recorded as the projected height, which is what the checks read --
+        // meaningful whenever the subject is still in front of the camera,
+        // and simply a large number once it is behind.
+        group.current.userData.cardboardSwapNdcY = behind
+          ? -99
+          : probe.y / Math.max(0.001, halfHeight)
+        setModelKind("cardboard")
+        group.current.rotation.y = avatarSkyPose(0).rotY
+      }
+    }
+    if (!group.current) return
+    const originY = avatarSkyPose(displaySkyOffset.current).y
+    dragoniteRopeRef.current = Math.max(0, STRING_TOP - ROPE_ANCHOR_Y - (group.current.position.y - originY))
+    // Arrived, for the cord's purposes, means the camera is at the height the
+    // sky pose is framed from -- not the altitude that dresses the backdrop,
+    // which is passed less than halfway up.
+    const arrived = state.camera.position.y >= avatarSkyPose(0).y - ROPE_ARRIVAL_MARGIN
+    // THE RAW DELTA, not a clamped one. Clamping is for integrators that can
+    // go unstable over a long step; an exponential damp cannot, and clamping
+    // it only makes the fade run at the frame rate instead of the clock --
+    // measured on a software renderer at half a second per frame, where the
+    // cord was still at 0.57 a full fourteen seconds after the camera landed.
+    ropeOpacity.current = THREE.MathUtils.damp(ropeOpacity.current, arrived ? 1 : 0, ROPE_FADE_LAMBDA, delta)
   })
 
   // The avatar notices you: the head (and a third of the turn, the neck) tracks
@@ -519,7 +743,36 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
             1.899 units tall in its own file against the Dragonite's 1.9, and
             both have their bounding box centred on the group origin, so the
             two occupy the same space on screen. */}
-        {modelKind === "cardboard" && <FlyingDragonite scale={2.5} position={[-1.5, -0.5, 0]} rotation={[0, Math.PI, 0]} />}
+        {modelKind === "cardboard" && (
+          <>
+            {/* THE ROPE GOES WHERE THE MODEL ACTUALLY IS.
+                
+                flying_dragonite's geometry is not centred on its own origin --
+                its box runs x -0.951..-0.283 -- and the model is drawn with
+                rotation [0, PI, 0], which mirrors that offset to the other
+                side. Net: at scale 2.5 and position x -1.5 the figure's centre
+                lands at about x 0, not at -1.5. Anchoring the rope at -1.5 put
+                it a unit and a half off to the side of the thing it is meant to
+                be holding, which is the rope seen hanging on its own.
+                
+                Its length is maintained every frame (below) so the TOP stays
+                pinned to STRING_TOP while the cutout rises -- otherwise the
+                rope travels with the cutout and its upper end dangles in
+                mid-air instead of running off the top of the frame. */}
+            <group position={[ROPE_ANCHOR_X, ROPE_ANCHOR_Y, 0]}>
+              <Rope
+                lengthRef={dragoniteRopeRef}
+                radius={SUBJECT_ROPE_RADIUS}
+                opacityRef={ropeOpacity}
+              />
+            </group>
+            <FlyingDragonite
+              scale={SUBJECT_SCALE}
+              position={SUBJECT_POSITION}
+              rotation={[0, Math.PI, 0]}
+            />
+          </>
+        )}
       </Suspense>
     </group>
   )

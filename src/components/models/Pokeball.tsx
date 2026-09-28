@@ -20,8 +20,14 @@ const BEAM_DIRECTION: [number, number, number] = [
   BEAM_LOCAL_TARGET[1] / BEAM_LOCAL_LENGTH,
   BEAM_LOCAL_TARGET[2] / BEAM_LOCAL_LENGTH,
 ]
-const BEAM_HOLD_SECONDS = 2.8
-const BEAM_RETRACT_SECONDS = 0.45
+/** The beam is a beat, not a scene.
+ *
+ *  It held for 2.8 seconds and took another 0.45 to pull back -- three and a
+ *  quarter seconds of standing still before the sequence could get going, on
+ *  top of the materialise and the two-second dolly. About a second total is
+ *  what it is worth. */
+const BEAM_HOLD_SECONDS = 0.5
+const BEAM_RETRACT_SECONDS = 0.3
 
 export interface PokeballHandle {
   /** Shut the lid and arm it to be opened again.

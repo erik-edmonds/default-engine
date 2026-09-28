@@ -25,8 +25,20 @@ export const Dragonite = forwardRef<DragoniteHandle, { [key: string]: any }>((pr
 
   const materializing = useRef(false)
   const resolveRef = useRef<(() => void) | null>(null)
-  const HOLD_SECONDS = 2.2
-  const FADE_SECONDS = 0.9
+  // THE WHITE IS A FLASH, NOT A PHASE.
+  //
+  // 2.2 + 0.9 held the figure as a featureless white silhouette for over three
+  // seconds -- longer than the beam that is supposed to be producing it, so
+  // the beam finished and retracted while a white blob went on standing there.
+  // Timed off the video: white at t+4.0s, still white at t+6.5s, Dragonite at
+  // t+7.0s. Shortening the BEAM made this worse rather than better, because
+  // the beam was never the long part.
+  //
+  // 0.3 + 0.5 puts the whole thing inside the beam's own 0.8s, which is what
+  // makes it read as the beam materialising him rather than as two effects
+  // taking turns.
+  const HOLD_SECONDS = 0.3
+  const FADE_SECONDS = 0.5
   const holdRemaining = useRef(0)
   const fadeProgress = useRef(0)
 

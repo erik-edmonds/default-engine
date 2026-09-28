@@ -17,7 +17,6 @@ import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positio
 import { journeyPose, trapezoid, type Route } from "@/config/journey"
 import {
   AVATAR_BASE_POSITION,
-  SKY_RISE,
   SKY_SCROLL_SMOOTH_TIME,
   avatarSkyPose,
   cameraSkyPose,
@@ -42,8 +41,16 @@ const AVATAR_POSITION = new THREE.Vector3(
   AVATAR_BASE_POSITION[2],
 )
 const ZOOM_IN_DISTANCE = 8
-/** How long the camera takes to climb to the sky, alone. */
-const CLIMB_SECONDS = 3.2
+/** Halved. The opening -- materialise, beam, dolly -- was the slowest part of
+ *  getting into the sky and none of it is the point. */
+const ZOOM_IN_SECONDS = 2
+/** How long the camera takes to climb to the sky, alone.
+ *
+ *  Back to 5, which is what it was before the staggered entry was added. The
+ *  stagger was achieved by making the CAMERA faster, and the note after seeing
+ *  it was that the camera should not be the quick one -- so the camera keeps
+ *  its original pace and the cutout is the one that lags. */
+const CLIMB_SECONDS = 6.5
 
 /** How long the camera takes to blend out of flyUp's frozen aim and into the
  *  sky path's own. Long enough that ~12 degrees reads as a settle rather than a
@@ -212,31 +219,62 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     // the camera, and `flying` outranks both -- a hotspot flight or the fly-up
     // itself is a gsap tween writing camera.position, and this must not fight
     // it.
+    // THE LENS. Narrower in the sky than on the island.
+    //
+    // OUTSIDE the `sky.active` branch, and that is the whole point.
+    //
+    // It used to sit inside it, under a comment of mine claiming that "outside
+    // the sky sequence the share is zero and this writes the island value, so
+    // there is nothing to restore on the way home". Outside the sky sequence it
+    // did not run AT ALL -- and handleGoHome drops `skySequenceStarted` and
+    // calls endSkyJourney() (which clears `active`) in one synchronous block,
+    // so no frame can ever land between them to write the island value back.
+    // The camera was left at the sky's 32-degree lens instead of the island's
+    // 50 for the rest of the session: a 1.66x magnification, which is the
+    // reported "the camera is too close, it doesn't return to the original
+    // position". The POSITION always came home correctly -- flyTo targets
+    // ISLAND_CAMERA_POSITION, the same pose intro() lands on. Only the lens
+    // stayed behind.
+    //
+    // Run every frame, and the share being zero off-sequence now genuinely does
+    // restore the island value.
+    if (camera instanceof THREE.PerspectiveCamera) {
+      // ALTITUDE ALONE, not the sequence flag.
+      //
+      // Gating on `skySequenceStarted` made the lens snap from 32 back to 50 on
+      // the frame the home button is pressed -- while the camera is still at
+      // 159 units up and has its whole descent ahead of it. A 1.66x widening in
+      // one frame at altitude reads as the camera being flung backwards, which
+      // is the "camera just randomly jumps far out" on the way home.
+      //
+      // Height is the honest input: it is what the share meant all along, and
+      // the island's own camera never goes above 16 units against this ramp's
+      // 22-unit floor, so off-sequence it is zero on its own.
+      const share = skyAltitudeShare(camera.position.y)
+      const fov = ISLAND_FOV_Y + (SKY_FOV_Y - ISLAND_FOV_Y) * share
+      // Guarded: updateProjectionMatrix is not free, and on the island this
+      // would otherwise run every frame for a value that never changes.
+      if (Math.abs(camera.fov - fov) > 0.001) {
+        camera.fov = fov
+        camera.updateProjectionMatrix()
+      }
+    }
+
     const s = sky.current
     if (s.active) {
-      // THE LENS. Narrower in the sky than on the island.
-      //
-      // Driven by the same altitude share as the backdrop crossfade, so the
-      // two arrive together and neither changes state on the frame the climb
-      // ends -- which is the whole reason that share exists as one function.
-      // Outside the sky sequence the share is zero and this writes the island
-      // value, so there is nothing to restore on the way home.
-      if (camera instanceof THREE.PerspectiveCamera) {
-        const share = skySequenceRef.current ? skyAltitudeShare(camera.position.y) : 0
-        const fov = ISLAND_FOV_Y + (SKY_FOV_Y - ISLAND_FOV_Y) * share
-        // Guarded: updateProjectionMatrix is not free, and on the island this
-        // would otherwise run every frame for a value that never changes.
-        if (Math.abs(camera.fov - fov) > 0.001) {
-          camera.fov = fov
-          camera.updateProjectionMatrix()
-        }
-      }
-
       if (activeFlights.current === 0) {
         if (prefersReducedMotion()) {
           s.display = s.target
         } else {
-          easing.damp(s, "display", s.target, SKY_SCROLL_SMOOTH_TIME, Math.min(delta, MAX_DELTA))
+          // THE RAW DELTA. Clamping is for integrators that can go unstable
+          // over a long step; an exponential damp cannot -- it takes
+          // 1 - exp(-dt/tau) of the remaining distance, which is bounded by
+          // one however large dt gets. Clamping it only makes the follow run
+          // at the frame rate instead of the clock, so on a machine dropping
+          // frames the picture lags the scroll by seconds. Measured on a
+          // software renderer: the journey's displayed position sitting 32
+          // units behind a hold it had already settled onto.
+          easing.damp(s, "display", s.target, SKY_SCROLL_SMOOTH_TIME, delta)
         }
         // Where the avatar is, computed from the SAME table it reads rather
         // than asked for: both controllers damp the same offset with the same
@@ -391,7 +429,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           x: endPosition.x,
           y: endPosition.y,
           z: endPosition.z,
-          duration: tweenDuration(2),
+          duration: tweenDuration(ZOOM_IN_SECONDS),
           ease: "power2.inOut",
           onComplete: () => {
             endFlight()
@@ -402,7 +440,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           x: targetRotation.x,
           y: targetRotation.y,
           z: targetRotation.z,
-          duration: tweenDuration(2),
+          duration: tweenDuration(ZOOM_IN_SECONDS),
           ease: "power2.inOut",
           // gsap writes camera.rotation, we publish it as the new aim, and
           // CameraLook re-applies its offset on top a fraction of a frame

@@ -8,7 +8,7 @@ import gsap from "gsap";
 import { Canvas } from "@react-three/fiber";
 import { PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
 import { budgetPortalTargets } from '@/helpers/usePortalTargetBudget'
-import { skyScroll, resetSkyScroll } from '@/helpers/skyScroll'
+import { skyScroll, resetSkyScroll, impulseSkyScroll, advanceSkyScroll } from '@/helpers/skyScroll'
 import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest , skyWorldMounted, skySequenceStarted} from "@/helpers/StateProvider";
@@ -53,7 +53,8 @@ import {
   routeBetween,
   type JourneyStopId,
 } from "@/config/journey";
-import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES } from "@/config/skyJourney";
+import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES, SKY_TEXT_HOLDS, SKY_TEXT_LEAD } from "@/config/skyJourney";
+import { SkyCaption } from "@/components/layout/SkyCaption";
 // The island's lens. The sky narrows to SKY_FOV_Y during the climb (see
 // CameraController), and the corridor's geometry is derived from THAT.
 import { ISLAND_FOV_Y } from "@/config/paperSky";
@@ -331,7 +332,8 @@ export default function Page() {
   // loading screen.
   useEffect(() => { setTitleScreenActive(!started); }, [started, setTitleScreenActive]);
   const [nameStamped, setNameStamped] = useState(false);
-  const [skyText, setSkyText] = useState("");
+  /** Which of SKY_TEXT_CUES is current, or -1 before the first. */
+  const [skyCueIndex, setSkyCueIndex] = useState(-1);
   const [active, setActive] = useState(0);
   // A marker is hidden in exactly two cases:
   // - `current`: wherever the camera is at/heading to right now -- its own
@@ -464,7 +466,7 @@ export default function Page() {
   const isSequenceRunning = useRef(false);
   const isInSkyJourney = useRef(false);
   const skyOffset = useRef(0);
-  const skyTextRef = useRef("");
+  const skyCueRef = useRef(-1);
   const handleEnter = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
@@ -581,24 +583,18 @@ export default function Page() {
   }, [revealStage]);
 
   useEffect(() => {
-    const SCROLL_SENSITIVITY = 0.4 / 6;
+    // DOUBLED, with SKY_JOURNEY_DISTANCE. See that constant: the pair of them
+    // is one change -- twice the travel per gesture over twice the axis, so
+    // the trip costs the same effort and covers twice the sky.
+    const SCROLL_SENSITIVITY = 0.8 / 6;
 
     const applyScrollDelta = (deltaY: number) => {
       if (!isInSkyJourney.current) return;
-      skyOffset.current = Math.min(Math.max(skyOffset.current + deltaY * SCROLL_SENSITIVITY, 0), SKY_JOURNEY_DISTANCE);
-      cameraControllerRef.current?.setSkyOffset(skyOffset.current);
-      avatarControllerRef.current?.setSkyOffset(skyOffset.current);
-      // And published, so the paper world and the velocity lines can travel
-      // with it. They read the DAMPED value the camera publishes, not this
-      // one -- see helpers/skyScroll.ts.
-      skyScroll.target = skyOffset.current;
-
-      const activeCue = [...SKY_TEXT_CUES].reverse().find((cue) => skyOffset.current >= cue.threshold);
-      const nextText = activeCue?.text ?? "";
-      if (nextText !== skyTextRef.current) {
-        skyTextRef.current = nextText;
-        setSkyText(nextText);
-      }
+      // A PUSH, not a position. The wheel used to write the offset outright,
+      // so the journey stopped dead with your fingers. It hands momentum to
+      // the integrator now, which coasts it and lets it be caught by the hold
+      // at each block of text -- see advanceSkyScroll.
+      impulseSkyScroll(deltaY * SCROLL_SENSITIVITY);
     };
 
     const handleWheel = (event: WheelEvent) => {
@@ -842,6 +838,58 @@ export default function Page() {
     return () => window.removeEventListener("scroll", onScroll);
   }, [isCoarsePointer, started]);
 
+  // THE JOURNEY'S OWN CLOCK.
+  //
+  // The scroll coasts and is caught by the holds at each block of text, so the
+  // offset keeps changing after the wheel has stopped -- which means nothing
+  // can be driven from the wheel handler any more. This advances the
+  // integrator once a frame, hands the result to both controllers, and keeps
+  // the block in step with it. Mounted only for the sky journey: on the island
+  // there is nothing here to drive.
+  useEffect(() => {
+    if (!isInSkyJourneyValue) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      const delta = (now - last) / 1000;
+      last = now;
+      const offset = advanceSkyScroll(delta, SKY_JOURNEY_DISTANCE, SKY_TEXT_HOLDS);
+      if (offset !== skyOffset.current) {
+        skyOffset.current = offset;
+        cameraControllerRef.current?.setSkyOffset(offset);
+        avatarControllerRef.current?.setSkyOffset(offset);
+      }
+      // THE BLOCK IS CHOSEN FROM THE DAMPED VALUE, not from this one.
+      //
+      // `offset` is where the scroll has been taken; `skyScroll.display` is
+      // where the camera actually is, a little behind it. The scene decides
+      // which half the clouds keep out of from the damped value, so the block
+      // has to be chosen from the same number or the two disagree across the
+      // lag -- and while they disagree the clouds are clearing a side the
+      // words are not on. Measured: a block showing on the left while the
+      // corridor had already switched to keeping the right clear.
+      const shown = skyScroll.display;
+      // Same span rule skyTextFocus uses to lean the camera, and they have to
+      // agree or the camera leans toward a block that is not there. Below the
+      // lead there is no block at all: the sky is deliberately wordless for
+      // the first stretch, so you land and look before it starts talking.
+      let nextCue = shown < SKY_TEXT_LEAD ? -1 : 0;
+      for (let i = SKY_TEXT_CUES.length - 1; i >= 0; i--) {
+        if (shown >= SKY_TEXT_CUES[i].threshold) {
+          nextCue = i;
+          break;
+        }
+      }
+      if (nextCue !== skyCueRef.current) {
+        skyCueRef.current = nextCue;
+        setSkyCueIndex(nextCue);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isInSkyJourneyValue]);
+
   const handleUpClick = async () => {
     setHasInteracted(true);
     if (isSequenceRunning.current) return;
@@ -851,6 +899,10 @@ export default function Page() {
       // The stamp and the rest of the island's chrome leave NOW, not when the
       // camera finally arrives seven seconds later.
       setSkySequenceStarted(true);
+      // The expanded island map has no sky gating of its own, so if it happened
+      // to be open it would sit over the entire sequence. Everything else in
+      // the chrome fades on the atom above; this one has to be told.
+      setMapOpen(false);
       await avatarControllerRef.current?.materializeDragonite();
       await cameraControllerRef.current?.zoomIn();
       // Anchor the sky to where the avatar actually stands before anything
@@ -859,6 +911,10 @@ export default function Page() {
       // AVATAR_BASE_POSITION and the avatar teleports away from the camera on
       // the first sky frame, halving its size between two frames.
       avatarControllerRef.current?.captureSkyOrigin();
+      // The Dragonite leaves the ground FIRST. The camera used to start its
+      // climb on the same frame the sequence began, pulling away from a
+      // character still standing on the sand.
+      await avatarControllerRef.current?.liftOff();
       // THE CAMERA GOES UP ALONE, AND ARRIVES FIRST.
       //
       // These used to run together for five seconds, so the whole ascent was
@@ -872,6 +928,11 @@ export default function Page() {
       cameraControllerRef.current?.beginSkyJourney();
       isInSkyJourney.current = true;
       setInSkyJourneyAtom(true);
+      // NO BLOCK YET, and that is deliberate -- see SKY_TEXT_LEAD. The reader
+      // gets a page of scroll in the paper sky before it starts talking; the
+      // wheel handler puts the first one up when the axis reaches the lead.
+      skyCueRef.current = -1;
+      setSkyCueIndex(-1);
       await avatarControllerRef.current?.riseIntoSky();
       // After its own rise, not the camera's: until this the entry tween owns
       // the avatar's position and the sky driver would fight it for it.
@@ -939,8 +1000,8 @@ export default function Page() {
       // Before the flight below, so the sky driver stops writing the camera
       // and flyTo owns the descent outright.
       cameraControllerRef.current?.endSkyJourney();
-      skyTextRef.current = "";
-      setSkyText("");
+      skyCueRef.current = -1;
+      setSkyCueIndex(-1);
       beginHotspotTransition("home");
       // A second way out of a hotspot that doesn't go through flyToHotspot, so
       // it has to close an open portal itself.
@@ -1092,32 +1153,35 @@ export default function Page() {
             {nameStamped && !isShortViewport && <p data-cursor="text" className="scene-type font-nunito font-semibold text-[#d25a1a] text-xl sm:text-2xl md:text-3xl">Data Scientist</p>}
           </div>
         </div>
-        {/* Announced, not just drawn. These four captions carry the whole
-            narration of the sky journey and a screen reader heard none of it.
-            polite rather than assertive: they are commentary on a sequence the
-            visitor is driving, not an interruption. */}
-        {/* The caption cues, for screen readers ONLY.
+        {/* The sky journey's text, back in the DOM and visible again.
             
-            These are now drawn in the scene as paper cards on strings (see
-            PaperSky's Caption), so a second, full-screen DOM copy of the same
-            words was being painted over the top -- which is the text that kept
-            appearing across the Dragonite in every screenshot. The 3D card was
-            correctly off to its own side the whole time; this was the thing
-            covering the character.
+            It was moved into the scene as paper cards on strings, because a
+            full-width DOM caption was being painted straight across the
+            Dragonite. The cards fixed that and brought their own problem: a
+            sign hanging in the sky, three or four words wide, which is not
+            what the reference does at all. This is the third answer -- real
+            type, in the half of the frame the camera has leaned away from, so
+            nothing has to be painted over anything. See SkyCaption.
             
-            It stays in the DOM rather than being deleted: the 3D text is not
-            announced by anything, so this live region is the only thing telling
-            a non-sighted visitor what the sequence says. sr-only takes it out
-            of the picture without taking it out of the accessibility tree. */}
-        <div role="status" aria-live="polite" className="sr-only">
-          <span>{skyText}</span>
-        </div>
+            It is its own live region, so the sr-only duplicate that shadowed
+            the 3D text is gone with the cards. */}
+        {skyCueIndex >= 0 && <SkyCaption index={skyCueIndex} />}
         <div
           className={`flex flex-row items-center gap-2 absolute z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}
           style={{ top: "calc(1.25rem + var(--safe-top))", right: "calc(1.25rem + var(--safe-right))" }}
         >
           <SoundToggle currentPhase={currentPhase} />
-          <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
+          {/* Wrapped rather than gating the row: this div also holds
+              SoundToggle, and hiding the row would take the mute button with
+              it. The cube is the time-of-day control -- there is no day cycle
+              in the paper sky, so it has nothing to say up there. Leaves on the
+              Poke Ball click, with the name stamp. */}
+          {/* UNMOUNTED, not faded. Faded out it still occupied its slot in this
+              flex row, so the sound toggle stayed put and left a cube-shaped
+              hole against the right edge. */}
+          {!skySequenceValue && (
+            <PhaseCube from={dayFrom} phase={day} transitionSeconds={transitionSeconds} onAdvance={skipAhead} />
+          )}
         </div>
         {/* Touch navigates by scrolling through the scene (see the scroll
             state machine above and the spacer at the bottom of this file).
@@ -1381,7 +1445,7 @@ export default function Page() {
 
                 Its sibling used to be MinimapRenderer, which photographed the
                 island into a 512-square texture. The map renders itself now. */}
-            {!isCoarsePointer && <MinimapMarker />}
+            {!isCoarsePointer && !skySequenceValue && <MinimapMarker />}
             <Preload all />
           </Suspense>}
         </Canvas>
@@ -1406,7 +1470,7 @@ export default function Page() {
             photograph and is not fine for a renderer. */}
         {!isCoarsePointer && !mapOpen && (
           <Minimap
-            visible={sceneReady && started && !isInSkyJourneyValue && !openPortal}
+            visible={sceneReady && started && !skySequenceValue && !openPortal}
             onOpen={() => setMapOpen(true)}
             phase={day}
           />

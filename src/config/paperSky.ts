@@ -72,7 +72,10 @@ export const PAPER_ORIGIN: [number, number, number] = [
  *  have to fit inside. */
 export const ISLAND_FOV_Y = 50
 // Two successive 15% reductions, both asked for after seeing the scene.
-export const SKY_FOV_SHRINK = 0.8 * 0.8
+// Widened from 0.64. Two successive 15% cuts plus your own edit had taken the
+// sky to a 32-degree lens, which is a long telephoto -- it flattens the depth
+// the corridor exists to show.
+export const SKY_FOV_SHRINK = 0.78
 export const SKY_FOV_Y = ISLAND_FOV_Y * SKY_FOV_SHRINK
 /** The aspect the corridor is designed against -- a desktop 16:10. The
  *  horizontal field of view depends on it, and every lateral number here is
@@ -81,25 +84,18 @@ export const DESIGN_ASPECT = 1.6
 
 const DEG = Math.PI / 180
 
-/** The pendulum. Declared HERE, above the corridor, because the corridor's
- *  extents are derived from how far a prop can swing -- and a const used above
- *  its own declaration in the same module is a TDZ ReferenceError at import
- *  time, not a compile error.
+/** NO PENDULUM.
  *
- *  STIFFNESS is gravity over rope length -- a longer string swings slower, as
- *  it should. DAMPING brings it to rest in about three swings, which reads as
- *  paper rather than as a pendulum in a vacuum. */
-export const SWING_STIFFNESS = 13
-export const SWING_DAMPING = 2
-/** How hard lateral motion of the anchor throws the prop. */
-export const SWING_DRIVE = 0.55
-/** Radians. A cutout that swings past this reads as tumbling, not hanging.
+ *  Props used to swing on their strings: two floats each, driven by how fast
+ *  the anchor was being dragged sideways. It was rebuilt several times -- as
+ *  rapier bodies, then as a procedural spring -- and never read as paper on a
+ *  string; the note after the last attempt was that it never turned out right,
+ *  so it is gone rather than tuned again. The cutouts hang straight.
  *
- *  Halved, to 16 degrees. At 31 a cloud 24 units across threw 6 units of its
- *  own width up into its height, which is width the frame has to find room for
- *  -- and it is why props measured 17 units tall against a 13-unit model. Less
- *  swing is also simply calmer, which is what a few large masses want. */
-export const SWING_MAX = 0.28
+ *  Worth knowing if it is ever revisited: the string was drawn in the prop's
+ *  own local space, straight up world-Y, so it never bent with the swing. The
+ *  cutout tilted under a rigid vertical line, which is part of why it did not
+ *  convince. */
 /** Half-angles of the frame. Everything below is trigonometry on these two. */
 export const HALF_FOV_V = (SKY_FOV_Y / 2) * DEG
 export const HALF_FOV_H = Math.atan(Math.tan(HALF_FOV_V) * DESIGN_ASPECT)
@@ -121,8 +117,89 @@ export const HALF_FOV_H = Math.atan(Math.tan(HALF_FOV_V) * DESIGN_ASPECT)
  *  a long approach in front of it. NEAR is where the innermost prop has
  *  completely left the frame sideways, so props are retired at the edge rather
  *  than sweeping through the lens. */
-export const CORRIDOR_FAR_AXIAL = 240
-export const CORRIDOR_NEAR_AXIAL = 10
+/** BROUGHT IN FROM 170, AND THIS IS THE CLOUD-DISTANCE LEVER.
+ *
+ *  "The clouds are still much too far" is now the fifth round of that note, so
+ *  it is worth writing down why moving them in is not simply a smaller number
+ *  somewhere. A prop's lateral offset is bounded below by CORRIDOR_CLEAR_RADIUS
+ *  -- the subject's angular half-width swept out to the distance props appear
+ *  at -- because the standing rule is that a cloud may not START behind the
+ *  Dragonite. That clearance is a CONSTANT world offset, so shrinking it
+ *  directly is the one thing that breaks the rule.
+ *
+ *  Shrinking the DISTANCE shrinks the clearance with it, at the same angle:
+ *  at 170 the rule demanded 22.4 units of offset, at 135 it demands 17.8. The
+ *  band comes in by a fifth and the guarantee is untouched.
+ *
+ *  THERE IS A FLOOR ON THIS, and it is worth writing down because the first
+ *  attempt went straight through it. A prop travels a straight line at a fixed
+ *  offset s with a fixed half-width w, so BOTH its angular offset and its
+ *  angular size grow as 1/d -- the ratio s/w is the same at every distance,
+ *  and it alone decides whether the prop leaves through the SIDE of the frame
+ *  or swells across the middle of it. At s/w below 1 the inner edge crosses
+ *  the axis and the cloud ends up engulfing the camera; measured at 100, where
+ *  s/w was 0.88, a cloud filled the bottom-right quarter of the frame and the
+ *  paragraph was printed over it. At 135 the ratio is 1.18: the inner edge
+ *  stays clear of the axis and the prop exits the way it should, while still
+ *  passing a good deal nearer the subject than the 1.49 it had at 170.
+ *
+ *  What it costs is approach: a cloud is born at 135 units instead of 170, so
+ *  it arrives larger and has less run-up. That is paid for by the pool below,
+ *  which is raised so the shorter corridor still holds as many props. */
+export const CORRIDOR_FAR_AXIAL = 135
+/** BEHIND THE LENS, and that is the whole point of the number.
+ *
+ *  This used to be +10 -- ten units in FRONT of the camera -- on the reasoning
+ *  that by then a prop has left the frame sideways and can be retired unseen.
+ *  It has not: a prop's lateral offset is scaled for the far end of the
+ *  corridor, and the ones that pass closest to the axis are still on screen at
+ *  ten units. What the reader saw was a cloud vanishing in open sky, which is
+ *  the "randomly disappearing" in the report. There is no offset that makes the
+ *  claim true for every prop, so the corridor simply runs past the camera: a
+ *  prop is recycled once it is well behind the reader's head, where nothing can
+ *  be seen to happen to it. */
+export const CORRIDOR_NEAR_AXIAL = -25
+
+/** Where a prop has finished fading in, as an axial distance.
+ *
+ *  It fades up from nothing at CORRIDOR_FAR_AXIAL to solid here, so the gap
+ *  between the two is the length of the fade -- 65 units, which at the rate
+ *  below is a little over four seconds of scrolling. Long enough to read as
+ *  coming out of the haze; short enough that it is solid while still small,
+ *  rather than arriving half-transparent.
+ *
+ *  It replaces the drop as the entrance for a recycled prop. The drop is still
+ *  what happens on arrival at the sky, where the reader is looking at the whole
+ *  frame at once; mid-journey it happens above the top of the frame, which is
+ *  a prop appearing from nowhere.
+ *
+ *  LENGTHENED to nearly two thirds of the approach, for a reason that is about
+ *  the text rather than the entrance. A prop's side is chosen for the block
+ *  that will be up when it is at its biggest, which can be the block AFTER the
+ *  one up as it is born -- so the first part of its life can be spent in the
+ *  words' half. Making that first part the faint part is what keeps it from
+ *  showing: by the time a prop is solid it is close, and close is when its
+ *  side is right. */
+export const PROP_FADE_IN_AXIAL = 70
+
+/** Where the FIRST cloud stands when the sky is dressed, as an axial distance.
+ *
+ *  The pool is laid out from the far end inward, so with one cloud in it the
+ *  cloud begins at CORRIDOR_FAR_AXIAL -- which is exactly where the fade has
+ *  it at nothing. The reader arrived to an empty sky and had to scroll before
+ *  anything came: "there should be clouds at the start when the cardboard
+ *  dragonite appears."
+ *
+ *  Started here instead, well inside the fade, so it is solid and closing as
+ *  the cutout rises into the shot. */
+export const CORRIDOR_START_AXIAL = 62
+
+/** How long after arrival a prop may still be staging its drop, in seconds.
+ *
+ *  Every prop of the arrival wave is seeded at journey time zero plus its own
+ *  DROP_STAGGER, so the whole wave is seeded inside a fifth of a second. Any
+ *  prop seeded after this was seeded by a RECYCLE, and recycles do not drop. */
+export const ARRIVAL_DROP_WINDOW = 1
 
 /** How far down the approach a prop must still be WHOLLY inside the frame.
  *
@@ -131,8 +208,18 @@ export const CORRIDOR_NEAR_AXIAL = 10
  *  must leave the frame eventually, and leaving sideways is the whole point --
  *  so the promise is: from first appearance until it is this close, no part of
  *  a prop is off any edge. After that it exits through the SIDE, which is
- *  motion, not clipping. */
-export const FULL_FRAME_AXIAL = 85
+ *  motion, not clipping.
+ *
+ *  BROUGHT IN FROM 110 SO THAT THE SIDE IS REALLY WHERE IT EXITS. This number
+ *  sets the vertical band (see CORRIDOR_HALF_HEIGHT), and at 110 the band was
+ *  +/-30.6 units -- so a prop at the top of it left through the TOP edge at
+ *  around 110, while the lateral band does not carry one past the side edge
+ *  until about 50. The prop that was meant to sweep past you disappeared
+ *  upwards two thirds of the way in. Now at 55, against a corridor that only
+ *  runs to 100: the band is +/-11, which also answers the second half of
+ *  "the clouds are too far" -- they were too far ABOVE and BELOW him as well
+ *  as too far to the side. */
+export const FULL_FRAME_AXIAL = 55
 
 /** How near the flight axis a prop's nearest edge may come, and from what
  *  distance inward that must hold.
@@ -151,35 +238,38 @@ export const AVATAR_SAFE_AXIAL = 50
 export const AVATAR_CLEAR_ANGLE = 11.5 * DEG
 /** How much wider than the inner bound the band is. Narrow on purpose: the
  *  clouds are meant to pass close to the subject, not fan out to the edges. */
-export const CORRIDOR_WIDTH_RATIO = 2.5
+export const CORRIDOR_WIDTH_RATIO = 1.5
 
 /** The cloud model's native size, in its own file's units. The scales below are
  *  hundredths because of the first number. */
 const CLOUD_NATIVE_WIDTH = 232
 const CLOUD_NATIVE_HEIGHT = 128
+/** The star's own box, for hanging its string off the top of it. */
+export const STAR_NATIVE_HEIGHT = 1.787
+export const CLOUD_TOP_NATIVE = CLOUD_NATIVE_HEIGHT / 2
 
 /** Scale range for the clouds. Bigger and narrower than before -- the brief is
  *  a few large masses, so the small end is raised rather than the large end
  *  pushed further. */
-export const CLOUD_SCALE: readonly [number, number] = [0.3, 0.4]
+export const CLOUD_SCALE: readonly [number, number] = [0.1, 0.13]
 
-/** The largest half-extent any prop presents, INCLUDING its swing.
+/** The largest half-extent any prop presents.
  *
- *  A hanging cutout is tilted by up to SWING_MAX, which rotates width into
- *  height and back -- so the envelope that has to fit inside the frame is the
- *  rotated one, not the model's own box. Ignoring this is why props measured
- *  17 units tall when the model is 13. */
-const PROP_HALF_W = (CLOUD_NATIVE_WIDTH * CLOUD_SCALE[1]) / 2
-const PROP_HALF_H = (CLOUD_NATIVE_HEIGHT * CLOUD_SCALE[1]) / 2
-export const PROP_HALF_W_SWUNG = PROP_HALF_W * Math.cos(SWING_MAX) + PROP_HALF_H * Math.sin(SWING_MAX)
-export const PROP_HALF_H_SWUNG = PROP_HALF_W * Math.sin(SWING_MAX) + PROP_HALF_H * Math.cos(SWING_MAX)
+ *  Simply the model's own box now. It used to be the box rotated by SWING_MAX,
+ *  because a swinging cutout turns width into height and the frame has to find
+ *  room for the rotated envelope; with the pendulum gone there is nothing to
+ *  rotate. */
+export const PROP_HALF_W = (CLOUD_NATIVE_WIDTH * CLOUD_SCALE[1]) / 2
+export const PROP_HALF_H = (CLOUD_NATIVE_HEIGHT * CLOUD_SCALE[1]) / 2
 
 /** Where a prop first appears and is retired, expressed the way the corridor
  *  arithmetic wants it: distance ahead of the AVATAR, which sits CAMERA_BEHIND
  *  in front of the camera. */
 export const CORRIDOR_DEPTH = CORRIDOR_FAR_AXIAL - CAMERA_BEHIND
-/** Negative now, and deliberately: the corridor's near end is in FRONT of the
- *  camera, not behind it. Nothing is allowed to reach the lens. */
+/** How far the corridor extends BEHIND the avatar. Positive, now that the near
+ *  end sits behind the camera as well -- see CORRIDOR_NEAR_AXIAL. Props are
+ *  meant to reach the lens and pass it; retiring them short of it is what made
+ *  them look like they were disappearing. */
 export const CORRIDOR_BEHIND = -(CORRIDOR_NEAR_AXIAL - CAMERA_BEHIND)
 
 /** World units of travel per unit of scroll offset.
@@ -191,7 +281,29 @@ export const CORRIDOR_BEHIND = -(CORRIDOR_NEAR_AXIAL - CAMERA_BEHIND)
  *  is now less than half as long: holding the old rate would have turned props
  *  over three times faster, and the brief is that they pass more SLOWLY. A prop
  *  now takes about 112 units of scroll to cross, against 86 before. */
-export const CORRIDOR_TRAVEL_PER_OFFSET = 0.27
+/** RAISED WITH THE PASSAGE, and this is what makes "clouds and text never on
+ *  the same side" possible at all.
+ *
+ *  The rule needs a cloud's whole visible life to fit inside one section of
+ *  text, and that comparison is in WORLD units, where renumbering the scroll
+ *  axis changes nothing. A cloud is in shot from about 135 units out to about
+ *  5, so it is visible across roughly 105 units of flying. At 0.1 the whole
+ *  journey covered 3000 * 0.1 = 300 units, a quarter of it 75 -- so every
+ *  cloud outlived its section and there was no side it could be given that
+ *  stayed right for its whole pass. Measured: every single reading had a
+ *  cloud in the words' half.
+ *
+ *  MATCHED TO THE SECTION, now that the corridor is timed by it. A crossing
+ *  is CORRIDOR_FAR_AXIAL to CORRIDOR_NEAR_AXIAL, 160 world units, and a block
+ *  of text owns 675 units of the scroll axis -- so 160/675 = 0.237 makes the
+ *  two the same length, and a cloud is exactly born and gone within one
+ *  block. Under it a cloud would still be on screen when the next block
+ *  arrived; over it, there is dead sky at the end of every section. It costs nothing in effort: the scroll axis was doubled
+ *  at the same time as the sensitivity, so the number of gestures the trip
+ *  takes is unchanged -- what changes is how much sky goes past while you make
+ *  them, which is the "the scroll looks like it's going further" half of the
+ *  note. */
+export const CORRIDOR_TRAVEL_PER_OFFSET = 0.24
 
 /** NO DRIFT. The corridor moves only when the reader scrolls.
  *
@@ -218,18 +330,20 @@ export const CORRIDOR_TRAVEL = SKY_JOURNEY_DISTANCE * CORRIDOR_TRAVEL_PER_OFFSET
  *  destroyed, so the scene graph and the draw count are constant for the whole
  *  journey and nothing allocates mid-flight. This is also what bounds the cost
  *  of the star -- see STAR_SHARE. */
-export const CORRIDOR_POOL = 4
-
-/** Half the pool is placed to the left of the flight axis and half to the
- *  right, by index parity.
+/** ONE CLOUD PER BLOCK OF TEXT.
  *
- *  A guarantee, not a tuning. The old scatter drew from a sin-hash which is
- *  unbiased in aggregate (1423 left / 1377 right over 2800 samples) but
- *  DETERMINISTIC, so the same draw happened on every visit -- and the draw that
- *  happens to be on screen when you arrive is 6 left / 2 right. Stratifying by
- *  side makes every wave exactly balanced, so there is no sample to get
- *  unlucky with. */
-export const STRATIFY_SIDES = true
+ *  Two slots: a cloud and the star that rides on it. The pool has been four
+ *  and then six, tuned against "the sky empties out" -- and the note now is
+ *  the other way: "there are still too many clouds while scrolling, there
+ *  should only be one cloud per text group."
+ *
+ *  Two is exactly that, and the arithmetic is the corridor's own. The props
+ *  are spread evenly over the span, which is 160 world units, and a section of
+ *  text is 150 -- so one cloud per span is one cloud per section, arriving as
+ *  the block does and gone by the time the next one is up. Sparser than it has
+ *  been by a factor of four, which is what the reference looks like. */
+export const CORRIDOR_POOL = 2
+
 
 /** How many of the pool are stars rather than clouds.
  *
@@ -238,6 +352,21 @@ export const STRATIFY_SIDES = true
  *  used as supplied, so the only lever left is how many are on screen at once,
  *  and at 2 of 14 the stars still cost more than every cloud put together. */
 export const STAR_COUNT = 1
+
+/** How far in FRONT of its cloud a paired star rides, in world units.
+ *  Enough to read as two separate cutouts at different depths; not so much
+ *  that they stop looking like one arrangement. */
+export const STAR_LEAD = -7
+
+/** Where a star sits on its cloud, as a share of the cloud's own half-extents.
+ *
+ *  From the reference: the star tucks into the cloud's lower right, about half
+ *  a half-width across and most of a half-height down, so it overlaps the body
+ *  of the cloud and breaks its outline at the corner. Centred on the cloud --
+ *  which is what "same side and height" gave -- it read as a badge stuck on
+ *  the middle of it. */
+export const STAR_OFFSET_SIDE = 0.46
+export const STAR_OFFSET_UP = -0.8
 
 /** How far above the corridor's centre every string is anchored, DERIVED.
  *
@@ -257,6 +386,20 @@ export const STAR_COUNT = 1
  *  The previous model gave each prop a short individual rope of 4 to 9 units,
  *  which meant the strings started in mid-air at different heights and read as
  *  unattached. */
+/** The strings, as rope. Radius in world units, and a jute colour.
+ *
+ *  STRING, not tubing. At 0.5 and 6 sides these read as paper-towel tubes --
+ *  wide enough to see the facets and wide enough to look rigid. A third of
+ *  that, with more sides, reads as thick thread at the distances involved.
+ *
+ *  Two radii, because the distances differ by twenty to one. PROP is for the
+ *  corridor, where a cutout is tens of units across and 120 units away; NEAR is
+ *  for the caption cards and the subject, a few units from the lens. Both land
+ *  at roughly the same apparent thickness on screen. */
+export const ROPE_RADIUS_PROP = 0.13
+export const ROPE_RADIUS_NEAR = 0.035
+export const ROPE_COLOR = "#c8a97a"
+
 export const STRING_TOP = CORRIDOR_FAR_AXIAL * Math.tan(HALF_FOV_V) * 1.35
 
 /** Lateral spread of the corridor, DERIVED.
@@ -273,20 +416,96 @@ export const STRING_TOP = CORRIDOR_FAR_AXIAL * Math.tan(HALF_FOV_V) * 1.35
  *  room there is: the two requirements press from opposite sides, and it is
  *  CORRIDOR_FAR_AXIAL that sets how much daylight is between them -- pulling
  *  the spawn closer narrows it to nothing. */
-export const CORRIDOR_CLEAR_RADIUS =
-  PROP_HALF_W_SWUNG + AVATAR_SAFE_AXIAL * Math.tan(AVATAR_CLEAR_ANGLE)
-export const CORRIDOR_HALF_WIDTH = CORRIDOR_CLEAR_RADIUS * CORRIDOR_WIDTH_RATIO
+/** The angular half-width of the subject, seen from the camera.
+ *
+ *  The sky's Dragonite is the flying cutout: 0.668 units wide in its own file,
+ *  drawn at scale 2.5, standing CAMERA_BEHIND away. That is 7.5 degrees. */
+export const SUBJECT_HALF_ANGLE = Math.atan((0.668 * 2.5) / 2 / CAMERA_BEHIND)
+
+/** A CLOUD MUST NOT START BEHIND THE SUBJECT.
+ *
+ *  Its inner edge has to clear the Dragonite's silhouette at the distance it
+ *  appears -- and because a prop's angular offset only grows as it approaches,
+ *  clearing there clears everywhere.
+ *
+ *  This is what fixes the cloud size. The three requirements -- big clouds,
+ *  close to the subject, not starting behind it -- cannot all hold at once, and
+ *  at CLOUD_SCALE 0.4 they were not merely tight but arithmetically impossible:
+ *  a cloud 92.8 units across needs its centre 62.3 units off the axis to clear
+ *  him, and the frame is only 55 units wide out there, so no placement exists.
+ *  A cloud whose half-width is under about 19 units is what makes the
+ *  composition possible at all. */
+/** The widest a prop's centre may sit and still arrive inside the frame. */
+const MAX_SIDE_IN_FRAME = CORRIDOR_FAR_AXIAL * Math.tan(HALF_FOV_H) - PROP_HALF_W
+/** ...and the narrowest it may sit and still clear the subject.
+ *
+ *  THE PROP'S CENTRE, NOT ITS NEAR EDGE, and the difference is the whole
+ *  composition. Requiring the near EDGE to clear the silhouette added
+ *  PROP_HALF_W -- fifteen units -- to a clearance that only needed twenty-two,
+ *  putting every cloud 37.6 units off the axis. Because that is a CONSTANT
+ *  world offset while the frame narrows as a prop approaches, the band was
+ *  outside the picture for almost all of a prop's life: sampled live, the four
+ *  props sat at ndc x 3.06, -1.07, -1.25 and 2.66, which is to say the sky had
+ *  no clouds in it at all. A cloud was only ever wholly in frame between about
+ *  130 and 75 units, and it spent the fade coming in and then left sideways.
+ *
+ *  Letting the near edge overlap at long range costs nothing: out there the
+ *  cloud is BEHIND the subject and occluded by him, which is depth rather than
+ *  a collision, and the note was about clouds crossing his path -- which is a
+ *  near-field event, and his angular size only shrinks relative to the prop's
+ *  offset as the prop comes in. At 22.4 the centre grazes his silhouette edge
+ *  at the farthest point of the corridor and is clear of it everywhere nearer. */
+const MIN_SIDE_CLEAR = CORRIDOR_FAR_AXIAL * Math.tan(SUBJECT_HALF_ANGLE)
+
+/** THE TWO BOUNDS CAN CONFLICT, AND AT THE CURRENT CLOUD SIZE THEY DO.
+ *
+ *  "Not behind the subject" pushes a cloud out; "wholly in frame on arrival"
+ *  pulls it in; and both move with the cloud's own half-width, so past a
+ *  certain size the window between them closes and then inverts. At
+ *  CLOUD_SCALE 0.3 a cloud is 68 units across: it needs its centre 50 units off
+ *  the axis to clear the Dragonite, and the frame is only 55 units wide out
+ *  there, so anything that clears him is already half off the edge.
+ *
+ *  The size that makes both possible is a half-width under about 19 units,
+ *  i.e. CLOUD_SCALE at or below roughly 0.165. Above that this falls back to
+ *  the best available compromise -- as far off the axis as the frame allows --
+ *  rather than inverting the band and placing props by accident. */
+export const CORRIDOR_BOUNDS_CONFLICT = MIN_SIDE_CLEAR >= MAX_SIDE_IN_FRAME
+export const CORRIDOR_CLEAR_RADIUS = CORRIDOR_BOUNDS_CONFLICT
+  ? MAX_SIDE_IN_FRAME * 0.6
+  : MIN_SIDE_CLEAR
+export const CORRIDOR_HALF_WIDTH = CORRIDOR_BOUNDS_CONFLICT
+  ? MAX_SIDE_IN_FRAME
+  : Math.min(CORRIDOR_CLEAR_RADIUS * CORRIDOR_WIDTH_RATIO, MAX_SIDE_IN_FRAME)
 
 /** Vertical spread, DERIVED: high enough to read as a field rather than a line,
  *  low enough that a prop is still wholly between the top and bottom edges at
  *  FULL_FRAME_AXIAL. This is the "so high or low that the total cloud can't be
  *  seen" number, and at the old 15 a swung prop ran off the top edge while it
  *  was still 40 units away. */
-export const CORRIDOR_HALF_HEIGHT = FULL_FRAME_AXIAL * Math.tan(HALF_FOV_V) - PROP_HALF_H_SWUNG
+/** The thinnest vertical band worth having. A floor, and it is load-bearing.
+ *
+ *  The derivation below subtracts the prop's half-height from the frame's, and
+ *  at the current cloud scale that went NEGATIVE: -13.05, because a prop is 51
+ *  units tall and the frame is only 48.7 units tall at FULL_FRAME_AXIAL. It
+ *  survived only because scatter multiplies it by a symmetric sign, so a
+ *  negative half-extent produced a mirrored band of the same size rather than
+ *  an empty one -- the constant was meaningless but the scene looked fine.
+ *
+ *  The promise "a prop is wholly in frame down to FULL_FRAME_AXIAL" is simply
+ *  not satisfiable at this prop size. The floor makes that explicit instead of
+ *  letting the arithmetic walk past zero unnoticed. */
+export const MIN_CORRIDOR_HALF_HEIGHT = 6
+export const CORRIDOR_HALF_HEIGHT = Math.max(
+  MIN_CORRIDOR_HALF_HEIGHT,
+  FULL_FRAME_AXIAL * Math.tan(HALF_FOV_V) - PROP_HALF_H,
+)
 
 /** For the stars, whose model is about 2.4 units wide natively. Smaller than
  *  the clouds, so the envelope above bounds them too. */
-export const STAR_SCALE: readonly [number, number] = [15, 20]
+/** And the stars, which are a detail ON a cloud rather than a thing of their
+ *  own: about 27% of a cloud's width, matching the reference. */
+export const STAR_SCALE: readonly [number, number] = [3.2, 4.2]
 
 // --- the strings -----------------------------------------------------------
 
@@ -310,81 +529,30 @@ export const DROP_HEIGHT = 22
  *
  *  On a clock, seeded when the camera actually arrives, the drop happens in
  *  front of the viewer. */
-export const DROP_SECONDS = 1.25
+export const DROP_SECONDS = 0.7
 
 /** How much later each successive prop is released, in seconds. Enough that
  *  the arrival reads as a sequence rather than a single clatter; short enough
  *  that the whole field is down before the first caption. */
-export const DROP_STAGGER = 0.11
+export const DROP_STAGGER = 0.05
 
-/** World units. A lateral anchor move larger than this in ONE frame is a
- *  teleport -- a prop being recycled onto the other side of the corridor, or a
- *  caption appearing -- not flight, and it must not drive the pendulum. At the
- *  corridor's half width a recycle can move an anchor ~20 units; real lateral
- *  drift is a fraction of a unit per frame. */
-export const MAX_ANCHOR_STEP = 2
 
-/** Captions swing far less than the props do.
- *
- *  At the props' 0.55 radians a caption card tilts 31 degrees, and text at 31
- *  degrees reads as a mistake rather than as motion -- it is the one thing in
- *  this world the viewer has to actually parse. A few degrees keeps it alive
- *  without making it work to read.
- *
- *  This constant existed for three rounds without being imported: the caption
- *  clamped against SWING_MAX, so every value set here -- including a zero set
- *  as a diagnostic -- changed nothing, and the card kept tilting 31 degrees. */
-export const CAPTION_SWING_MAX = 0.06
 
 // --- the captions ----------------------------------------------------------
 
-export const CAPTION_CHAR_WIDTH = 0.24
-export const CAPTION_HALF_HEIGHT = 0.5
-export const CAPTION_FONT_SIZE = 0.38
-/** Card stock, in world units. */
-export const CAPTION_THICKNESS = 0.03
-
-/** How far from the corridor axis a caption hangs, and on which side.
+/* GONE, along with the paper signs they described.
  *
- *  Laid out AROUND the avatar, and the distance is arithmetic rather than
- *  taste. At CAPTION_DEPTH the card sits 18.7 units from the camera, where its
- *  own half-width subtends 0.22 in normalised screen space; the avatar occupies
- *  about +/-0.27. So the card's INNER edge has to clear 0.30, which needs its
- *  centre beyond 0.52 -- about 7.3 units off the axis. At the previous 3.9 the
- *  card spanned 0.06 to 0.50 and its text ran straight across the character,
- *  which is what the screenshots kept showing.
+ * CAPTION_DEPTH, CAPTION_SLOTS, CAPTION_EASE and the card's own dimensions all
+ * existed to place a physical card in the scene: how far in front to hold it,
+ * which side to hang it, how wide the stock had to be for the longest line.
+ * The text is DOM now, set opposite the subject with the camera leaning away
+ * to make room, so none of that is a geometry problem any more -- see
+ * SKY_TEXT_CUES and skyTextFocus in config/skyJourney.ts, and SkyCaption.
  *
- *  7.5 leaves the outer edge at 0.76, comfortably inside the frame. */
-export const CAPTION_SLOTS: { x: number; y: number }[] = [
-  { x: -7.5, y: 1.8 },
-  { x: 7.5, y: 0.9 },
-  { x: -7.5, y: -1.4 },
-  { x: 7.5, y: -2.4 },
-]
-
-/** How far in front of the viewer a caption hangs. FIXED -- a caption does not
- *  fly past.
- *
- *  The props stream toward you and that is the point of them; text cannot do
- *  the same and stay readable. Flying captions down the corridor put the
- *  longest one directly across the avatar at reading size, because a card that
- *  travels from far to near necessarily passes through the middle of the
- *  frame. So a caption holds station at this depth for as long as its cue is
- *  current, and is lowered in and lifted out on its string at the ends. */
-export const CAPTION_DEPTH = 13
-
-/** How many scroll units a caption takes to drop in, and to lift back out.
- *
- *  A caption is no longer shown in a window either side of its cue. It is
- *  CURRENT from its own threshold until the next cue's, so there is always one
- *  card up and never two: card i finishes lifting out exactly as card i+1
- *  starts dropping in. The spans come from SKY_TEXT_CUES itself rather than
- *  from a width constant, so the timing and the text cannot drift apart -- the
- *  same reason the cue table already feeds the DOM live region.
- *
- *  At the old +/-62 each card was up for 124 of the 600 units and dark for the
- *  other 26 between cues, which is the "barely on the screen long enough". */
-export const CAPTION_EASE = 18
+ * Deleted rather than left in place: an exported constant nothing reads is a
+ * claim about the scene that no longer has to be true, and the last three
+ * rounds of this file have been spent on constants that had quietly stopped
+ * meaning what they said. */
 
 /** How long the world takes to arrive and to leave, in seconds. The backdrop
  *  crossfades over this, and so do the props -- which is what stops the
@@ -406,6 +574,13 @@ export const CAPTION_EASE = 18
  *  nothing has to change at the moment the camera settles. Descending on the
  *  way home runs it backwards for free. */
 export const PAPER_FADE_START_Y = AVATAR_BASE_POSITION[1] + SKY_RISE * 0.15
+/** The altitude at which the sky is DRESSED: the backdrop has finished fading
+ *  in, so the props and the subject drop in against a finished stage rather
+ *  than after one. It is the same height the crossfade completes at, which is
+ *  the point -- the note was "right when the striped background is fully in
+ *  view, the objects should drop in", and waiting for the camera to actually
+ *  land left about a second of bare stripes. */
+export const SKY_DRESSED_Y = AVATAR_BASE_POSITION[1] + SKY_RISE * 0.78
 export const PAPER_FADE_FULL_Y = AVATAR_BASE_POSITION[1] + SKY_RISE * 0.78
 
 /** How much of the sky world is showing, as a function of ALTITUDE.
@@ -445,7 +620,21 @@ export const PAPER_FADE_OUT = 0.9
 /** How many streaks. One InstancedMesh, so this is instances, not draw calls. */
 export const STREAK_COUNT = 220
 /** The cylinder they live in, around the corridor axis. */
-export const STREAK_RADIUS: readonly [number, number] = [7, 34]
+/** How far across the frame the streaks are spread, in normalised screen
+ *  units, and the hole kept clear in the middle of it.
+ *
+ *  A RECTANGLE, not a ring. They used to be laid out on a cylinder around the
+ *  flight axis -- an angle and a radius -- and a cylinder seen end-on is a
+ *  circle: the note was "the velocity lines appear to be a circle". Scattered
+ *  across the frame instead, what you see is what speed lines are supposed to
+ *  be, a field of streaks converging on the point you are flying at.
+ *
+ *  The hole is the subject's own berth. Streaks drawn over the Dragonite read
+ *  as scratches on him rather than as air going past. */
+export const STREAK_SPREAD = 1.15
+export const STREAK_CLEAR: readonly [number, number] = [0.22, 0.3]
+/** Nearest and furthest a streak is drawn, in units along the view axis. */
+export const STREAK_DEPTH: readonly [number, number] = [4, 70]
 export const STREAK_SPAN = 150
 /** Scroll speed (offset units per second) at which the streaks reach full
  *  length and opacity. Below a tenth of this they are not drawn at all. */
