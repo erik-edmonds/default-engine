@@ -49,11 +49,19 @@ export const skyScroll = {
  *
  *  FRICTION is how fast a flick dies -- a little over a second of coast.
  *
- *  CAPTURE is how near a hold has to be before it starts pulling. Kept well
- *  under half a section, so there is always a stretch in the middle of each
- *  span that is pure coasting; a capture radius that met the next one would
- *  turn the whole journey into a rail. It is also what one gesture has to beat
- *  to leave a block cold, so it cannot be much wider than a wheel flick.
+ *  CAPTURE is how near a hold has to be before it starts pulling. Still under
+ *  half a section -- blocks are 675 apart and this is 260, so 155 units in the
+ *  middle of every span are pure coasting and the journey is not a rail -- but
+ *  much wider than the 150 it was. At 150 a flick carried 144 units, which is
+ *  to say a reader could come to rest almost anywhere with no block in reach
+ *  at all, and most of them did.
+ *
+ *  The cost is honest and worth stating: a single flick thrown from a standing
+ *  start ON a block now carries about 30 units instead of 69, because the far
+ *  side of the band catches what is left of it. Leaving takes a real scroll
+ *  rather than a nudge. That is the trade "sticks for a bit" asks for, and a
+ *  steady spin is unaffected -- it crosses at 163 u/s against 201 in the open,
+ *  so it slows at the words and keeps going.
  *
  *  STIFFNESS and STICK_FRICTION are the hold itself. The first accelerates you
  *  toward the hold point, the second bleeds the coast once you are inside it,
@@ -61,13 +69,35 @@ export const skyScroll = {
  *  enough that one ordinary wheel gesture escapes -- a hold you cannot leave
  *  is a trap, not a beat. */
 const FRICTION = 2.6
-const CAPTURE = 150
-const STIFFNESS = 2.4
+const CAPTURE = 260
+const STIFFNESS = 3.4
 const STICK_FRICTION = 3.1
 /** The speed above which a hold has no grip at all, in journey units per
- *  second. One wheel gesture starts at roughly twice this, so it always gets
- *  clear of the block it is leaving before the magnet can have an opinion. */
-const ESCAPE_SPEED = 280
+ *  second.
+ *
+ *  THIS USED TO BE 280 AND THE COMMENT HERE USED TO BOAST ABOUT IT: "one wheel
+ *  gesture starts at roughly twice this, so it always gets clear of the block
+ *  it is leaving before the magnet can have an opinion." That is a description
+ *  of the magnet never working. A steady wheel spin holds a few hundred units
+ *  a second the whole way down the journey, so the grip term
+ *  `1 - |v| / ESCAPE_SPEED` sat at or near zero for the entire scroll and the
+ *  hold could only ever act on a journey that had already stopped.
+ *
+ *  Measured, over a thirty-second steady spin, as the difference between the
+ *  speed within 70 units of a block and the speed more than 250 units from
+ *  one -- which is what "sticks for a bit around the text" has to mean if it
+ *  means anything:
+ *
+ *      CAPTURE 150, STIFFNESS 2.4, ESCAPE 280   200 vs 201 u/s    1% slower
+ *      CAPTURE 260, STIFFNESS 3.4, ESCAPE 700   163 vs 201 u/s   19% slower
+ *
+ *  One per cent is the report -- "still no assistance in scrolling when the
+ *  text is close, and there's still no stickiness around the texts."
+ *
+ *  The same change is what makes the assistance land: a trackpad flick thrown
+ *  from the middle of a span used to die 103 units short of the block it was
+ *  heading for, and now stops 18 short, which the settle below closes. */
+const ESCAPE_SPEED = 700
 /** Under this, the journey is treated as stopped: without it the spring and
  *  the friction chase each other around the hold point forever, and `speed`
  *  never settles, so the velocity lines never quite go out. */
@@ -76,6 +106,15 @@ const REST_SPEED = 0.6
  *  spent, in e-folds per second. Slow enough to read as settling rather than
  *  snapping. */
 const SETTLE_RATE = 1.8
+
+/** Which way the reader is travelling, remembered across the gaps between
+ *  gestures. +1 is deeper into the journey.
+ *
+ *  Module state rather than a field on skyScroll: nothing outside this file
+ *  has any business with it, and it is an implementation detail of the magnet
+ *  rather than a fact about the journey. See the grip, which is the only
+ *  thing that reads it. */
+let heading: -1 | 1 = 1
 
 /** Where the wheel's push goes. Called once per wheel event.
  *
@@ -145,19 +184,35 @@ function advanceOneStep(dt: number, limit: number, holds: readonly number[]) {
     // has decayed to walking pace the grip is full and it settles. Which is
     // also the behaviour asked for -- assisted as it arrives, inertial again
     // once you push on.
-    // AND IT DOES NOT PULL ON SOMETHING LEAVING.
     //
-    // A hold is a landing aid. Fighting momentum that is already heading away
-    // from it made the block hard to leave in a way that showed: a wheel
-    // gesture of nine notches carried 120 units, the capture band is wider
-    // than that, and the magnet simply reeled it back in -- so a reader who
-    // nudged forward went nowhere and the journey never reached its third
-    // block at all. Departing under your own steam is released immediately;
-    // arriving, or dawdling, is still caught.
-    const leaving =
-      Math.sign(skyScroll.velocity) === Math.sign(skyScroll.target - nearest) &&
-      Math.abs(skyScroll.velocity) > REST_SPEED * 4
-    const grip = leaving ? 0 : depth * Math.max(0, 1 - Math.abs(skyScroll.velocity) / ESCAPE_SPEED)
+    // AND A HOLD ONLY EVER PULLS YOU ONWARD. It is a landing aid; it must not
+    // be able to tow a reader backwards.
+    //
+    // This replaces a test on the sign of the live velocity, which was the
+    // right idea and did not work, because it can only speak while you are
+    // still moving. Measured in the browser: a reader nudging the wheel every
+    // second or so got past the first block to 858 -- 133 units clear of it,
+    // with the grip weakening the whole way -- and then ground to a halt,
+    // advancing 24 units, then 15, then 7, then 2. The coast from each nudge
+    // was dying inside the gap between nudges, and the moment it did the
+    // velocity test stopped applying and the spring reeled in what the nudge
+    // had just won. A hundred and twenty nudges never reached the second
+    // block. That is the trap this was supposed to prevent, arriving through
+    // the one door it did not cover: standing still.
+    //
+    // The direction the READER is going is the durable fact, so it is what is
+    // remembered, and the pull is simply switched off whenever it would act
+    // against it. Approaching a block, the pull is forward and the grip is
+    // full: that is the assistance. Past it, the pull would be backward, so
+    // there is none, whether you are still coasting or have stopped dead.
+    // Scrolling back up the journey, the same rule mirrors and blocks are
+    // caught from the other side.
+    if (Math.abs(skyScroll.velocity) > REST_SPEED) {
+      heading = Math.sign(skyScroll.velocity) as -1 | 1
+    }
+    const toward = Math.sign(nearest - skyScroll.target)
+    const onward = toward === 0 || toward === heading
+    const grip = onward ? depth * Math.max(0, 1 - Math.abs(skyScroll.velocity) / ESCAPE_SPEED) : 0
     skyScroll.velocity += (nearest - skyScroll.target) * STIFFNESS * grip * dt
     skyScroll.velocity *= Math.exp(-STICK_FRICTION * grip * dt)
   }
@@ -174,7 +229,14 @@ function advanceOneStep(dt: number, limit: number, holds: readonly number[]) {
   // Inside the band, once the coast has died, the remaining gap is simply
   // damped out. The spring still does all the work you can feel; this only
   // finishes the approach.
-  if (nearest !== null && Math.abs(skyScroll.velocity) < REST_SPEED) {
+  if (
+    nearest !== null &&
+    Math.abs(skyScroll.velocity) < REST_SPEED &&
+    // Onward only, for the reason the grip is: this closes the last of a gap,
+    // and closing it backwards is the tow the rule above exists to forbid.
+    (Math.sign(nearest - skyScroll.target) === 0 ||
+      Math.sign(nearest - skyScroll.target) === heading)
+  ) {
     skyScroll.velocity = 0
     const gap = nearest - skyScroll.target
     if (Math.abs(gap) < 0.05) {
@@ -215,6 +277,7 @@ export function publishSkyDisplay(display: number, delta: number) {
 }
 
 export function resetSkyScroll() {
+  heading = 1
   skyScroll.target = 0
   skyScroll.display = 0
   skyScroll.speed = 0

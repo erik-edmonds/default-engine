@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
 import {
+  setPointerOverChrome,
   TRAIL_LENGTH,
   activateTarget,
   cursorLock,
@@ -368,6 +369,7 @@ export function SceneCursor() {
       if (!match || match.hasAttribute("disabled") || match.dataset.cursor === "text") {
         setCursorHover(domHoverToken.current, null)
         setOverChrome(false)
+        setPointerOverChrome(false)
         return
       }
       // "chrome" scope: this hover survives an open portal or map overlay,
@@ -377,6 +379,9 @@ export function SceneCursor() {
       // Remember that this hover came from a piece of DOM chrome rather than
       // from something in the 3D scene -- the artwork differs, see the gem.
       setOverChrome(true)
+      // And told to the scene, which otherwise goes on reading whatever is
+      // behind the control -- see setPointerOverChrome.
+      setPointerOverChrome(true)
     }
 
     window.addEventListener("pointermove", onMove, capture)

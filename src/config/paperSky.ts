@@ -156,9 +156,15 @@ export const CORRIDOR_FAR_AXIAL = 135
  *  ten units. What the reader saw was a cloud vanishing in open sky, which is
  *  the "randomly disappearing" in the report. There is no offset that makes the
  *  claim true for every prop, so the corridor simply runs past the camera: a
- *  prop is recycled once it is well behind the reader's head, where nothing can
- *  be seen to happen to it. */
-export const CORRIDOR_NEAR_AXIAL = -25
+ *  prop is recycled once it is behind the reader, where nothing can be seen to
+ *  happen to it.
+ *
+ *  Brought in from -25 so the whole crossing is short enough to FIT inside the
+ *  stretch the words are up for -- "the clouds should more or less be around
+ *  the same position as the text". It costs nothing: a cloud's inner edge
+ *  leaves the side of the frame at about five units out, so it has swept
+ *  entirely past long before it reaches the lens either way. */
+export const CORRIDOR_NEAR_AXIAL = -4
 
 /** Where a prop has finished fading in, as an axial distance.
  *
@@ -396,7 +402,16 @@ export const STAR_OFFSET_UP = -0.8
  *  corridor, where a cutout is tens of units across and 120 units away; NEAR is
  *  for the caption cards and the subject, a few units from the lens. Both land
  *  at roughly the same apparent thickness on screen. */
-export const ROPE_RADIUS_PROP = 0.13
+/** Thick enough to SEE at the far end of the corridor.
+ *
+ *  0.13 is 2.7 pixels across at 130 units on a 1440-wide frame, and a
+ *  two-pixel cord carrying a twine texture and an alpha channel is not
+ *  visibly anything -- "they're supposed to be attached to rope", against a
+ *  scene where every cloud did have one and none of them could be made out.
+ *  0.26 reads at about five pixels out there and thickens naturally as the
+ *  cloud comes in, which is the cord doing perspective rather than being
+ *  drawn at a constant screen width. */
+export const ROPE_RADIUS_PROP = 0.26
 export const ROPE_RADIUS_NEAR = 0.035
 export const ROPE_COLOR = "#c8a97a"
 
@@ -529,6 +544,29 @@ export const DROP_HEIGHT = 22
  *
  *  On a clock, seeded when the camera actually arrives, the drop happens in
  *  front of the viewer. */
+/** How far a prop is lowered as it enters, and over how much of its approach.
+ *
+ *  "The clouds should drop in from the back like puppets, then on scroll move
+ *  forward, not come in from the side." The fade alone made them materialise
+ *  in place; before that, an arrival-only drop from STRING_TOP happened above
+ *  the top of the frame and could not be seen at all.
+ *
+ *  MEASURED IN SCREEN HEIGHTS, not in world units, and that is the whole
+ *  difference. A fixed seventeen units is over a third of the frame at the far
+ *  end of the corridor and a fraction of it near -- so the cloud never
+ *  actually started above the picture, it just sagged a little on the way in,
+ *  and what the eye read was a cloud arriving from the SIDE as it grew. The
+ *  note was "the clouds are still coming in from the side, I was specific
+ *  that I want it to come in from the top".
+ *
+ *  1.45 frame-halves up is clear of the top edge at any distance, so the prop
+ *  begins every crossing out of shot above and is lowered down into it. The
+ *  descent is spent over the first PROP_DROP_DISTANCE units of the approach
+ *  and is driven by the scroll like everything else here: a reader who stops
+ *  mid-descent stops the puppet halfway down. */
+export const PROP_DROP_NDC = 1.45
+export const PROP_DROP_DISTANCE = 58
+
 export const DROP_SECONDS = 0.7
 
 /** How much later each successive prop is released, in seconds. Enough that
@@ -539,6 +577,97 @@ export const DROP_STAGGER = 0.05
 
 
 // --- the captions ----------------------------------------------------------
+
+/** WHERE THE WORDS ARE, as a place in the corridor.
+ *
+ *  The block travels like a prop: it is seeded far off as its section begins
+ *  and closes on the camera as the section is scrolled, so it comes out of the
+ *  background rather than switching on at the front. See skyCaptionAnchor.
+ *
+ *  It runs on its own depths rather than the props', because it is doing a
+ *  different job: it starts nearer than a cloud does (the type has to be
+ *  legible sooner) and is retired further out (a paragraph that sweeps the
+ *  lens is a blur, where a cloud doing it is the point). */
+export const CAPTION_FAR_AXIAL = 210
+export const CAPTION_NEAR_AXIAL = 2
+/** Why the near end is BEHIND THE CAMERA (the camera plane is at CAMERA_BEHIND
+ *  = 6.3), and not the 26 it used to be.
+ *
+ *  At 26 the block still had 19.7 units of approach left when its turn ran
+ *  out, and 19.7 is inside the distance at which it leaves the frame: its
+ *  inner edge sits CAPTION_SIDE_OFFSET - width/2 = 8.1 off the axis, so it
+ *  only clears the frame edge once ahead < 8.1 / tan(HALF_FOV_H) = 14.2.
+ *  The block was therefore still on screen, centre-frame-ish and large, at
+ *  the moment CAPTION_FADE_OUT took it -- which is precisely the report:
+ *  "the text should never fade out, it should go behind the camera. Right
+ *  now, when the camera gets close, it just fades away."
+ *
+ *  Ending at 2 puts the last of the turn behind the camera, so the words run
+ *  out through the side of the frame under their own travel and the fade-out
+ *  is not needed at all (there is none any more -- see CAPTION_FADE_IN).
+/** Where it is read from: at this distance the type is at its design size,
+ *  and the scale below and above is the simple ratio. */
+export const CAPTION_READ_AXIAL = 62
+/** How wide the block is in the world, at the distance it is read from. About
+ *  A QUARTER of the frame at reading distance, down from two fifths. Both
+ *  numbers came down together, which is what shortens the lines without
+ *  changing how big the type is: the measure is the CSS width and the size on
+ *  screen is the ratio of the two. "The lines are too long, there should be
+ *  some padding on the edges of the screen for text -- it's better to have
+ *  more shorter lines than a few really long ones." */
+export const CAPTION_WORLD_WIDTH = 19
+/** The CSS width the markup is authored at. Only the RATIO of these two
+ *  matters -- it is what turns pixels into world units. */
+export const CAPTION_CSS_WIDTH = 360
+/** The largest it may get. Without a ceiling the last stretch of every
+ *  approach is a headline several screens wide. */
+export const CAPTION_MAX_SCALE = 1.8
+/** How far off the flight axis it sits. Chosen so that at CAPTION_READ_AXIAL
+ *  the block's centre lands about halfway out in its half of the frame, which
+ *  is where the layout put it when it was pinned there. */
+export const CAPTION_SIDE_OFFSET = CAPTION_READ_AXIAL * Math.tan(HALF_FOV_H) * 0.5
+/** And how far above it, so a paragraph does not close on the subject's face.
+ *  Measured from the VIEW AXIS at its own depth, like the props. */
+export const CAPTION_UP_OFFSET = CAPTION_READ_AXIAL * Math.tan(HALF_FOV_V) * 0.18
+/** Fades up over the first of these and out over the last, in world units of
+ *  approach -- so it arrives out of the haze and is gone before it is close
+ *  enough to be unreadable. */
+/** How fast the block closes, as a fraction of the corridor's own rate.
+ *
+ *  Sized so one block covers CAPTION_FAR_AXIAL to CAPTION_NEAR_AXIAL over
+ *  exactly one section of the scroll -- 102 units of approach against the
+ *  corridor's 162 -- which is what keeps the words and the cloud they share a
+ *  section with in step. Slower than the clouds on purpose: a paragraph wants
+ *  longer at a readable size than a cloud wants anywhere. */
+export const CAPTION_SPEED = 0.54
+
+/** Fades as fractions of the turn rather than as distances.
+ *
+ *  A LONG, SMOOTH RAMP, because the note was that it "still feels like it's
+ *  fading in and fading out, instead of approaching the scene and passing the
+ *  camera -- the fade in should be much more gradual and natural, not a
+ *  fade-in like it is coming from nowhere, a fade-in like it was too far to
+ *  see before but now is closer and is therefore visible."
+ *
+ *  That is atmospheric perspective, and what sells it is that the ramp lasts
+ *  most of the approach rather than being a cue at the start of it. Over
+ *  half the turn is spent coming up out of the haze, on a smoothstep so it
+ *  has no corners at either end; by the time it is legible it is also
+ *  visibly nearer and bigger, which is the whole point. */
+export const CAPTION_FADE_IN = 0.55
+
+/* CAPTION_FADE_OUT is GONE, deliberately.
+ *
+ * A block now leaves the way anything in a scene leaves: it keeps coming
+ * until it is past the camera. Nothing is faded on the way out, because a
+ * fade out is the thing that was wrong -- the words are part of the scene,
+ * and scenery does not dissolve in front of you. See CAPTION_NEAR_AXIAL for
+ * the geometry that makes the exit happen on its own.
+ *
+ * The exit is through the SIDE of the frame, which is only true because
+ * CAPTION_SIDE_OFFSET / (CAPTION_WORLD_WIDTH / 2) = 1.85 > 1. Below 1 the
+ * block's inner edge would cross the flight axis on the way past and it
+ * would swallow the camera instead of sweeping by it. */
 
 /* GONE, along with the paper signs they described.
  *
@@ -615,11 +744,208 @@ export const PAPER_FADE_MAX_DELTA = 1 / 30
 export const PAPER_FADE_IN = 0.5
 export const PAPER_FADE_OUT = 0.9
 
+/* THE CORRIDOR CLOUD IS PINNED TO A PLACE ON THE SCREEN.
+ *
+ * "The clouds should drop down from the top of the screen, they should NOT
+ * enter the scene from the left or right. I don't know how many times I have
+ * been clear about it." -- and the previous rounds kept answering the wrong
+ * half of it. A drop WAS added, and measured, and it worked: the prop began
+ * 78 units above its resting height and settled onto it. It was simply never
+ * seen, for two reasons that compounded.
+ *
+ * The first is that it happened in the dark. The drop ran from
+ * CORRIDOR_FAR_AXIAL 135 down to 77 while the fade ran from 135 to 70, so the
+ * cloud finished descending at almost exactly the moment it became visible.
+ * Everything the reader could actually see was what came after.
+ *
+ * The second is that what came after was lateral, and large. A prop was
+ * placed at a fixed WORLD offset from the flight axis, so its angular offset
+ * grew as it approached and it swept out through the side of the frame --
+ * and on top of that the lane-clearing push (gone now, see below) was holding
+ * it past the frame edge for most of every section. The visible life of a
+ * cloud was therefore: appear at the edge, already cut off, and slide further
+ * out. Which is entering from the side, whatever the vertical arithmetic says.
+ *
+ * So the lateral is removed outright rather than tuned again. A cloud now
+ * holds a FIXED FRACTION OF THE FRAME, PROP_SIDE_NDC, at whatever distance it
+ * is -- the offset is recomputed from its own depth every frame, which is
+ * what "fixed on screen" means in a corridor. It cannot enter from the side
+ * because it never moves sideways at all. It arrives from above the top edge,
+ * holds beside the subject while its block of text is up, and is drawn back
+ * up out of the top when the block is done: a puppet lowered in and lifted
+ * out, which is the metaphor the rest of this scene is built on.
+ */
+
+/** How far off the flight axis a cloud hangs, IN WORLD UNITS.
+ *
+ *  BACK TO A WORLD OFFSET, and the reason is worth being exact about,
+ *  because the previous round pinned it to a fraction of the frame instead
+ *  and that was an over-correction.
+ *
+ *  Pinning it to the frame did fix the complaint -- a cloud that holds a
+ *  fixed place on screen cannot come in from the side, because it does not
+ *  move sideways at all. But it also cannot come TOWARD you: a thing at a
+ *  fixed screen position only grows, and it grows slowly, because the only
+ *  distance left in the shot was 132 down to 92. "They're supposed to move
+ *  towards the camera with the words after they come out of the sky."
+ *
+ *  The two are not actually in conflict; the original fault was never the
+ *  lateral travel itself. It was that a cloud ARRIVED at the frame's edge,
+ *  already cut off, and slid further out -- the drop happened while it was
+ *  still transparent and the lane-push held it past the edge for the rest.
+ *  Fix the arrival and the fly-past is fine, and is what perspective does.
+ *
+ *  So: 20 units off the axis. It is lowered in at ndc 0.29 .. 0.79, grows
+ *  1.84 times as it comes, and is still WHOLLY INSIDE THE FRAME at the
+ *  moment the words beside it are at their readable distance -- 0.32 .. 0.97
+ *  with the camera at the height of its lean. That last part is the
+ *  constraint that sets every other number here, and it is a tight one: a
+ *  cloud is thirty units across, so by sixty units out it is most of a
+ *  half-frame wide and there is no offset that is both clear of the subject
+ *  and inside the picture. Letting it run closer than that is what produced
+ *  "the clouds aren't even fully in frame" -- measured at a centre of ndc
+ *  1.007, half of it off the edge, at exactly the moment it was meant to be
+ *  read alongside the text.
+ *
+ *  So it approaches, and then it is lifted out rather than flown past. See
+ *  PROP_LIFT_FROM. */
+export const PROP_SIDE_WORLD = 20
+
+/** How much further out the cloud goes on the CONTACT card, and why it is
+ *  forced into the lower half there.
+ *
+ *  Every other block is set in one half of the frame with the cloud in the
+ *  other, and the camera's lean pushes the two further apart still. The
+ *  contact card is centred on the axis and gets no lean (see `centred` in
+ *  skyTextFocus), so both of those separations vanish at once -- and the
+ *  cloud, sitting at its usual 20 units, landed across the middle of the
+ *  words. Measured at the parked offset: cloud spanning ndc 0.11 .. 0.76
+ *  against type occupying -0.30 .. 0.30.
+ *
+ *  1.5 times out puts it at 0.32 .. 0.97 -- clear of the type and still
+ *  wholly inside the frame -- and forcing it below the axis clears the last
+ *  of the overlap vertically. */
+export const PROP_CENTRED_SIDE_SCALE = 1.5
+
+/** Vertical scatter, also in world units so it opens out with the approach
+ *  the way the lateral does. Measured against the frame it runs 0.22 of a
+ *  frame-half at the far end and 0.44 by the time the cloud is leaving. */
+export const PROP_RISE_WORLD = 10
+
+/** The approach. The near end is past the point where the cloud has left the
+ *  frame sideways (about 70), so nothing is ever retired in shot -- it is
+ *  simply off the edge by the time its section hands over. */
+export const PROP_FAR_AXIAL = 132
+export const PROP_NEAR_AXIAL = 62
+
+/** How much of a block's section is spent coming down out of the sky, and
+ *  where it starts being drawn back up.
+ *
+ *  IT LEAVES THE WAY IT ARRIVED, and that is a consequence of the frame
+ *  rather than a preference. A cloud cannot fly past the camera and stay
+ *  wholly in shot -- see PROP_SIDE_WORLD -- so it comes down out of the sky,
+ *  travels toward you for most of the section growing as it comes, and is
+ *  hauled back up through the top before it is close enough to be cut off by
+ *  the edge. Both ends of its life are off the top of the picture, which is
+ *  also what makes the hand-over between sections invisible: there is
+ *  nothing on screen at the moment it is put back to the far end. */
+export const PROP_DROP_UNTIL = 0.26
+export const PROP_LIFT_FROM = 0.82
+
+// --- the small clouds at the edges -----------------------------------------
+
+/** A second, much smaller band of clouds out past the corridor proper --
+ *  "add small clouds on the outsides".
+ *
+ *  These are scenery, not furniture. The corridor carries ONE cloud per block
+ *  of text, deliberately, after several rounds of "there shouldn't be so many
+ *  clouds"; that cloud is staged against the words, hangs from a rope, drops
+ *  in on arrival and keeps out of the reader's half of the frame. None of
+ *  that applies here. These have no ropes and no relationship to the text.
+ *  They run continuously on their own modulo so the periphery is never empty,
+ *  and their whole job is to give the middle of the frame something to be
+ *  measured against.
+ *
+ *  THE LATERAL BAND IS WHAT MAKES THEM "OUTSIDE", and it is chosen against the
+ *  two things already out there rather than by eye:
+ *
+ *      the subject          cleared by       17.9  (MIN_SIDE_CLEAR)
+ *      the corridor's own clouds, out to     ~26.9 (CORRIDOR_HALF_WIDTH)
+ *      a block of text, centre 17.6, out to   27.1 (CAPTION_SIDE_OFFSET + half)
+ *      these                                  42 .. 78
+ *
+ *  So they cannot collide with the words and cannot be confused with the
+ *  cloud that belongs to them.
+ *
+ *  A CONSTANT WORLD OFFSET, not a constant screen position. Placing them at a
+ *  fixed fraction of the frame width would pin them to the edge forever --
+ *  the frame widens with distance at exactly the rate the offset would, so
+ *  they would grow in place and never pass anything. Held at a fixed distance
+ *  from the axis instead, they open outward as they approach and leave
+ *  through the side, which is the only way they read as being flown past. */
+export const EDGE_CLOUD_COUNT = 7
+export const EDGE_CLOUD_SIDE: readonly [number, number] = [42, 78]
+/** Small. The corridor's clouds run CLOUD_SCALE 0.1 .. 0.13; at a third of
+ *  that these are 9 to 16 units across against the corridor's 30, which is
+ *  about seven per cent of the frame's width at the distance they are read
+ *  at -- present, and clearly further away than the cloud that matters. */
+export const EDGE_CLOUD_SCALE: readonly [number, number] = [0.04, 0.07]
+/** Deeper than the corridor at both ends: the far end so the widest of them
+ *  still get a stretch on screen before their offset carries them out (at 78
+ *  units off the axis a cloud has already left the frame by 133), the near
+ *  end because they exit sideways long before they reach it. */
+export const EDGE_CLOUD_DEPTH: readonly [number, number] = [20, 260]
+/** Vertical spread, as a fraction of the frame's half-height at the cloud's
+ *  own distance -- so the band tracks the frame instead of pinching shut at
+ *  the far end the way a fixed world height would. */
+export const EDGE_CLOUD_RISE = 0.78
+/** Distance over which one comes up out of the haze. The same idea as
+ *  PROP_FADE_IN_AXIAL and, like it, a function of distance alone -- never of
+ *  a clock or of the recycle, or a cloud would be seen to pop. */
+export const EDGE_CLOUD_FADE_AXIAL = 170
+/** Held under the corridor's clouds so they sit back in the picture. */
+export const EDGE_CLOUD_OPACITY = 0.72
+
+// --- the film ---------------------------------------------------------------
+
+/** How strong the grain is over the paper world, at full altitude.
+ *
+ *  "Add noise to the sky scene to make it look like an old time grainy
+ *  texture of homemade films."
+ *
+ *  Overlay blend, so it darkens and lightens around the mid-tone rather than
+ *  washing the whole picture toward grey the way a plain additive noise does.
+ *  The paper sky is a narrow band of light blues and an additive veil over it
+ *  reads as fog, not as film.
+ *
+ *  0.22 WAS TOO LOW, and the reasoning behind it was wrong in a way worth
+ *  keeping: "visible in motion and nearly invisible in a still frame" is how
+ *  film stock behaves at 24fps on a cinema screen, and it is not what this
+ *  is for. The note asked for "an old time grainy texture of homemade
+ *  films" -- 8mm, pushed stock, grain you can see standing still. Measured
+ *  at 0.22 the effect was confirmed wired and driving the uniform, and still
+ *  read as nothing against a paper texture that already has tooth.
+ *
+ *  It was also being halved twice over: `premultiply` scaled the grain by
+ *  the colour beneath it, and the paper sky is a narrow band of mid blues,
+ *  so the effect was attenuated by the very surface it was meant to sit on.
+ *  That is off now (see the <Noise> in app/page.tsx), and this carries the
+ *  rest of the distance.
+ *
+ *  Settled at 0.45 after looking at 0.6 on the contact card: 0.6 reads
+ *  correctly as pushed 8mm stock but starts eating the type, and that card
+ *  is the one screen here anybody has to actually read and click. */
+export const SKY_GRAIN_OPACITY = 0.45
+
 // --- the velocity lines ----------------------------------------------------
 
-/** How many streaks. One InstancedMesh, so this is instances, not draw calls. */
-export const STREAK_COUNT = 220
-/** The cylinder they live in, around the corridor axis. */
+/** How many streaks. One InstancedMesh, so this is instances, not draw calls.
+ *
+ *  Raised from 70 with STREAK_SPREAD, and only to hold the density where it
+ *  was: the field got 1.35 times the area, so it gets 1.35 times the streaks.
+ *  Per unit of sky this is the same thinness that answered "the velocity lines
+ *  are too prominent, it should be less dense and bright". */
+export const STREAK_COUNT = 95
 /** How far across the frame the streaks are spread, in normalised screen
  *  units, and the hole kept clear in the middle of it.
  *
@@ -630,9 +956,29 @@ export const STREAK_COUNT = 220
  *  be, a field of streaks converging on the point you are flying at.
  *
  *  The hole is the subject's own berth. Streaks drawn over the Dragonite read
- *  as scratches on him rather than as air going past. */
-export const STREAK_SPREAD = 1.15
+ *  as scratches on him rather than as air going past. Now that the field is
+ *  built in the flight frame, the hole sits on the flight axis and so tracks
+ *  him exactly, instead of staying put in the middle of the frame while the
+ *  lean slid him out of it.
+ *
+ *  WIDER THAN THE FRAME, because the field no longer turns with the camera.
+ *  The lean puts the look target SKY_LOOK_TILT = 0.55 to the side over
+ *  CAMERA_BEHIND = 6.3, which is 6.8 degrees of yaw against a 29.5-degree
+ *  half-angle, so the frustum's far edge reaches tan(36.3)/tan(29.5) = 1.29
+ *  of the square-on frame. At the old 1.25 the outside edge of a hard lean
+ *  would have run off the end of the field and shown bare sky. */
+export const STREAK_SPREAD = 1.45
 export const STREAK_CLEAR: readonly [number, number] = [0.22, 0.3]
+/** How strongly the streaks are drawn at full speed.
+ *
+ *  Very low, and it is meant to be. At 0.5 over 220 of them the field read as
+ *  weather -- the note was "the velocity lines are too prominent, it should be
+ *  less dense and bright", and in the reference there is barely a streak to be
+ *  seen at all: what sells the speed there is a single faint contrail off the
+ *  aircraft. A third of the count at a quarter of the strength is a hint of
+ *  movement in the air rather than a snowstorm. */
+export const STREAK_OPACITY = 0.13
+
 /** Nearest and furthest a streak is drawn, in units along the view axis. */
 export const STREAK_DEPTH: readonly [number, number] = [4, 70]
 export const STREAK_SPAN = 150
@@ -640,4 +986,4 @@ export const STREAK_SPAN = 150
  *  length and opacity. Below a tenth of this they are not drawn at all. */
 export const STREAK_FULL_SPEED = 90
 /** World units, at full speed. */
-export const STREAK_MAX_LENGTH = 16
+export const STREAK_MAX_LENGTH = 13

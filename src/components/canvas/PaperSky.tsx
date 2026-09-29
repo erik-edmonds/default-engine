@@ -12,21 +12,32 @@ import { inSkyJourney } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
 import { useEffect } from "react"
 import { VelocityLines } from "@/components/canvas/VelocityLines"
+import { SkyCaptionBillboard } from "@/components/canvas/SkyCaptionBillboard"
 import {
   CLOUD_SCALE,
   CORRIDOR_BEHIND,
-  CORRIDOR_CLEAR_RADIUS,
   CORRIDOR_DEPTH,
-  CORRIDOR_FAR_AXIAL,
-  PROP_FADE_IN_AXIAL,
-  ARRIVAL_DROP_WINDOW,
-  CORRIDOR_HALF_HEIGHT,
-  CORRIDOR_HALF_WIDTH,
+  EDGE_CLOUD_COUNT,
+  EDGE_CLOUD_DEPTH,
+  EDGE_CLOUD_FADE_AXIAL,
+  EDGE_CLOUD_OPACITY,
+  EDGE_CLOUD_RISE,
+  EDGE_CLOUD_SCALE,
+  EDGE_CLOUD_SIDE,
   HALF_FOV_H,
   CORRIDOR_POOL,
-  CORRIDOR_START_AXIAL,
   CORRIDOR_TRAVEL_PER_OFFSET,
-  DROP_SECONDS,
+  PROP_DROP_NDC,
+  PROP_HALF_W,
+  PROP_HALF_H,
+  PROP_DROP_UNTIL,
+  PROP_LIFT_FROM,
+  PROP_FAR_AXIAL,
+  PROP_NEAR_AXIAL,
+  PROP_RISE_WORLD,
+  PROP_SIDE_WORLD,
+  PROP_CENTRED_SIDE_SCALE,
+  HALF_FOV_V,
   DROP_STAGGER,
   STRING_TOP,
   SKY_DRESSED_Y,
@@ -38,11 +49,15 @@ import {
   CLOUD_TOP_NATIVE,
   STAR_OFFSET_SIDE,
   STAR_OFFSET_UP,
-  PROP_HALF_W,
-  PROP_HALF_H,
   STAR_SCALE,
 } from "@/config/paperSky"
-import { corridorOrigin, skyCorridorSide, skySectionIndex, skySectionStart, skyTextFocus } from "@/config/skyJourney"
+import {
+  corridorOrigin,
+  skyCorridorSide,
+  skySectionIndex,
+  skySectionSpan,
+  skyTextFocus,
+} from "@/config/skyJourney"
 
 /** The paper world at the top of the sky journey.
  *
@@ -137,9 +152,12 @@ function useFadeMaterial(
 function CloudCutout({
   opacityRef,
   onMaterial,
+  order = 0,
 }: {
   opacityRef: React.RefObject<number>
   onMaterial?: (material: THREE.MeshStandardMaterial) => void
+  /** Draw order against the other cutouts -- see the note in Prop. */
+  order?: number
 }) {
   const { nodes, materials } = useGLTF("/models/cardboard_cloud.glb")
   const mesh = useFadeMaterial(materials.CBCLOUD01, opacityRef, onMaterial)
@@ -151,6 +169,7 @@ function CloudCutout({
       geometry={nodes.Object_2.geometry}
       material={materials.CBCLOUD01}
       rotation={[-Math.PI / 2, 0, 0]}
+      renderOrder={order}
     />
   )
 }
@@ -158,9 +177,12 @@ function CloudCutout({
 function StarCutout({
   opacityRef,
   onMaterial,
+  order = 0,
 }: {
   opacityRef: React.RefObject<number>
   onMaterial?: (material: THREE.MeshStandardMaterial) => void
+  /** Draw order against the other cutouts -- see the note in Prop. */
+  order?: number
 }) {
   const { nodes } = useGLTF("/models/cardboard_star.glb")
   const mesh = useFadeMaterial(nodes.mesh_0.material as THREE.Material, opacityRef, onMaterial)
@@ -171,6 +193,7 @@ function StarCutout({
       receiveShadow
       geometry={nodes.mesh_0.geometry}
       material={nodes.mesh_0.material as THREE.Material}
+      renderOrder={order}
     />
   )
 }
@@ -376,36 +399,18 @@ function frac(x: number) {
 }
 
 
-/** How far out, in screen terms, a prop is held while it is in the words' half.
+/* TEXT_EDGE_NDC and the lane push are GONE.
  *
- *  A SCREEN target, not a world one, and that distinction is the whole reason
- *  this works where the first attempt did not. There was a world-space push
- *  here once -- move anything in the text's half further out by a fixed factor
- *  -- and it made matters worse: the camera aims toward the text, and a yaw
- *  carries world content the other way, so a prop pushed out in world units
- *  was dragged back across the frame and landed under the paragraph. Measured
- *  at ndc -0.28 with the push against +0.10 without it.
- *
- *  Asking for a screen position instead is self-correcting. The offset needed
- *  to sit at a given ndc grows with distance, so a prop far out -- which is
- *  where the wrong side happens, see the side note below -- is held at the
- *  frame's edge, and a prop close, which is already on the correct side, needs
- *  no help and gets none. It is also where the fade has it faintest, so the
- *  holding costs nothing to look at.
- *
- *  The target is the block's OUTER edge (about 0.78 in ndc, since the block is
- *  centred in its half) plus the margin the camera's lean shifts everything
- *  by, and the prop's own half-width is added on top -- what has to clear the
- *  words is the cloud's edge, not its centre. Ignoring the width was the
- *  second version's fault: it parked centres at 0.85 while a close cloud is
- *  0.38 wide in ndc, so half of it was still lying across the paragraph.
- *
- *  1.15 rather than the 0.95 that arithmetic alone suggests, because the
- *  camera aims TOWARD the text and a yaw carries the world the other way:
- *  everything placed here lands about 0.15 nearer the middle than it was put.
- *  Measured with 0.95 -- a prop asked for an inner edge at 0.95 arrived at
- *  0.741, against a block whose outer edge is 0.761. */
-const TEXT_EDGE_NDC = 1.15
+ * They held a prop out past the frame's edge whenever it was in the words'
+ * half, which was a workaround for a cloud whose side could be wrong for
+ * part of its pass. A cloud now belongs to one block for its whole life and
+ * sits at a fixed place on the opposite side, so there is nothing to push --
+ * and the push had become the fault itself: it keyed off the camera's lean,
+ * and once the lean was made to hold at zero until the words were close
+ * (LEAN_FROM), `1 - |lean| * 1.5` sat at full strength for most of every
+ * section and shoved the only cloud in the sky to ndc 1.15 plus its own
+ * half-width -- entirely out of shot. That is the "clouds aren't even fully
+ * in frame" and the huge gap marked on the screenshot. */
 
 function scatter(
   state: PropState,
@@ -425,8 +430,17 @@ function scatter(
   // it. Same wave, same sequence position -- so it tracks the cloud through
   // every recycle without either of them storing the other's state.
   const placementIndex = partner >= 0 ? partner : index
-  const { u: pu, v: pv } = partner >= 0 ? r2(wave * CORRIDOR_POOL + partner) : { u, v }
-  state.side = CORRIDOR_CLEAR_RADIUS + pu * (CORRIDOR_HALF_WIDTH - CORRIDOR_CLEAR_RADIUS)
+  const { v: pv } = partner >= 0 ? r2(wave * CORRIDOR_POOL + partner) : { v }
+  // A world offset, lightly varied. See PROP_SIDE_WORLD: the cloud flies
+  // past at a fixed distance from the axis, so it grows and sweeps outward
+  // like anything else you pass -- what it must never do is ARRIVE at an
+  // edge, and it does not, because it is lowered in at ndc 0.15 .. 0.58.
+  // Further out, and below the axis, on the contact card -- see
+  // PROP_CENTRED_SIDE_SCALE. That block is centred and the camera does not
+  // lean for it, so neither of the two things that normally keep a cloud off
+  // the words is working.
+  const centred = skyTextFocus(skyScroll.display).centred === true
+  state.side = PROP_SIDE_WORLD * (0.9 + 0.2 * u) * (centred ? PROP_CENTRED_SIDE_SCALE : 1)
 
   // WHICH HALF: the opposite of the block this crossing belongs to.
   //
@@ -461,8 +475,11 @@ function scatter(
   // Keyed on the section as well, consecutive clouds sit above and below in
   // turn and the field is balanced over the journey rather than within a
   // frame -- which, with one cloud in it, is the only place balance can live.
-  const vSign = (wave + placementIndex) % 2 === 0 ? -1 : 1
-  state.up = vSign * pv * CORRIDOR_HALF_HEIGHT
+  const vSign = centred ? -1 : (wave + placementIndex) % 2 === 0 ? -1 : 1
+  // World units, like the lateral. The band stays centred at every distance
+  // because it is measured from viewAxisUp, not from a horizontal plane --
+  // which is what fixed "the clouds are placed too high" originally.
+  state.up = vSign * pv * PROP_RISE_WORLD
 
   // A second, decorrelated pair for scale and rope. The old version drew both
   // from hashes of the same two numbers, which collided outright at some slots.
@@ -524,7 +541,6 @@ function Prop({
   kind,
   phase,
   partner,
-  partnerPhase,
   index,
   arrived,
   journeyTime,
@@ -535,7 +551,6 @@ function Prop({
    *  stands on its own. See makePlan. */
   partner: number
   /** That cloud's phase, so the star can wrap when the cloud does. */
-  partnerPhase: number
   index: number
   /** Has the camera finished climbing? Shared, so all the props agree. */
   arrived: React.RefObject<boolean>
@@ -609,245 +624,94 @@ function Prop({
     }
     node.visible = true
 
-    // ONE CROSSING PER BLOCK OF TEXT, timed from the block's own start.
+    // ONE CLOUD PER BLOCK, LOWERED IN AND LIFTED OUT.
     //
-    // This was a free-running modulo: props advanced with the scroll and
-    // wrapped whenever they reached the near end, on a cycle of their own that
-    // had nothing to do with the words. With a pool of six that was fine --
-    // there was always a cloud somewhere. With one cloud per block, which is
-    // what was asked for, it is not: the cloud's cycle and the block's span
-    // drift against each other, so a cloud is born in one block and dies in
-    // the next, and whichever side it is given is wrong for part of its life.
-    // Held out of the words' half for that part, the only cloud in the sky was
-    // off the edge of the frame about a third of the time.
-    //
-    // Measured from the section instead, the question does not arise. A cloud
-    // is seeded at the far end as a block begins, crosses while that block is
-    // up -- the crossing and the span are matched to within a few units, see
-    // CORRIDOR_TRAVEL_PER_OFFSET -- and is behind the camera before the next
-    // block arrives. It spends its whole life opposite one block of text.
-    const sectionStart = skySectionStart(skyScroll.display)
-    const travelled = (skyScroll.display - sectionStart) * CORRIDOR_TRAVEL_PER_OFFSET
-    // THE OPENING'S CLOUD IS ALREADY PART-WAY IN; every later one starts at
-    // the far end.
-    //
-    // CORRIDOR_START_AXIAL exists so the sky is not empty on arrival, and
-    // applying it to every section was plainly wrong once the corridor was
-    // timed per section: each cloud then began two thirds of the way down the
-    // approach, finished in a third of the block's span, and the sky sat
-    // empty for the rest of it -- measured as the cloud parked behind the
-    // camera for three readings in a row, twice.
-    const startAhead = sectionStart === 0 ? CORRIDOR_START_AXIAL - CAMERA_BEHIND : CORRIDOR_DEPTH
-
-    // Distance ahead of the viewer. Recycling is a modulo, not a branch:
-    // scrolling backwards has to wrap the same way forwards does, and an
-    // `if (passed) station += span` only ever counts one way.
-    // A PAIRED STAR RIDES ITS CLOUD'S RECYCLE, not its own.
-    //
-    // Each prop wraps when its own phase reaches the near end. A star offset
-    // STAR_LEAD in front of its cloud therefore reaches that end first and
-    // jumps to the far end while its cloud is still coming in -- and for that
-    // whole stretch the star is alone at the back with its cloud nowhere near
-    // it. Measured: one star sighting in twelve had nothing behind it, all at
-    // the wrap. Deriving the star's position from the CLOUD's wrap keeps the
-    // two locked together through every recycle, so the offset is the only
-    // thing that ever separates them.
-    // NO WRAP. A prop crosses once and is done; the next section seeds it
-    // again at the far end. Clamped below the near end so a prop that has
-    // finished simply waits out of sight behind the camera rather than
-    // reappearing -- which is the whole reason the modulo is gone.
-    const raw = startAhead + (partner >= 0 ? partnerPhase : state.phase) - travelled
-    // The section's ordinal, so the scatter varies from one crossing to the
-    // next and its parity means something. See skySectionIndex.
+    // See PROP_SIDE_NDC in config/paperSky for the whole argument. In short:
+    // a prop used to travel a fixed WORLD offset from the axis, which makes
+    // its angular offset grow as it comes in, which is a sideways exit -- and
+    // the reader has now said four times that clouds must not come in or go
+    // out at the sides. There is no lateral travel here any more. The prop
+    // holds a fixed place in the frame and moves only in depth and height.
+    const span = skySectionSpan(skyScroll.display)
+    const sectionPhase = THREE.MathUtils.clamp(
+      (skyScroll.display - span.start) / Math.max(1, span.end - span.start),
+      0,
+      1,
+    )
+    // The section's ordinal, so the scatter varies from one block to the next
+    // and its parity means something. See skySectionIndex.
     const wave = skySectionIndex(skyScroll.display) + 1
-    const cloudAhead = Math.max(raw, -CORRIDOR_BEHIND)
-    // The lead SHRINKS as the pair comes in, and it has to.
-    //
-    // A fixed 7-unit lead put the star seven units nearer than its cloud at
-    // every distance -- including at the near end, where the cloud retires at
-    // CORRIDOR_NEAR_AXIAL and the star was therefore still coming, seven units
-    // closer than anything is allowed to get. Measured: a star at axial 4.1,
-    // filling the frame, retired while still plainly on screen.
-    //
-    // Proportional to distance, it is a full seven units out at the spawn --
-    // where it is needed, to read as two cutouts at different depths -- and a
-    // fraction of a unit by the time the pair leaves, where all it has to do
-    // is settle the depth sort.
-    //
-    // The distance it scales by is FLOORED, because the corridor's near end is
-    // now behind the lens: past the camera the axial distance goes through zero
-    // and out the other side, which would flip the lead's sign and throw the
-    // star to the far side of its cloud. Floored, the pair simply freezes its
-    // relative geometry for the last few units, all of which are off screen.
-    // The PAIR's distance: a star's every lateral decision is made from its
-    // cloud's, so the two cannot drift apart. See the pairing note below.
-    const cloudAxial = Math.max(1, cloudAhead + CAMERA_BEHIND)
-    const ahead =
-      cloudAhead + (partner >= 0 ? (STAR_LEAD * cloudAxial) / CORRIDOR_FAR_AXIAL : 0)
-    // ...and IN FRONT OF IT ON SCREEN, not merely beside it.
-    //
-    // The star copies its cloud's lateral and vertical offset, but it sits
-    // nearer the camera -- and the same world offset at a shorter distance
-    // subtends a LARGER angle, so the two drifted apart across the frame. The
-    // offsets are scaled by the ratio of their distances, which is exactly the
-    // factor that keeps both projecting to the same point.
-    const pairScale = partner >= 0 ? Math.max(1, ahead + CAMERA_BEHIND) / cloudAxial : 1
-
     if (state.wave !== wave) {
-      // ONE DARK FRAME AT THE RECYCLE, and this is the pop.
-      //
-      // A recycle moves a prop a whole corridor-span at once -- from behind
-      // your head to the far end, 160 units. Its opacity is written to the
-      // material by the CUTOUT's own frame callback, and a child's callback is
-      // registered before its parent's, so on the frame of the jump the cutout
-      // paints the opacity computed for where the prop USED to be: solid,
-      // because it was right on top of you. The result is one frame of a
-      // fully opaque cloud at the far end of the corridor, which is exactly
-      // the "clouds pop in" in the recording. Measured: slot 2 read opacity 1
-      // at axial 124 where the ramp says 0.2.
-      //
-      // Skipping the frame looked like enough and was not: it leaves the
-      // material at zero while the position is still the old near one, so the
-      // desync simply moved. The fix is at the bottom of this callback --
-      // the opacity is written into the materials THERE, after the position
-      // has been set, instead of being left in a ref for the children to read
-      // on their next turn.
       scatter(state, index, wave, journeyTime.current + index * DROP_STAGGER, partner)
       state.wave = wave
     }
 
-    // FADE IN AT THE FAR END, AND NEVER FADE OUT.
+    // Depth. The cloud closes on the camera across the whole section, which is
+    // the forward motion -- it grows by about a third from end to end -- but
+    // it never gets near enough to have to leave through the side.
+    const cloudAxial = PROP_FAR_AXIAL + (PROP_NEAR_AXIAL - PROP_FAR_AXIAL) * sectionPhase
+    // A paired star rides a little in front of its cloud. Because every offset
+    // below is expressed as a FRACTION OF THE FRAME and evaluated at each
+    // prop's own distance, the two project to the same point automatically --
+    // which is what the old pairScale was computing by hand.
+    // STAR_LEAD is NEGATIVE -- it is an offset, not a distance -- so it is
+    // added. Subtracting it put the star behind its cloud instead of in
+    // front of it.
+    const axial = cloudAxial + (partner >= 0 ? STAR_LEAD : 0)
+    const ahead = axial - CAMERA_BEHIND
+    const frameH = Math.max(1, axial) * Math.tan(HALF_FOV_H)
+    const frameV = Math.max(1, axial) * Math.tan(HALF_FOV_V)
+    // A STAR'S OFFSET IS A FRACTION OF ITS CLOUD, NOT OF THE FRAME.
     //
-    // "They shouldn't just appear, they should fade in, and they should never
-    // disappear, they should just go past the camera." A prop's opacity is a
-    // pure function of how far away it is: nothing at CORRIDOR_FAR_AXIAL, solid
-    // by PROP_FADE_IN_AXIAL, and solid from there all the way past the lens. It
-    // is deliberately not a function of time or of the recycle, so a prop
-    // cannot be caught mid-fade by anything other than its own distance -- and
-    // scrolling backwards fades it back out along the same curve rather than
-    // snapping.
-    const axial = ahead + CAMERA_BEHIND
-    opacity.current = THREE.MathUtils.clamp(
-      (CORRIDOR_FAR_AXIAL - axial) / Math.max(1, CORRIDOR_FAR_AXIAL - PROP_FADE_IN_AXIAL),
-      0,
-      1,
-    )
+    // STAR_OFFSET_SIDE/UP have always been multiples of the cloud's own half
+    // width and height. Handing them straight to a frame-relative placement
+    // read 0.46 of a HALF-SCREEN instead of 0.46 of a cloud, which very
+    // nearly cancelled the cloud's own 0.45 offset and parked the star on the
+    // flight axis -- sitting on the subject's head, which is where it was
+    // measured. Converted through the cloud's angular size, the pair holds
+    // together at any distance.
+    // A STAR'S OFFSET IS A FRACTION OF ITS CLOUD, and both are world units
+    // now, so it is simply that fraction of the cloud's own half-size --
+    // scaled by the ratio of their distances so the pair still projects to
+    // the same place on screen despite the star riding STAR_LEAD in front.
+    const pairScale = partner >= 0 ? axial / Math.max(1, cloudAxial) : 1
+    const starSide = partner >= 0 ? STAR_OFFSET_SIDE * PROP_HALF_W * state.sideSign * pairScale : 0
+    const starUp = partner >= 0 ? STAR_OFFSET_UP * PROP_HALF_H * pairScale : 0
 
-    // How far into its drop -- on a CLOCK, measured from when this prop was
-    // seeded, not from how far away it is. See DROP_SECONDS.
+    // DOWN OUT OF THE SKY, AND THEN PAST YOU.
     //
-    // ONLY THE ARRIVAL WAVE DROPS. The drop is the marionette moment when the
-    // sky dresses itself, and it is staged for a reader who has just got here.
-    // Re-running it on every recycle was the second half of the reported bug:
-    // a prop is recycled at CORRIDOR_FAR_AXIAL, where STRING_TOP is far above
-    // the top of the frame, so the drop happened entirely off screen and all
-    // the reader saw was a cloud that had not been there a moment ago. Past the
-    // arrival window a prop is simply seeded at its resting height and fades up.
-    const since = journeyTime.current - state.seededAt
-    const droppedBy =
-      state.seededAt > ARRIVAL_DROP_WINDOW
-        ? 1
-        : THREE.MathUtils.clamp(since / DROP_SECONDS, 0, 1)
-    const eased = 1 - Math.pow(1 - droppedBy, 3)
-    // Lowered from the string's top down to its resting height. The prop
-    // starts AT the anchor and descends, so the string is paying out rather
-    // than the prop falling on a fixed-length rope -- which is what a
-    // puppeteer does, and what the reference shows.
-    // Resting height is measured from the VIEW AXIS at this depth, not from a
-    // horizontal plane through the avatar -- see viewAxisUp. The string's top
-    // stays at a fixed height above the corridor origin, so the drop is still
-    // "lowered from above the frame" and the rope simply pays out further for
-    // a prop that rests lower.
-    // A paired star is offset into its cloud's lower right -- see
-    // STAR_OFFSET_*. Both offsets go through pairScale with everything else, so
-    // they describe a position ON the cloud as seen from the camera rather than
-    // beside it in world space.
-    const restUp =
-      viewAxisUp(ahead) + (state.up + (partner >= 0 ? STAR_OFFSET_UP * PROP_HALF_H : 0)) * pairScale
-    const currentUp = STRING_TOP + (restUp - STRING_TOP) * eased
+    // It starts above the top edge of the frame -- PROP_DROP_NDC frame-halves
+    // up, measured at its own distance, so "above the frame" holds however
+    // far away it is -- and is lowered onto its mark over the first quarter
+    // of the section. There is no lift at the other end any more: it leaves
+    // by flying past, which is what a thing on a string does when you fly
+    // through a mobile.
+    //
+    // This is also why there is no opacity ramp. A fade existed to hide an
+    // arrival in open sky; nothing arrives in open sky now, because the
+    // entrance is off the top of the picture. It was the fade, in the end,
+    // that hid the drop all of this was meant to show.
+    const restUp = viewAxisUp(ahead) + state.up + starUp
+    const fall =
+      sectionPhase < PROP_DROP_UNTIL
+        ? 1 - sectionPhase / PROP_DROP_UNTIL
+        : sectionPhase > PROP_LIFT_FROM
+          ? (sectionPhase - PROP_LIFT_FROM) / Math.max(0.001, 1 - PROP_LIFT_FROM)
+          : 0
+    // Eased, so the puppet slows onto its mark rather than stopping dead.
+    const eased = fall * fall * (3 - 2 * fall)
+    const dropNdc = PROP_DROP_NDC * eased
+    opacity.current = 1
 
-    // Placed in the FLIGHT FRAME, so the corridor banks with the camera and
-    // props always approach down the view axis.
-    // NEVER THE SAME SIDE AS THE WORDS, and the side only ever changes while
-    // the prop cannot be seen -- chosen for the text that will be up when it
-    // is at its biggest, not the text that is up as it is born.
-    //
-    // "The cloud should alternate from left to right side, and text should as
-    // well, but opposite sides." A prop is on screen for roughly a thousand
-    // units of scroll and the text changes sides three times across three
-    // thousand, so no side chosen once at birth is right for a whole pass --
-    // that was tried, and so was pushing the offending props further out,
-    // which the camera's lean simply dragged back across the frame.
-    //
-    // Re-deciding it live is the answer, and the fade is what makes it free:
-    // out at the far end a prop is fully transparent, so it can be moved from
-    // one half to the other with nothing to see. Once it has any opacity at
-    // all its side is fixed for the rest of its pass. At most one prop per
-    // hand-over is still carrying the old side, and by then it is nearly gone.
-    // A PAIRED STAR IS PINNED TO ITS CLOUD, so every lateral decision it makes
-    // is made from the CLOUD's distance, not its own. A star rides STAR_LEAD
-    // in front of its cloud and its offsets are scaled by pairScale so the two
-    // project to the same point -- computed from its own distance, the star
-    // was held out by a different amount than the cloud it sits on and slid
-    // off it. Measured: two star sightings in twelve with nothing behind them.
-    const laneAxial = partner >= 0 ? cloudAxial : axial
-
-    // HELD AT THE EDGE WHILE IT IS IN THE WORDS' HALF.
-    //
-    // The side above is chosen for where a prop will be when it is biggest, so
-    // the near, loud part of every pass is opposite the text. What that cannot
-    // fix is the far part: a prop is in shot across about 105 units of flying
-    // and a section of text lasts 150, so most props are born in the section
-    // BEFORE the one their side was chosen for, and spend their approach on
-    // the wrong side of the frame.
-    //
-    // They are pushed out to the frame's edge for exactly as long as that is
-    // true. The amount is derived from the distance, so it is large out where
-    // the problem is and nothing by the time the prop is close; the weight is
-    // the camera's own lean, which crosses zero smoothly at every hand-over,
-    // so a prop eases out and back rather than jumping.
-    const focus = skyTextFocus(skyScroll.display)
-    const lean = focus.lean
-    // Sharper than the lean itself. The lean crosses zero gently across a whole
-    // hand-over, which is right for a camera and wrong for this: at the middle
-    // of a crossing the push is at half strength and a close cloud, which is
-    // most of a half-frame wide, still reaches under the paragraph. Measured
-    // at a hand-over: a cloud spanning 0.32..1.76 against a block at
-    // 0.18..0.76. Tripled, the prop is clear for all but the first third of
-    // the crossing, and still slides rather than jumps.
-    const onWordsSide = Math.min(1, Math.max(0, state.sideSign * lean) * 3)
-    // AND BOTH HALVES ARE CLEARED WHILE THE WORDS CHANGE SIDES.
-    //
-    // At a hand-over the lean passes through zero, so `onWordsSide` is weak
-    // for exactly the moment the block jumps from one half to the other --
-    // measured at a lean of 0.18, where a push of 0.53 left two clouds lying
-    // across the paragraph's outer third. Sharpening the ramp further would
-    // fix the arithmetic and cost more than it saves: the push is thirty-odd
-    // world units, and asking for it inside a couple of units of travel turns
-    // a slide into a dart.
-    //
-    // The stage is cleared instead. Near the crossing -- and only there --
-    // props on BOTH sides are held out, so whichever half the words land in is
-    // already empty, and they come back in on the far side of it. It costs a
-    // brief moment of open sky, which is a beat rather than a fault.
-    //
-    // ONLY WHERE THERE ARE WORDS. The lean is also zero for the whole opening
-    // stretch, before the first block is due (SKY_TEXT_LEAD) -- and read as a
-    // crossing that held every prop off the edge of the frame for it.
-    // Measured: the one cloud in the corridor sitting at ndc 1.5 to 4.8 for
-    // the entire wordless arrival, which is the sky looking empty at exactly
-    // the moment there was supposed to be a cloud in it.
-    const crossing = focus.index < 0 ? 0 : Math.max(0, 1 - Math.abs(lean) * 1.5)
-    const inTextHalf = Math.max(onWordsSide, crossing)
-    const clearOf = TEXT_EDGE_NDC * laneAxial * Math.tan(HALF_FOV_H) + PROP_HALF_W
-    const magnitude = state.side + Math.max(0, clearOf - state.side) * inTextHalf
+    // Height above the CORRIDOR ORIGIN. Keep this, not the world y: the rope
+    // below is measured against STRING_TOP, which is in the same frame.
+    const localUp = restUp + dropNdc * frameV
     placeInFlightFrame(
       flightBasis(skyScroll.display, (basisRef.current ??= makeFlightBasis())),
       corridorOrigin(skyScroll.display, (originRef.current ??= { x: 0, y: 0, z: 0 })),
       ahead,
-      (magnitude * state.sideSign + (partner >= 0 ? STAR_OFFSET_SIDE * PROP_HALF_W * state.sideSign : 0)) *
-        pairScale,
-      currentUp,
+      state.side * state.sideSign + starSide,
+      localUp,
       node.position,
     )
 
@@ -862,7 +726,19 @@ function Prop({
     // fixed height for every prop (STRING_TOP), so every string reaches the
     // same line above the frame instead of starting in mid-air wherever its
     // own rope happened to begin.
-    ropeLength.current = STRING_TOP - currentUp
+    //
+    // MEASURED FROM THE CORRIDOR ORIGIN, NOT IN WORLD COORDINATES, and the
+    // difference is the whole cord. STRING_TOP is a height above the
+    // corridor -- about 64 units -- while node.position.y is an absolute
+    // world height, and out here the corridor itself is a hundred and fifty
+    // units above the island. Subtracting the second from the first gives a
+    // large NEGATIVE length, which the cylinder clamps to its 0.001 floor.
+    //
+    // So every cloud has been hanging from a cord two tenths of a pixel long
+    // -- present, visible, fully opaque and completely invisible. Measured:
+    // the rope mesh reporting 4.5px wide and 0.2px tall, its ndc y spanning
+    // 0.25 to 0.25. That is the "they're supposed to be attached to rope".
+    ropeLength.current = STRING_TOP - localUp
     // Tie it to the TOP of the cutout, not its middle.
     ropeBase.current =
       ((kind === "star" ? STAR_NATIVE_HEIGHT : CLOUD_TOP_NATIVE * 2) / 2) * state.scale
@@ -881,8 +757,29 @@ function Prop({
     // the words' way, are the two numbers that decide the composition, and
     // neither is recoverable from where it ends up on screen.
     node.userData.sideSign = state.sideSign
-    node.userData.inTextHalf = inTextHalf
     node.userData.axial = axial
+    // WHAT IT IS, said outright. Probes used to tell a star from a cloud by
+    // measuring it -- "narrower than 15 world units" -- which is a guess that
+    // holds until either model is rescaled, and then quietly stops holding:
+    // a star counted as a cloud drags the band's mean height down by its own
+    // deliberate offset onto the cloud's lower corner.
+    node.userData.kind = kind
+    // Where it sits across the frame, in frame-halves. The whole of the
+    // lateral complaint is one number, and this is it: a cloud that is doing
+    // its job never leaves the range this reports.
+    node.userData.sideNdc = (state.side * state.sideSign) / frameH
+    // How far it still is above where it will hang. Absolute height is no use
+    // for this: the view axis pitches down with distance, so a prop that has
+    // finished being lowered in far away is still LOWER in world terms than
+    // one at rest nearby. What is being asked is whether it descends onto its
+    // own resting place, and that is this number going to zero.
+    // How far above its resting height it still is, in frame-halves. Zero
+    // while it hangs, positive while it is being lowered in or lifted out.
+    // Measured in the frame rather than in world units because that is the
+    // question being asked -- the view axis pitches down with distance, so a
+    // prop lowered fully in at the far end is still lower in world terms than
+    // one at rest nearby.
+    node.userData.dropped = dropNdc
     if (cutoutMaterial.current) cutoutMaterial.current.opacity = opacity.current
     if (ropeMaterial.current) {
       ropeMaterial.current.opacity = opacity.current
@@ -896,6 +793,19 @@ function Prop({
     // that walked the root's children and took the widest mesh in each read
     // the backdrop's altitude crossfade as a prop that was mysteriously
     // dimming at close range.
+    // A PAIRED STAR DRAWS AFTER ITS CLOUD, ALWAYS.
+    //
+    // It rides STAR_LEAD in front and is measurably nearer -- camera-space
+    // z of -95.5 against the cloud's -101.9 -- so a depth test would settle
+    // it. There is no depth test to settle it with: both cutouts are
+    // transparent with depthWrite off, so which one covers the other is
+    // whatever order the renderer happens to submit them in, and it was
+    // submitting the cloud second. The star's top half vanished behind it,
+    // which reads exactly as "part of it is missing".
+    //
+    // renderOrder says the thing that is actually true about these two --
+    // the star is pinned to the front of its cloud -- instead of leaving it
+    // to a sort that has no depth to sort by.
     <group ref={group} name="sky-prop">
       {/* A PAIRED STAR HAS NO STRING OF ITS OWN.
           
@@ -916,13 +826,134 @@ function Prop({
       {/* The hanger is offset DOWN by the rope length and rotated about its own
           origin, which is the string's top -- so the prop swings from the
           string rather than spinning about its own middle. */}
+      {/* A PAIRED STAR DRAWS AFTER ITS CLOUD, ALWAYS.
+          
+          It rides STAR_LEAD in front and is measurably nearer -- camera-space
+          z of -95.5 against the cloud's -101.9 -- so a depth test would
+          settle it. There is no depth test to settle it with: both cutouts
+          are transparent with depthWrite off, so which covers which is
+          whatever order the renderer happens to submit them in, and it was
+          submitting the cloud second. The star's top half disappeared behind
+          it, which reads exactly as "part of it is missing".
+          
+          renderOrder states the thing that is actually true about the pair
+          -- the star is pinned to the front of its cloud -- rather than
+          leaving it to a sort with no depth to sort by. It goes on the MESH:
+          three ignores renderOrder on a group, which is a quiet way to write
+          this and have nothing happen. */}
       <group ref={hanger}>
         {kind === "cloud" ? (
-          <CloudCutout opacityRef={opacity} onMaterial={(m) => { cutoutMaterial.current = m }} />
+          <CloudCutout order={1} opacityRef={opacity} onMaterial={(m) => { cutoutMaterial.current = m }} />
         ) : (
-          <StarCutout opacityRef={opacity} onMaterial={(m) => { cutoutMaterial.current = m }} />
+          <StarCutout order={2} opacityRef={opacity} onMaterial={(m) => { cutoutMaterial.current = m }} />
         )}
       </group>
+    </group>
+  )
+}
+
+/** One of the small clouds out past the corridor. See EDGE_CLOUD_* for why
+ *  they exist and where the band comes from.
+ *
+ *  Deliberately much simpler than Prop: no rope, no drop, no partner, no
+ *  relationship to the words, and no recycling bookkeeping. Its position is a
+ *  pure function of the scroll through a modulo, so there is no state to get
+ *  out of step and scrolling backwards retraces exactly the sky you flew
+ *  through. The only thing it shares with the corridor is the travel rate --
+ *  it has to, or the two bands would drift apart and the parallax would read
+ *  as two skies laid over each other.
+ *
+ *  Note it does NOT fade out at the near end. It does not need to: at 42 units
+ *  off the axis and a couple of metres across, its offset carries it out
+ *  through the side of the frame long before it reaches the camera, which is
+ *  the same arithmetic that lets the captions leave without a fade. */
+function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject<boolean> }) {
+  const group = useRef<THREE.Group>(null)
+  const opacity = useRef(0)
+  const material = useRef<THREE.MeshStandardMaterial | null>(null)
+  const basisRef = useRef<ReturnType<typeof makeFlightBasis> | null>(null)
+  const originRef = useRef<{ x: number; y: number; z: number } | null>(null)
+
+  // Fixed placement, drawn from the same plastic sequence the corridor uses so
+  // the two fields cannot accidentally line up. Offset well past the
+  // corridor's own indices for the same reason.
+  const seed = useMemo(() => {
+    const { u, v } = r2(index * 3 + 4409)
+    const { u: u2, v: v2 } = r2(index * 3 + 7717)
+    return {
+      side: EDGE_CLOUD_SIDE[0] + u * (EDGE_CLOUD_SIDE[1] - EDGE_CLOUD_SIDE[0]),
+      // Alternating rather than sampled: with seven of them a random sign
+      // leaves one side bare about a quarter of the time, and a bare side is
+      // the one thing "clouds on the outsides" cannot have.
+      sideSign: index % 2 === 0 ? -1 : 1,
+      rise: (v * 2 - 1) * EDGE_CLOUD_RISE,
+      scale: EDGE_CLOUD_SCALE[0] + u2 * (EDGE_CLOUD_SCALE[1] - EDGE_CLOUD_SCALE[0]),
+      // Evenly spaced along the run, then jittered, so they arrive in a
+      // stream rather than in a rank.
+      phase:
+        ((index + 0.5) / EDGE_CLOUD_COUNT + (v2 - 0.5) / EDGE_CLOUD_COUNT) *
+        (EDGE_CLOUD_DEPTH[1] - EDGE_CLOUD_DEPTH[0]),
+    }
+  }, [index])
+
+  useFrame(() => {
+    const node = group.current
+    if (!node) return
+    // NOT UNTIL THE CAMERA IS ACTUALLY UP HERE. The same gate the corridor's
+    // props have had all along, and leaving it off these was a plain
+    // oversight: the paper world is mounted early so its textures resolve
+    // during the climb, so anything without this is simply hanging over the
+    // island. Measured as seven visible props on the island -- which is
+    // exactly EDGE_CLOUD_COUNT, and none of them the corridor's.
+    if (!arrived.current) {
+      node.visible = false
+      return
+    }
+    node.visible = true
+    const basis = (basisRef.current ??= makeFlightBasis())
+    const origin = (originRef.current ??= { x: 0, y: 0, z: 0 })
+    flightBasis(skyScroll.display, basis)
+    corridorOrigin(skyScroll.display, origin)
+
+    const span = EDGE_CLOUD_DEPTH[1] - EDGE_CLOUD_DEPTH[0]
+    const travelled = skyScroll.display * CORRIDOR_TRAVEL_PER_OFFSET
+    const axial = EDGE_CLOUD_DEPTH[0] + frac((seed.phase - travelled) / span) * span
+    const ahead = axial - CAMERA_BEHIND
+
+    placeInFlightFrame(
+      basis,
+      origin,
+      ahead,
+      seed.sideSign * seed.side,
+      // The vertical band is a fraction of the frame at this distance, so it
+      // opens out with the frame instead of closing to a line at the far end.
+      viewAxisUp(ahead) + seed.rise * axial * Math.tan(HALF_FOV_V),
+      node.position,
+    )
+    node.rotation.y = Math.atan2(basis.fx, basis.fz) + Math.PI
+    node.scale.setScalar(seed.scale)
+
+    const shown = THREE.MathUtils.clamp(
+      (EDGE_CLOUD_DEPTH[1] - axial) / Math.max(1, EDGE_CLOUD_DEPTH[1] - EDGE_CLOUD_FADE_AXIAL),
+      0,
+      1,
+    )
+    opacity.current = EDGE_CLOUD_OPACITY * shown * shown * (3 - 2 * shown)
+    // Written here rather than left to the cutout's own callback, for the
+    // reason Prop gives at length: a child's callback runs after this one, so
+    // a cutout that set its own opacity would be a frame behind the position
+    // it was set for -- which is exactly how a cloud gets seen at full
+    // strength on the frame it jumps back to the far end.
+    if (material.current) material.current.opacity = opacity.current
+
+    node.userData.axial = axial
+    node.userData.sideSign = seed.sideSign
+    node.userData.side = seed.side
+  })
+
+  return (
+    <group ref={group} name="sky-edge-cloud">
+      <CloudCutout opacityRef={opacity} onMaterial={(m) => { material.current = m }} />
     </group>
   )
 }
@@ -1032,12 +1063,19 @@ function PaperWorld() {
     if (state.scene.getObjectByName("paper-sky")) {
       const root = state.scene.getObjectByName("paper-sky")!
       root.userData.skyOffset = skyScroll.display
+      // The integrator's own two numbers, for the same reason as the offset.
+      // `display` alone cannot tell a journey that is being held from one
+      // that simply has no momentum left, and the difference between those
+      // is the entire question about the scroll magnet.
+      root.userData.skyTarget = skyScroll.target
+      root.userData.skyVelocity = skyScroll.velocity
       root.userData.lean = skyTextFocus(skyScroll.display).lean
       root.userData.textSide = skyTextFocus(skyScroll.display).side
     }
     if (!arrived.current && state.camera.position.y >= SKY_DRESSED_Y) arrived.current = true
     if (!arrived.current) return
     journeyTime.current += rawDelta
+
   })
 
   return (
@@ -1048,12 +1086,15 @@ function PaperWorld() {
           kind={slot.kind}
           phase={slot.phase}
           partner={slot.partner}
-          partnerPhase={slot.partner >= 0 ? plan[slot.partner].phase : 0}
           index={i}
           arrived={arrived}
           journeyTime={journeyTime}
         />
       ))}
+      {Array.from({ length: EDGE_CLOUD_COUNT }, (_, i) => (
+        <EdgeCloud key={`edge-${i}`} index={i} arrived={arrived} />
+      ))}
+      <SkyCaptionBillboard />
       <VelocityLines />
     </>
   )

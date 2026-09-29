@@ -298,11 +298,43 @@ export function isSceneInputSuppressed() {
   return sceneInputSuppressed
 }
 
+/** True while the pointer is over a piece of DOM chrome -- a button, a link,
+ *  anything the cursor treats as a control.
+ *
+ *  Published the same way and for the same reason as the flag above: the
+ *  reader is a per-frame driver inside the canvas and the writer is a window
+ *  listener outside it, with no React context between them.
+ *
+ *  What it is for: the cursor reads a DEPTH off the scene under the pointer,
+ *  by raycasting the island, and draws itself against it. That reading does
+ *  not care what else is under the pointer -- so standing on the sound toggle
+ *  with a cloud drifting behind it, the cursor took its cue from the cloud and
+ *  showed its scene form over a button. The note was "the buttons for sound
+ *  get ignored if there are clouds behind them, the pointer reacts first to
+ *  the clouds". A control is nearer than anything in the scene by definition;
+ *  while the pointer is on one, the scene has nothing to say. */
+let pointerOverChrome = false
+
+export function setPointerOverChrome(value: boolean) {
+  pointerOverChrome = value
+  // Drop any magnet held as the pointer arrives on a control, for the same
+  // reason the suppression flag above does: a lock left standing keeps the
+  // cursor rendering as though it were still engaged with the scene.
+  if (value) cursorLock.current = null
+}
+
+export function isPointerOverChrome() {
+  return pointerOverChrome
+}
+
 export function getMagneticTargets(): ReadonlySet<MagneticTarget> {
   // Empty rather than filtered: nothing is acquirable while chrome is up, so
   // the driver finds no candidate, releases its lock and falls back to free
   // movement -- exactly the behaviour of a scene with no interactive objects.
-  return sceneInputSuppressed ? EMPTY_TARGETS : magneticTargets
+  // The same goes for a pointer sitting on a control: a magnet that pulled the
+  // cursor off a button the reader is trying to press is the fault, not a
+  // feature.
+  return sceneInputSuppressed || pointerOverChrome ? EMPTY_TARGETS : magneticTargets
 }
 
 const EMPTY_TARGETS: ReadonlySet<MagneticTarget> = new Set()

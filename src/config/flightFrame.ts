@@ -102,7 +102,16 @@ export const CAMERA_LOOK_ABOVE = 0.05
  *  is pitched slightly down -- 3.5 degrees. Over the 5.7 units to the subject
  *  that is nothing, which is why it went unnoticed; over the 135 units the
  *  corridor now runs it is 8.3 units. */
-const VIEW_PITCH_SLOPE = (CAMERA_ABOVE - CAMERA_LOOK_ABOVE) / CAMERA_BEHIND
+export const VIEW_PITCH_SLOPE = (CAMERA_ABOVE - CAMERA_LOOK_ABOVE) / CAMERA_BEHIND
+
+/** The same pitch as an angle. Exported because anything ORIENTED along the
+ *  corridor -- as opposed to merely placed in it -- has to carry it: the
+ *  corridor's contents sit on the view axis, which descends, so a prop laid
+ *  out flat is not laid out along the direction it travels in. The velocity
+ *  lines are the case that showed it up, measured 0.9899 against the view
+ *  axis where they should have been 1.0000 -- which is cos(8.13 degrees),
+ *  this exactly. */
+export const VIEW_PITCH = Math.atan(VIEW_PITCH_SLOPE)
 
 /** The height of the VIEW AXIS at a given depth, relative to the corridor
  *  origin -- i.e. where the middle of the frame actually is out there.

@@ -6,11 +6,21 @@ import { useFrame } from "@react-three/fiber"
 
 import { skyScroll } from "@/helpers/skyScroll"
 import {
+  CAMERA_BEHIND,
+  flightBasis,
+  makeFlightBasis,
+  placeInFlightFrame,
+  VIEW_PITCH,
+  viewAxisUp,
+} from "@/config/flightFrame"
+import { corridorOrigin } from "@/config/skyJourney"
+import {
   CORRIDOR_TRAVEL_PER_OFFSET,
   STREAK_CLEAR,
   STREAK_COUNT,
   STREAK_DEPTH,
   STREAK_FULL_SPEED,
+  STREAK_OPACITY,
   STREAK_MAX_LENGTH,
   STREAK_SPAN,
   STREAK_SPREAD,
@@ -20,8 +30,9 @@ import {
  *  pace rather than drifted through.
  *
  *  One InstancedMesh, so the whole field is a single draw call whatever
- *  STREAK_COUNT says. Each instance is a unit quad scaled along Z into a
- *  streak, laid out in a cylinder around the corridor axis.
+ *  STREAK_COUNT says. Each instance is a thin box scaled along Z into a
+ *  streak, laid out over the frame's rectangle -- see below, it was a
+ *  cylinder once and that was the bug.
  *
  *  Everything about them is driven by skyScroll.speed, which is why they sell
  *  motion: at rest they are not drawn at all, and their length and opacity both
@@ -33,17 +44,45 @@ import {
  *  so a streak is never seen to appear or disappear -- it is always somewhere
  *  in the field.
  *
- *  DRAWN IN THE CAMERA'S OWN SPACE, and that is the difference from the first
- *  version. They were placed in the flight frame, on a cylinder around its
- *  axis, which gave two faults at once: a cylinder seen end-on reads as a ring
- *  rather than a field, and the frame turns, so the whole ring appeared to
- *  swing whenever the camera leaned. The note was "it appears to be a circle,
- *  and it changes direction based on the camera -- it should all be facing
- *  towards the front always". Hung off the camera, every streak points down
- *  the view axis by construction and nothing the camera does can tilt them.
+ *  A RECTANGLE IN THE FLIGHT FRAME. Both halves of that matter, and they come
+ *  from two different reports that pull in opposite directions until you
+ *  separate the field's SHAPE from what it is ANCHORED TO.
  *
- *  What still comes from the journey is the only thing that should: how fast
- *  they move and how long they are. */
+ *  The first version laid them on a cylinder around the flight axis, and a
+ *  cylinder seen end-on reads as a ring: "it appears to be a circle, and it
+ *  changes direction based on the camera -- it should all be facing towards
+ *  the front always". The fix for the ring was to place each streak by where
+ *  it should land ON SCREEN and push it out to its depth, which fills the
+ *  frame evenly at every distance. That part was right and is kept.
+ *
+ *  The fix for the second half was not. Hanging the whole field off the
+ *  camera's matrix did stop it swinging relative to the frame -- by welding it
+ *  to the frame, so the streaks yawed bodily with every lean and the sky's
+ *  sense of direction went with them: "the velocity lines also move with the
+ *  camera, it shouldn't. It should continue looking forward."
+ *
+ *  They are the wind down the corridor. The corridor does not turn when the
+ *  camera glances at a paragraph, so neither do these: the rectangle is built
+ *  on the FLIGHT basis and every streak is rotated to the heading, not to the
+ *  camera. Lean, and they hold their line and slide across the frame like
+ *  everything else in the scene -- which is the only reason the lean reads as
+ *  a camera move at all. A field pinned to the lens cannot show you that the
+ *  lens moved.
+ *
+ *  Two consequences worth naming:
+ *
+ *  - STREAK_SPREAD has to cover more than the square-on frame now, because a
+ *    leaning camera sees a frustum the field no longer follows. Measured: the
+ *    lean puts the look target 0.55 to the side over CAMERA_BEHIND 6.3, about
+ *    6.8 degrees against a 29.5-degree half-angle, so the far edge needs
+ *    coverage out to tan(29.5+6.8)/tan(29.5) = 1.29 of the square-on frame.
+ *  - the clear patch in the middle is better off than it was. It is a hole in
+ *    the FLIGHT frame, and the subject sits on the flight axis, so it tracks
+ *    him exactly. Camera-locked, the hole stayed centred in the frame while
+ *    the subject slid out of it under the lean.
+ *
+ *  What still comes from the journey is what always should have: how fast they
+ *  move and how long they are. */
 export function VelocityLines() {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const materialRef = useRef<THREE.MeshBasicMaterial>(null)
@@ -51,7 +90,8 @@ export function VelocityLines() {
   // Created lazily in the frame loop, not by useMemo: these are written every
   // frame, and a value produced by useMemo arrives through render, which
   // react-hooks/immutability will not have mutated.
-  const axesRef = useRef<{ right: THREE.Vector3; up: THREE.Vector3; forward: THREE.Vector3 } | null>(null)
+  const basisRef = useRef<ReturnType<typeof makeFlightBasis> | null>(null)
+  const originRef = useRef<{ x: number; y: number; z: number } | null>(null)
 
   /** Fixed per-instance scatter, generated once, over the FRAME. */
   const seeds = useMemo(() => {
@@ -93,20 +133,17 @@ export function VelocityLines() {
       return
     }
     mesh.visible = true
-    material.opacity = 0.5 * intensity
+    material.opacity = STREAK_OPACITY * intensity
 
     const camera = state.camera
-    const axes = (axesRef.current ??= {
-      right: new THREE.Vector3(),
-      up: new THREE.Vector3(),
-      forward: new THREE.Vector3(),
-    })
-    // Straight off the camera's matrix, so they follow it exactly -- including
-    // the lean, which is the point: the streaks stay put on screen while the
-    // world behind them turns.
-    axes.right.setFromMatrixColumn(camera.matrixWorld, 0)
-    axes.up.setFromMatrixColumn(camera.matrixWorld, 1)
-    axes.forward.setFromMatrixColumn(camera.matrixWorld, 2).negate()
+    // THE CORRIDOR'S OWN AXES, not the camera's. See the note above: the
+    // camera's matrix carries the lean, and the lean is the one thing these
+    // must not inherit.
+    const basis = (basisRef.current ??= makeFlightBasis())
+    const origin = (originRef.current ??= { x: 0, y: 0, z: 0 })
+    flightBasis(skyScroll.display, basis)
+    corridorOrigin(skyScroll.display, origin)
+    const heading = Math.atan2(basis.fx, basis.fz)
 
     const perspective = camera as THREE.PerspectiveCamera
     const tanV = Math.tan(((perspective.fov ?? 50) * Math.PI) / 360)
@@ -122,21 +159,45 @@ export function VelocityLines() {
       const depth = STREAK_DEPTH[0] + (((seed.phase - travelled) % span) + span) % span
       // Placed by where it should appear ON SCREEN, then pushed out to its
       // depth -- so the field covers the frame evenly at every distance
-      // instead of bunching toward the middle as it recedes.
-      dummy.position
-        .copy(camera.position)
-        .addScaledVector(axes.forward, depth)
-        .addScaledVector(axes.right, seed.u * depth * tanH)
-        .addScaledVector(axes.up, seed.v * depth * tanV)
-      dummy.quaternion.copy(camera.quaternion)
+      // instead of bunching toward the middle as it recedes. The screen
+      // offsets are scaled by the distance FROM THE CAMERA, which is what
+      // sets the angle; the frame's own coordinate is measured from the
+      // avatar, hence the CAMERA_BEHIND between them.
+      const ahead = depth - CAMERA_BEHIND
+      placeInFlightFrame(
+        basis,
+        origin,
+        ahead,
+        seed.u * depth * tanH,
+        viewAxisUp(ahead) + seed.v * depth * tanV,
+        dummy.position,
+      )
+      // Along the heading, AND down the view axis's pitch.
+      //
+      // The yaw is the whole point and is taken from the flight, not the
+      // camera. The PITCH has to be taken as well, and leaving it out was a
+      // real error rather than a rounding one: the corridor's contents are
+      // placed on the view axis (see viewAxisUp), which descends 8.13
+      // degrees, so in camera space a prop travels straight down +Z at
+      // constant x and y. A streak is the smear of exactly that motion, so it
+      // must lie along the same line -- laid out flat instead, every streak
+      // sat at 8 degrees to the path it was supposed to be tracing, and the
+      // field converged on a point 8 degrees off the one being flown at.
+      // Measured at 0.9899 against the view axis with the camera square,
+      // where it should read 1.0000; 0.9899 is cos(8.13) precisely.
+      //
+      // Order YXZ so the pitch is applied in the yawed frame rather than in
+      // world axes -- with the default XYZ the two interact and the streak
+      // skews as the heading turns.
+      dummy.rotation.set(VIEW_PITCH, heading, 0, "YXZ")
       // Stretched along the view axis only. The streak is the smear of a point
       // passing the camera, so its length is the distance it covers in roughly
       // one frame of perceived motion -- hence scaling with speed. Scaled with
       // depth as well, or the far ones are specks and the near ones bars.
       const scale = depth / STREAK_DEPTH[1]
       dummy.scale.set(
-        0.06 * scale,
-        0.06 * scale,
+        0.045 * scale,
+        0.045 * scale,
         STREAK_MAX_LENGTH * seed.length * intensity * direction * scale,
       )
       dummy.updateMatrix()

@@ -9,8 +9,8 @@ import { Canvas } from "@react-three/fiber";
 import { PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
 import { budgetPortalTargets } from '@/helpers/usePortalTargetBudget'
 import { skyScroll, resetSkyScroll, impulseSkyScroll, advanceSkyScroll } from '@/helpers/skyScroll'
-import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
-import { ToneMappingMode } from "postprocessing";
+import { Bloom, EffectComposer, N8AO, Noise, ToneMapping } from "@react-three/postprocessing";
+import { BlendFunction, ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest , skyWorldMounted, skySequenceStarted} from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
@@ -19,6 +19,8 @@ import { CameraController, type CameraControllerHandle } from "@/components/canv
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { SunFlare } from "@/components/canvas/SunFlare";
+import { SkyGrain } from "@/components/canvas/SkyGrain";
+import { skyGrain } from "@/helpers/skyGrain";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { timeOfDay } from "@/helpers/timeOfDay";
 import { PRESETS } from "@/components/canvas/environmentPresets";
@@ -53,8 +55,9 @@ import {
   routeBetween,
   type JourneyStopId,
 } from "@/config/journey";
-import { SKY_JOURNEY_DISTANCE, SKY_TEXT_CUES, SKY_TEXT_HOLDS, SKY_TEXT_LEAD } from "@/config/skyJourney";
+import { SKY_SCROLL_LIMIT, SKY_TEXT_CUES, SKY_TEXT_HOLDS, SKY_TEXT_LEAD } from "@/config/skyJourney";
 import { SkyCaption } from "@/components/layout/SkyCaption";
+import { SkyContact } from "@/components/layout/SkyContact";
 // The island's lens. The sky narrows to SKY_FOV_Y during the climb (see
 // CameraController), and the corridor's geometry is derived from THAT.
 import { ISLAND_FOV_Y } from "@/config/paperSky";
@@ -854,7 +857,9 @@ export default function Page() {
       raf = requestAnimationFrame(tick);
       const delta = (now - last) / 1000;
       last = now;
-      const offset = advanceSkyScroll(delta, SKY_JOURNEY_DISTANCE, SKY_TEXT_HOLDS);
+      // SKY_SCROLL_LIMIT, not the length of the axis: the journey ends parked
+      // on the contact card rather than flying past it. See that constant.
+      const offset = advanceSkyScroll(delta, SKY_SCROLL_LIMIT, SKY_TEXT_HOLDS);
       if (offset !== skyOffset.current) {
         skyOffset.current = offset;
         cameraControllerRef.current?.setSkyOffset(offset);
@@ -1166,6 +1171,11 @@ export default function Page() {
             It is its own live region, so the sr-only duplicate that shadowed
             the 3D text is gone with the cards. */}
         {skyCueIndex >= 0 && <SkyCaption index={skyCueIndex} />}
+        {/* Mounted for the whole sequence, not gated on the cue: it places and
+            reveals itself from the journey's own state each frame, and
+            mounting it late would mean its first frame landed before it had
+            a box to sit against. See SkyContact. */}
+        {skySequenceValue && <SkyContact />}
         <div
           className={`flex flex-row items-center gap-2 absolute z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}
           style={{ top: "calc(1.25rem + var(--safe-top))", right: "calc(1.25rem + var(--safe-right))" }}
@@ -1316,8 +1326,25 @@ export default function Page() {
                 glare, day's brightest sand losing all texture). AgX rolls
                 highlights off filmically instead. Outside the `started` gate
                 so the curve exists on frame one. */}
+            {/* FILM GRAIN over the paper world. Mounted unconditionally and
+                held at zero on the island -- see the note on <N8AO> above for
+                why nothing here is ever mounted or unmounted mid-session.
+                Its strength is written straight onto the uniform by
+                <SkyGrain>, which rides the same altitude ramp the backdrop
+                and the field of view do. */}
+            {/* NOT premultiplied. NoiseEffect's premultiply multiplies the
+                grain by the colour underneath it before blending, and the
+                paper sky is a narrow band of mid blues -- so the grain was
+                being scaled down by the very thing it was supposed to sit
+                on, which is a good way to add an effect and see nothing. */}
+            <Noise
+              ref={(effect: unknown) => { skyGrain.effect = effect as { blendMode: { opacity: { value: number } } } | null }}
+              blendFunction={BlendFunction.OVERLAY}
+              opacity={0}
+            />
             <ToneMapping mode={ToneMappingMode.AGX} />
           </EffectComposer>
+          <SkyGrain />
           <color attach="background" args={["#0a0a0a"]} />
           {islandMounted && <Suspense fallback={null}>
             <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />

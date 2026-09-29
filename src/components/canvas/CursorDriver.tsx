@@ -31,6 +31,7 @@ import {
   cursorTrailNodes,
   getCursorHover,
   getCursorSurfaces,
+  isPointerOverChrome,
   getMagneticTargets,
   publishCursorView,
   cursorScreen,
@@ -331,7 +332,20 @@ export function CursorDriver() {
     // the stylesheet owns how each one looks and this file owns only the
     // numbers. Rounded to keep the style string stable between frames.
     el.style.setProperty("--cursor-attract", attraction.current.toFixed(3))
-    el.style.setProperty("--cursor-depth", depth.current.toFixed(3))
+    // NOTHING IN THE SCENE IS NEARER THAN THE CONTROL UNDER THE POINTER.
+    //
+    // The depth above is a raycast against the island, and it is what the
+    // cursor draws itself against. It runs whatever the pointer happens to be
+    // over, so a cloud drifting behind the sound toggle gave the cursor a near
+    // reading and it rendered its scene form on top of a button -- "the
+    // buttons for sound get ignored if there are clouds behind them, the
+    // pointer reacts first to the clouds". Overridden at the point of USE
+    // rather than at the raycast: the compiler treats a call placed after that
+    // block as a reason the scratch array it fills might escape.
+    el.style.setProperty(
+      "--cursor-depth",
+      (isPointerOverChrome() ? 0 : depth.current).toFixed(3),
+    )
     el.style.setProperty("--cursor-speed", Math.min(speed / ESCAPE_SPEED, 1).toFixed(3))
 
     const tier: CursorSpeedTier = speed > SPEED_FAST ? "fast" : speed > SPEED_MEDIUM ? "medium" : "slow"

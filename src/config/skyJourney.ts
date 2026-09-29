@@ -370,8 +370,12 @@ const CUE_CONTENT = [
     body: "Open water since 2019. Thirty metres down there is no signal, no backlog and nothing to optimise -- which turns out to be the only reliable way I have found to think about a hard problem.",
   },
   {
-    text: "Let's Connect — Contact Me",
-    body: "Always glad to talk about data, models, or the least sensible place you have ever opened a laptop. The contact portal is at the end of this flight.",
+    text: "Perpetual Side Project",
+    body: "There is always one running in the background: a scraper, a model, some small tool nobody asked for. This island is the current one, and it has eaten more evenings than I will put in writing.",
+  },
+  {
+    text: "Let's Connect",
+    body: "Always glad to talk about data, models, or the least sensible place you have ever opened a laptop.",
   },
 ]
 
@@ -387,7 +391,9 @@ const CUE_CONTENT = [
  *  -- so an odd-length span meant one cloud crossing at twice the speed of
  *  the rest. The first block simply starts at the lead instead of a fraction
  *  past it. */
-const CUE_FRACTIONS = [0, 0.25, 0.5, 0.75]
+/** Five blocks now, evenly spaced. Four facts and the contact card, which is
+ *  the one the journey ends parked on -- see SKY_SCROLL_LIMIT. */
+const CUE_FRACTIONS = [0, 0.2, 0.4, 0.6, 0.8]
 
 /** A PAGE OF SCROLL BEFORE ANYTHING IS SAID.
  *
@@ -404,6 +410,9 @@ export const SKY_TEXT_LEAD = Math.round(SKY_JOURNEY_DISTANCE * 0.1)
 export const SKY_TEXT_CUES: {
   threshold: number
   text: string
+  /** Set on the contact card alone: it is read head-on rather than passed,
+   *  so it sits on the flight axis instead of in one half of the frame. */
+  centred?: boolean
   /** The numbered label above the headline, in the reference's own idiom. */
   eyebrow: string
   body: string
@@ -413,76 +422,187 @@ export const SKY_TEXT_CUES: {
   threshold: SKY_TEXT_LEAD + Math.round(CUE_FRACTIONS[i] * (SKY_JOURNEY_DISTANCE - SKY_TEXT_LEAD)),
   text: cue.text,
   body: cue.body,
-  eyebrow: `Fact #${String(i + 1).padStart(2, "0")}`,
+  // The last block is not a fact about anyone; it is the thing you are meant
+  // to act on, and numbering it as one buries that.
+  eyebrow: i === CUE_CONTENT.length - 1 ? "Get in touch" : `Fact #${String(i + 1).padStart(2, "0")}`,
   side: i % 2 === 0 ? -1 : 1,
+  // CENTRED, for the last block only.
+  //
+  // Every other block is set in one half of the frame because the subject is
+  // in the other one -- that is the whole composition. By the time the
+  // contact card is up the subject has been hauled out of shot (skyExitLift)
+  // and the camera has stopped, so there is no other half: "since there's no
+  // dragonite and the text is the main focus, it should be directly in
+  // front."
+  centred: i === CUE_CONTENT.length - 1,
 }))
 
-/** Which block owns this point on the axis, which side it is set on, and how
- *  far the camera is leaning toward it.
+/** Which block owns this point on the axis, which side it is set on, how far
+ *  through its turn it is, and how far the camera is leaning toward it.
  *
- *  One function for two consumers that must not disagree: the DOM block is
- *  chosen by the index, and the camera leans by the lean. Blocks own the axis
- *  the way the paper cards did -- each from its own cue to the next, the first
- *  owning everything before its cue so the sky is never wordless on arrival,
- *  the last running to the end.
+ *  A BLOCK DOES NOT FILL ITS SECTION. It has a turn in the middle of one, and
+ *  there is empty sky either side of it -- "give more space in between texts".
+ *  SKY_TEXT_ACTIVE is how much of the section the turn takes.
  *
- *  THE LEAN NEVER RESTS AT ZERO, and that is the point of its shape. A
- *  trapezoid per block -- rise, hold, fall -- puts the camera back dead on the
- *  subject between every pair of blocks, so the subject snaps to the middle of
- *  the frame four times over the journey and the text has nowhere to be.
- *  Measured with one: nine of twenty-five samples had the subject within two
- *  percent of centre. The lean instead HOLDS at one side for the body of a
- *  block and crosses to the other during a window centred on the threshold --
- *  the same instant the DOM block switches sides. It passes through zero, but
- *  as a crossing rather than a plateau.
+ *  THE LEAN IS A PULSE THAT STARTS AND ENDS AT NOTHING, which is the other
+ *  half of the same note. It used to hold at one side for the body of a block
+ *  and cross straight to the other at the hand-over, so the camera swung from
+ *  full left to full right in one movement with no rest between -- "it looks
+ *  harshly and quickly to the text, then immediately to the other side... it
+ *  should look at the text, and after it passes, return back to neutral before
+ *  looking at the other text."
  *
- *  The one exception is the start: it eases in from zero over the first part of
- *  the opening block, because the climb hands over at offset 0 with the camera
- *  aimed dead at the avatar, and a lean already at full strength would be a
- *  thirteen-degree snap on the first frame of the sky. */
+ *  A raised cosine does exactly that, and it is chosen over the obvious
+ *  half-sine because its SLOPE is zero at both ends as well as its value: the
+ *  camera does not start or stop turning abruptly, it eases out of neutral and
+ *  back into it. Between one block's turn and the next it is simply still. */
+const SKY_TEXT_ACTIVE = 0.62
+
+/** How far into a block's turn the camera begins to look at it.
+ *
+ *  LATE, and deliberately. The turn starts while the words are still two
+ *  hundred units off and barely visible, and leaning toward them then is
+ *  leaning at nothing: "the camera still looks to the text too early... it
+ *  should stay looking straight until the text is close, then it should
+ *  slightly look to the text." The pulse is fitted to the LAST part of the
+ *  turn instead, so the camera holds square through the whole approach and
+ *  only gives way as the words arrive -- peaking around three quarters of the
+ *  way through, where they are about seventy units out and at full size. */
+const LEAN_FROM = 0.5
+
+function pulse(u: number) {
+  return 0.5 * (1 - Math.cos(2 * Math.PI * u))
+}
+
 const SPAN_START = SKY_TEXT_CUES.map((cue, i) => (i === 0 ? SKY_TEXT_LEAD : cue.threshold))
 const SPAN_END = SKY_TEXT_CUES.map((_, i) => SKY_TEXT_CUES[i + 1]?.threshold ?? SKY_JOURNEY_DISTANCE)
 
-/** Half the cross-over window, as a share of the SHORTER of the two spans it
- *  joins. At or below a quarter, the windows at either end of a span cannot
- *  overlap -- which is what lets the two branches below be written apart. */
-const HANDOVER_SHARE = 0.24
-/** How much of the opening block is spent easing in from dead-on. */
-const ENTRY_SHARE = 0.35
-
-/** Where the journey settles: the middle of each block's span.
+/** Where the journey settles: the middle of each block's turn.
  *
  *  The scroll is helped into these and holds there for a beat before the next
- *  gesture breaks it loose -- see advanceSkyScroll. The middle rather than the
- *  threshold, because the middle is where the lean is at full strength and the
- *  composition is what it was designed to be; the threshold is the hand-over,
- *  which is the one place you do not want to stop. */
-export const SKY_TEXT_HOLDS: readonly number[] = SKY_TEXT_CUES.map(
-  (_, i) => (SPAN_START[i] + SPAN_END[i]) / 2,
+ *  gesture breaks it loose -- see advanceSkyScroll. The middle of the TURN
+ *  rather than of the section, because that is where the lean is at full
+ *  strength and the words are at their most readable. */
+/** Where in a section the words are at their most readable.
+ *
+ *  The turn fraction below is not a taste number: it is the point at which the
+ *  block reaches CAPTION_READ_AXIAL, the distance its type is authored to be
+ *  read at. With the caption running CAPTION_FAR_AXIAL 210 to
+ *  CAPTION_NEAR_AXIAL 2 across the turn, that is (210 - 62) / 208 = 0.71.
+ *
+ *  Stated here rather than imported from config/paperSky, and that is
+ *  deliberate: paperSky already imports this module, so reaching back the
+ *  other way would close an import cycle -- and in a cycle the constants at
+ *  the top of paperSky's module body are read while this one is still being
+ *  evaluated, which is a temporal-dead-zone ReferenceError at load rather
+ *  than anything a type checker would catch. If the caption's ends are
+ *  retuned, this is the line that has to follow them.
+ *
+ *  It matters more than it used to. The scroll magnet was doing nothing
+ *  measurable before this round (see ESCAPE_SPEED in helpers/skyScroll), so
+ *  where exactly a hold sat was academic; now that it actually holds, it
+ *  should hold where the words are at their design size. */
+const READABLE_AT = (1 - SKY_TEXT_ACTIVE) / 2 + SKY_TEXT_ACTIVE * 0.71
+
+export const SKY_TEXT_HOLDS: readonly number[] = SPAN_START.map(
+  (start, i) => start + (SPAN_END[i] - start) * READABLE_AT,
 )
 
-/** Where the block that owns this point on the axis BEGAN, as far as the
- *  corridor is concerned.
+/** WHERE THE JOURNEY ENDS, and it is not the end of the axis.
  *
- *  The wordless lead is a section in its own right -- it has to be. Folding it
- *  into the first block's would make that block's section 975 units long
- *  against a 667-unit crossing, so its cloud would finish early and leave the
- *  sky empty for the rest of it. As its own section the lead gets the cloud
- *  that is already in view when you arrive (CORRIDOR_START_AXIAL) and that
- *  cloud has just about left as the first words appear.
+ *  "For the contact the camera shouldn't move forward, it should stay there
+ *  with the text, because that's the contact part, the user needs to be able
+ *  to interact with it."
  *
- *  The corridor uses this to time exactly one crossing per block -- a cloud
- *  is seeded at the far end as a section begins and has left by the time the
- *  next does, which is what lets "one cloud per text group, never on the same
- *  side as the words" hold by construction instead of by prediction. */
+ *  Every other block is flown past. This one is arrived at: the scroll's wall
+ *  is the last block's own hold, so the journey comes to rest with the
+ *  contact card at CAPTION_READ_AXIAL -- its design size -- and simply stays
+ *  there however hard the wheel is pushed. Parking it at a hold rather than
+ *  at an arbitrary stop also means the magnet is already pulling the right
+ *  way as you come in, so the last thing the scroll does is settle rather
+ *  than hit a wall.
+ *
+ *  The axis itself is unchanged. The avatar's keyframes, the corridor and the
+ *  captions are all still written against SKY_JOURNEY_DISTANCE; this is a
+ *  limit on where the reader may take the scroll, not a shortening of the
+ *  world. */
+export const SKY_SCROLL_LIMIT = SKY_TEXT_HOLDS[SKY_TEXT_HOLDS.length - 1]
+
+/** When the contact panel's links become live.
+ *
+ *  Late: the block is at its design size at the hold, and the links should
+ *  arrive with it rather than trailing the whole approach. Sixty units short
+ *  of the wall is about the last beat of the settle. */
+export const SKY_CONTACT_REVEAL = SKY_SCROLL_LIMIT - 60
+
+/** How far the subject is hauled up out of the frame as the contact card
+ *  arrives, and over what stretch of the axis.
+ *
+ *  "Have the dragonite get pulled up off the screen like a marionette pulling
+ *  up a puppet." He is on a string for the whole journey, so this is the one
+ *  exit the scene has already promised. It is driven by the SCROLL, like
+ *  everything else here -- stop half way and he hangs half way up, which is
+ *  what makes it read as the reader pulling him rather than as an animation
+ *  that happened to play.
+ *
+ *  Applied to the SUBJECT ALONE. The camera's own height is derived from the
+ *  avatar's (see skyCameraPose), so lifting him through the shared pose would
+ *  lift the camera with him and he would never leave the frame at all --
+ *  which is why this is a separate function rather than a term in
+ *  avatarSkyPose. */
+const EXIT_LIFT_FROM = SKY_SCROLL_LIMIT - 220
+const EXIT_LIFT_HEIGHT = 34
+
+export function skyExitLift(offset: number) {
+  const t = (offset - EXIT_LIFT_FROM) / Math.max(1, SKY_SCROLL_LIMIT - EXIT_LIFT_FROM)
+  if (t <= 0) return 0
+  const u = Math.min(1, t)
+  // Eased in only. A puppet being drawn up starts slowly as the slack goes
+  // out of the string and is still travelling when it leaves the top of the
+  // frame; easing the far end too would have him decelerate into the ceiling.
+  return EXIT_LIFT_HEIGHT * u * u
+}
+
+/** The middle of a block's turn, on the scroll axis.
+ *
+ *  The corridor centres its cloud's crossing on this, so the cloud and the
+ *  words share a stretch of sky rather than the cloud running ahead -- "the
+ *  clouds should more or less be around the same position as the text. It can
+ *  come in a little sooner or a little later, but it shouldn't be too much
+ *  ahead." */
+export function skyTurnCentre(offset: number) {
+  const focus = skyTextFocus(offset)
+  if (focus.index < 0) return 0
+  const start = SPAN_START[focus.index]
+  return start + (SPAN_END[focus.index] - start) * 0.5
+}
+
+/** The stretch of the axis a block owns, ends included.
+ *
+ *  The corridor times its cloud against this rather than against the block's
+ *  TURN: the cloud is lowered in before the words are readable and lifted out
+ *  after, so it needs the whole section, not the middle of it. The wordless
+ *  opening is a span in its own right -- see skySectionStart for why it has
+ *  to be -- and gets the cloud that is already in the sky on arrival. */
+export function skySectionSpan(offset: number) {
+  const focus = skyTextFocus(offset)
+  if (focus.index < 0) return { start: 0, end: SKY_TEXT_LEAD }
+  return { start: SPAN_START[focus.index], end: SPAN_END[focus.index] }
+}
+
 /** Which section the corridor is in: -1 for the wordless opening, then one
- *  per block. A small ordinal, which is what the corridor keys its scatter on
- *  -- the section's START offset was serving as that and made a poor index
- *  (it is a number in the thousands, and parity off it is meaningless). */
+ *  per block. A small ordinal, which is what the corridor keys its scatter on. */
 export function skySectionIndex(offset: number) {
   return skyTextFocus(offset).index
 }
 
+/** Where the block that owns this point on the axis BEGAN.
+ *
+ *  The wordless lead is a section in its own right -- it has to be. Folding it
+ *  into the first block's would make that section 975 units long against a
+ *  667-unit crossing, so its cloud would finish early and leave the sky empty
+ *  for the rest of it. As its own section the lead gets the cloud that is
+ *  already in view when you arrive (CORRIDOR_START_AXIAL). */
 export function skySectionStart(offset: number) {
   const focus = skyTextFocus(offset)
   return focus.index < 0 ? 0 : SPAN_START[focus.index]
@@ -496,9 +616,7 @@ export function skyCorridorSide(offset: number): -1 | 1 {
 }
 
 export function skyTextFocus(offset: number) {
-  // Before the lead there is no block, so there is nothing for the camera to
-  // lean toward either -- it holds the subject square until the words start.
-  if (offset < SKY_TEXT_LEAD) return { index: -1, side: -1 as -1 | 1, lean: 0 }
+  if (offset < SKY_TEXT_LEAD) return { index: -1, side: -1 as -1 | 1, lean: 0, turn: -1 }
   let index = SKY_TEXT_CUES.length - 1
   for (let i = 0; i < SKY_TEXT_CUES.length; i++) {
     if (offset < SPAN_END[i]) {
@@ -507,35 +625,20 @@ export function skyTextFocus(offset: number) {
     }
   }
   const side = SKY_TEXT_CUES[index].side
+  // A CENTRED BLOCK GETS NO LEAN. The lean exists to open a half of the frame
+  // for the words and push the subject into the other one; with the block on
+  // the axis there is nothing to make room for, and a camera that turned away
+  // from it would be turning away from the one thing you are meant to use.
+  const centred = SKY_TEXT_CUES[index].centred === true
   const start = SPAN_START[index]
-  const end = SPAN_END[index]
-  const span = Math.max(1, end - start)
-  let lean: number = side
-
-  const next = SKY_TEXT_CUES[index + 1]
-  if (next) {
-    const w = HANDOVER_SHARE * Math.min(span, SPAN_END[index + 1] - end)
-    if (offset > end - w) lean = side + (next.side - side) * smoothstep((offset - (end - w)) / (2 * w))
-  }
-
-  const prev = SKY_TEXT_CUES[index - 1]
-  if (prev) {
-    const w = HANDOVER_SHARE * Math.min(span, start - SPAN_START[index - 1])
-    if (offset < start + w) lean = prev.side + (side - prev.side) * smoothstep((offset - (start - w)) / (2 * w))
-  } else {
-    // FROM THE BLOCK'S OWN START, not from zero on the axis.
-    //
-    // This read the raw offset, which was the same thing while the opening
-    // block began at 0. It does not any more: SKY_TEXT_LEAD holds the words
-    // back for the first tenth of the journey, and the lean is zero over that
-    // stretch because there is nothing to lean toward -- so measuring the ramp
-    // from zero meant it was already 93% run by the time the block appeared,
-    // and the camera would have snapped almost the whole way into its lean on
-    // the frame the first words arrived.
-    const w = span * ENTRY_SHARE
-    const into = offset - start
-    if (into < w) lean = side * smoothstep(Math.max(0, into) / w)
-  }
-
-  return { index, side, lean }
+  const span = Math.max(1, SPAN_END[index] - start)
+  // The turn sits in the middle of the section, with the rest of it quiet.
+  const active = span * SKY_TEXT_ACTIVE
+  const from = start + (span - active) / 2
+  const u = (offset - from) / active
+  // -1 means "no block right now": between one turn and the next.
+  const turn = u >= 0 && u <= 1 ? u : -1
+  const leanPhase = turn < 0 ? -1 : (turn - LEAN_FROM) / (1 - LEAN_FROM)
+  const lean = centred || leanPhase < 0 || leanPhase > 1 ? 0 : side * pulse(leanPhase)
+  return { index, side, lean, turn, centred }
 }

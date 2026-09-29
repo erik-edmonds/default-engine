@@ -27,11 +27,7 @@
 - [x] Logo, that fills with color on percentage loaded
 
 # Homepage 
-- [x] Fix Camera rubix cube 
-    - [x] Rotation moves it, while it should stay about 5% from the right and bottom edge
-    - [x] Currently has logic to move on drag, but is very jerky and unnatural right now. Needs easing and spring reaction
-- [ ] Add guassian blur in background? 
-    - [ ] Focus follows the mouse
+- [x] Fix Camera rubix cube
 - [x] transition on change from sun/evening/night
     - [x] transition finished, but need an object to interact with to make it change.
         - [x] Object added, needs to be stylized, feels a bit boring.
@@ -44,9 +40,9 @@
     - [x] Functionality needed
 - [x] fix music
 - [x] scroll/click up to transform to sky, turn to dragonite suit and fly up. Travel stuff
-    - [ ] Camera doesn't align properly when going up and not at home position
-        - [ ] On any position, on arrow up/down: 
-        should camera return to home position then transition
+    - [x] Camera doesn't align properly when going up and not at home position
+        - [x] On any position, on arrow up/down: 
+            - [x] Should camera return to home position then transition
     - [x] On click, pokeball animation
         - [x] Pokeball opens up 
         - [x] White light like pokemon coming out of ball
@@ -65,11 +61,11 @@
     - [x] Bloom added but now texture doesn't show
 
 # Fix Lighting
-    - [x] Add ambient occlusion
-    - [ ] clouds in sky scene has no lights
-    - [x] on night the island looks too bright. It doesn't look like natural lighting
-    - [x] during day there is a strong glare on the lake to the right side
-    - [x] evening is pretty good, but the background needs to be improved
+- [x] Add ambient occlusion
+- [x] clouds in sky scene has no lights
+- [x] on night the island looks too bright. It doesn't look like natural lighting
+- [x] during day there is a strong glare on the lake to the right side
+- [x] evening is pretty good, but the background needs to be improved
 
 # About 
 - [x] Add lens flare in morning or evening

@@ -6,7 +6,7 @@ import type { Group, Mesh, Object3D } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
-import { AVATAR_BASE_POSITION, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose, setSkyOrigin } from "@/config/skyJourney"
+import { AVATAR_BASE_POSITION, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose, setSkyOrigin, skyExitLift } from "@/config/skyJourney"
 import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
@@ -14,6 +14,7 @@ import { Avatar } from "@/components/models/Avatar"
 import { FlyingDragonite } from "@/components/models/FlyingDragonite"
 import { Rope } from "@/components/canvas/PaperSky"
 import { ROPE_RADIUS_NEAR, STRING_TOP } from "@/config/paperSky"
+import { flightHeading } from "@/config/flightFrame"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
 
 /** The choreography lives in config/skyJourney.ts now, shared with the camera.
@@ -539,9 +540,26 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     // and that asymmetry teleported the avatar away from the camera on the
     // first sky frame.
     group.current.position.x = pose.x
-    group.current.position.y = pose.y + idleBob
+    // HAULED UP AND OUT AS THE CONTACT CARD ARRIVES -- see skyExitLift. Added
+    // here and not in avatarSkyPose on purpose: the camera's height is
+    // derived from that pose, so a lift inside it would carry the camera up
+    // too and he would never actually leave the frame. The cord below is
+    // measured against the unlifted pose, so it shortens as he rises, which
+    // is the string doing the pulling.
+    group.current.position.y = pose.y + idleBob + skyExitLift(offset)
     group.current.position.z = pose.z
-    group.current.rotation.y = pose.rotY
+    // THE CAMERA TURNS; THE SUBJECT DOES NOT.
+    //
+    // "On the scroll, the camera should turn to look at the text, but the
+    // dragonite shouldn't." avatarSkyPose's rotY carries an authored lean of
+    // up to seventeen degrees, and the sky's subject is a flat cutout -- so
+    // that lean is the difference between looking at him and looking at his
+    // edge. Squared to the corridor he stays face-on however far the camera
+    // leans off it, which is what the corridor's own props do (see the note
+    // on hang.rotation.y in PaperSky). The 3D model on the island keeps the
+    // authored lean: it has sides worth seeing.
+    group.current.rotation.y =
+      modelKindRef.current === "cardboard" ? flightHeading(offset) + Math.PI : pose.rotY
   })
 
   // The rope's top stays on the STRING_TOP line while the cutout moves.

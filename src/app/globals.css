@@ -866,133 +866,85 @@ html[data-keyboard="true"] .keyboard-rail {
 
 /* --- the sky journey's editorial blocks ---------------------------------- */
 /*
- * Set in the half of the frame the camera has leaned away from, and set
- * CLOSE TO THE SUBJECT rather than out at the edge.
+ * NOTHING HERE ANY MORE, ON PURPOSE.
  *
- * The first version pushed the block against the outer edge with a big side
- * gutter, which put a screen's width of empty paper between the words and the
- * Dragonite they are about to talk about -- "the text should not be to the
- * edge, it should be close to the dragonite". The grid below gives each half
- * of the frame a column and parks the block on the INNER end of its column,
- * with the type flush to that inner edge, so the block and the subject face
- * each other across the middle of the picture. The outer gutter is whatever
- * is left over, which is the part that is allowed to be generous.
+ * These blocks were once DOM, positioned in the scene by drei's Html. They
+ * are now painted into a canvas texture and hung on a plane in the corridor
+ * (SkyCaptionBillboard), because an Html overlay composites outside the
+ * postprocessing pass and so could never be occluded by the subject flying in
+ * front of it -- and being part of the scene is the whole point of them.
  *
- * Pointer-events are off throughout: the sky journey captures the wheel
- * gesture outright, and a text block that swallowed a drag would stop the
- * scroll dead wherever the cursor happened to be resting.
+ * The consequence for this file: the type is specified in the canvas paint,
+ * in device pixels, and a second copy of the sizes here would be a second
+ * source of truth that no longer renders anything. The four rules that used
+ * to live here -- .sky-caption-block/-eyebrow/-heading/-body -- were dead
+ * from the day the billboard landed, and one of them had already drifted: it
+ * still said `width: 520px` after CAPTION_CSS_WIDTH came down to 360.
+ *
+ * The only caption markup left in the DOM is the screen-reader live region
+ * (.sky-caption-sr, styled by .sr-only), which carries no visual type.
  */
-.sky-caption {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  /* THREE COLUMNS, and the middle one is the subject's berth.
-   *
-   * Two equal halves with the block centred in one of them is the layout that
-   * was asked for, and on a wide screen it is exactly what this gives. It
-   * fails quietly as the window narrows: the block's width is capped at 26rem
-   * while the half keeps shrinking, so the gap between the block and the
-   * midline closes -- measured at 627px of clearance at 3420 CSS pixels and
-   * only 93 at 1280, against a Dragonite about 150 wide. That is the
-   * screenshot where the paragraph is sitting on him.
-   *
-   * The berth is a column in its own right, sized in vw so it tracks the
-   * subject's own share of the frame however wide the window is. The block is
-   * still centred -- in the part of its half that is actually free. */
-  display: grid;
-  grid-template-columns: 1fr var(--sky-berth) 1fr;
-  --sky-berth: clamp(11rem, 24vw, 28rem);
-  align-items: center;
+
+
+/* --- the sky journey's contact links -------------------------------------- */
+/*
+ * The only interactive thing in the paper world. Positioned entirely from
+ * script (see components/layout/SkyContact): the transform and width are
+ * written each frame from the box the 3D block of words reports, so nothing
+ * here may set either.
+ */
+.sky-contact {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  /* Centred under the block, which is itself centred on the flight axis.
+     The width written from script is the block's own, so this lines the
+     links up with the middle of the type rather than with its left edge. */
+  justify-content: center;
+  gap: 10px;
+  /* Until the journey arrives this is inert in every sense: not drawn, not
+     clickable, not tabbable (tabIndex is handled in the component). */
+  opacity: 0;
   pointer-events: none;
-  padding-inline: clamp(1rem, 3vw, 2.5rem);
-  padding-block: 0;
+  transition: opacity 520ms ease;
+  z-index: 6;
 }
 
-.sky-caption-block {
-  max-width: min(26rem, 32vw);
-  /* Text over a lit 3D scene: the paper sky is bright and its value varies as
-     clouds pass, so the type carries its own shadow rather than relying on the
-     backdrop staying dark enough. A panel or a scrim was the other option and
-     reads as a card stuck on the picture -- which is the thing being removed. */
-  text-shadow: 0 1px 14px rgba(24, 32, 46, 0.55), 0 1px 3px rgba(24, 32, 46, 0.4);
-  animation: sky-caption-in 900ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+.sky-contact[data-shown="true"] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-/* CENTRED IN ITS OWN HALF, and justified toward the midline.
- *
- * Think of the frame as two screens split down the middle, where the subject
- * hangs. The block is centred in its half like a page of its own -- not shoved
- * against the outer edge, which was the first note, and not jammed against the
- * midline either, which is what `justify-self: end` did when that note was
- * taken too literally. What faces the middle is the TYPE: the left block sets
- * ragged-left so its straight edge runs down the midline, the right block the
- * mirror of it. */
-.sky-caption[data-side="left"] .sky-caption-block {
-  grid-column: 1;
-  justify-self: center;
-  text-align: right;
-}
-.sky-caption[data-side="right"] .sky-caption-block {
-  grid-column: 3;
-  justify-self: center;
-  text-align: left;
-}
-
-@keyframes sky-caption-in {
-  from { opacity: 0; transform: translateY(1.25rem) }
-  to { opacity: 1; transform: none }
-}
-
-.sky-caption-eyebrow {
+.sky-contact-link {
   font-family: var(--font-nunito), system-ui, sans-serif;
-  font-size: 0.7rem;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.82);
-  margin: 0 0 0.9rem;
-}
-
-/* The island's own face. The name stamp on the home page is Nunito, and the
-   sky was set in a display serif that belonged to nothing else on the site. */
-.sky-caption-heading {
-  font-family: var(--font-nunito), system-ui, sans-serif;
-  font-weight: 700;
-  font-size: clamp(1.9rem, 3.8vw, 3.1rem);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.04em;
   color: #fff;
-  margin: 0 0 1rem;
-  text-wrap: balance;
+  text-decoration: none;
+  padding: 9px 18px;
+  border-radius: 999px;
+  /* A cut-paper chip rather than a web button: a hairline edge and a wash of
+     the sky behind it, which is what everything else out here is made of. */
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(36, 52, 74, 0.28);
+  backdrop-filter: blur(2px);
+  text-shadow: 0 1px 8px rgba(24, 32, 46, 0.5);
+  transition: background 200ms ease, border-color 200ms ease, transform 200ms ease;
 }
 
-.sky-caption-body {
-  font-family: var(--font-nunito), system-ui, sans-serif;
-  font-size: clamp(0.85rem, 1.1vw, 1rem);
-  line-height: 1.65;
-  color: rgba(255, 255, 255, 0.86);
-  margin: 0;
-}
-
-/* Narrow and short viewports have no side to spare: the block goes to the
-   bottom of the frame at full width, which is where the subject is not. */
-@media (max-width: 860px), (max-height: 520px) {
-  .sky-caption {
-    display: flex;
-    --sky-berth: 0px;
-    align-items: flex-end;
-    justify-content: center;
-    padding-block-end: calc(5.5rem + var(--safe-bottom, 0px));
-  }
-  .sky-caption[data-side="left"] .sky-caption-block,
-  .sky-caption[data-side="right"] .sky-caption-block {
-    max-width: 34rem;
-    text-align: center;
-    padding-inline: 0;
-  }
-  .sky-caption-body { margin-inline: auto }
+.sky-contact-link:hover,
+.sky-contact-link:focus-visible {
+  background: rgba(36, 52, 74, 0.52);
+  border-color: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sky-caption-block { animation-duration: 1ms }
+  .sky-contact { transition: none }
+  .sky-contact-link { transition: none }
+  .sky-contact-link:hover,
+  .sky-contact-link:focus-visible { transform: none }
 }
