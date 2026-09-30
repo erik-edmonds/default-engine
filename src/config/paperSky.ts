@@ -366,13 +366,22 @@ export const STAR_LEAD = -7
 
 /** Where a star sits on its cloud, as a share of the cloud's own half-extents.
  *
- *  From the reference: the star tucks into the cloud's lower right, about half
- *  a half-width across and most of a half-height down, so it overlaps the body
- *  of the cloud and breaks its outline at the corner. Centred on the cloud --
- *  which is what "same side and height" gave -- it read as a badge stuck on
- *  the middle of it. */
+ *  From the reference: the star tucks into the cloud's lower right so it
+ *  overlaps the body of the cloud and breaks its outline at the corner.
+ *  Centred on the cloud -- which is what "same side and height" gave -- it
+ *  read as a badge stuck on the middle of it.
+ *
+ *  THE VERTICAL IS THE ONE THAT WAS WRONG, not the lateral.
+ *
+ *  At -0.8 the star sat ON the cloud's bottom edge and hung half off it into
+ *  open sky. Its own half-height is about 3.7 against the cloud's 8.3, so
+ *  anything past -0.55 puts part of it outside; -0.5 leaves it spanning
+ *  roughly -7.9 to -0.5, tucked into the corner with its whole body over the
+ *  cloud. The lateral 0.46 was always fine -- 6.9 out against a half-width
+ *  of 15.1 -- and pulling THAT in, which I did for a round, simply moved the
+ *  star to the middle of the cloud and lost the corner it is meant to be in. */
 export const STAR_OFFSET_SIDE = 0.46
-export const STAR_OFFSET_UP = -0.8
+export const STAR_OFFSET_UP = -0.5
 
 /** How far above the corridor's centre every string is anchored, DERIVED.
  *
@@ -807,8 +816,15 @@ export const PAPER_FADE_OUT = 0.9
  *  1.007, half of it off the edge, at exactly the moment it was meant to be
  *  read alongside the text.
  *
- *  So it approaches, and then it is lifted out rather than flown past. See
- *  PROP_LIFT_FROM. */
+ *  AND IT LEAVES BY PASSING YOU. 20 over a half-width of 15.08 is 1.33,
+ *  which is the only thing that has to be true for that to work: above 1
+ *  the cloud's inner edge stays clear of the flight axis all the way past,
+ *  so it sweeps out through the SIDE of the frame; below 1 the edge crosses
+ *  the axis and the cloud swallows the lens on its way by.
+ *
+ *  It is wholly inside the frame from 132 down to 68, which covers its
+ *  arrival and the stretch its block of text is readable over, and is clear
+ *  of the picture altogether by 15. */
 export const PROP_SIDE_WORLD = 20
 
 /** How much further out the cloud goes on the CONTACT card, and why it is
@@ -836,21 +852,25 @@ export const PROP_RISE_WORLD = 10
  *  frame sideways (about 70), so nothing is ever retired in shot -- it is
  *  simply off the edge by the time its section hands over. */
 export const PROP_FAR_AXIAL = 132
-export const PROP_NEAR_AXIAL = 62
+export const PROP_NEAR_AXIAL = -12
 
-/** How much of a block's section is spent coming down out of the sky, and
- *  where it starts being drawn back up.
+/** How much of a block's section is spent coming down out of the sky.
  *
- *  IT LEAVES THE WAY IT ARRIVED, and that is a consequence of the frame
- *  rather than a preference. A cloud cannot fly past the camera and stay
- *  wholly in shot -- see PROP_SIDE_WORLD -- so it comes down out of the sky,
- *  travels toward you for most of the section growing as it comes, and is
- *  hauled back up through the top before it is close enough to be cut off by
- *  the edge. Both ends of its life are off the top of the picture, which is
- *  also what makes the hand-over between sections invisible: there is
- *  nothing on screen at the moment it is put back to the far end. */
+ *  THERE IS NO LIFT AT THE OTHER END. There was, and it was wrong, and it
+ *  was wrong for a reason worth writing down because I reached for it twice.
+ *
+ *  A cloud cannot be BOTH wholly in frame at close range AND flown past --
+ *  it is thirty units across, so by sixty units out it is most of a
+ *  half-frame wide. Faced with that I kept choosing "wholly in frame" and
+ *  hauling the cloud back up out of the top before it got close. That is
+ *  not the choice that was asked for, repeatedly: "they are supposed to
+ *  leave by passing behind the screen, not by going up."
+ *
+ *  Being clipped by the frame's edge as something passes you is not a fault
+ *  -- it is what passing looks like. The fault was only ever at the other
+ *  end, where a cloud ARRIVED already cut off. So it now comes down out of
+ *  the sky well inside the frame, travels the whole way in, and goes by. */
 export const PROP_DROP_UNTIL = 0.26
-export const PROP_LIFT_FROM = 0.82
 
 // --- the small clouds at the edges -----------------------------------------
 
@@ -932,10 +952,11 @@ export const EDGE_CLOUD_OPACITY = 0.72
  *  That is off now (see the <Noise> in app/page.tsx), and this carries the
  *  rest of the distance.
  *
- *  Settled at 0.45 after looking at 0.6 on the contact card: 0.6 reads
- *  correctly as pushed 8mm stock but starts eating the type, and that card
- *  is the one screen here anybody has to actually read and click. */
-export const SKY_GRAIN_OPACITY = 0.45
+ *  0.6 read correctly as pushed 8mm stock but started eating the type, and
+ *  the contact card is the one screen here anybody has to actually read and
+ *  click; 0.45 was still heavier than wanted. 0.3 keeps the tooth without
+ *  the picture looking sandblasted. */
+export const SKY_GRAIN_OPACITY = 0.3
 
 // --- the velocity lines ----------------------------------------------------
 

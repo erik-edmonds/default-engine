@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useAtom, useAtomValue } from "jotai"
 import { Howl } from "howler"
 import { wireAudioFailures } from "@/helpers/sfx"
-import { sfxEnabled, soundOffNudge } from "@/helpers/StateProvider"
+import { inSkyJourney, sfxEnabled, soundOffNudge } from "@/helpers/StateProvider"
 import type { TimeOfDay } from "@/components/canvas/environmentPresets"
 
 // Same per-phase language as the logo (Icon.tsx's Favicon, via
@@ -25,6 +25,15 @@ const BAR_COLOR_BY_PHASE: Record<TimeOfDay, string> = {
 // comparable as raw gains.
 const AMBIENT_VOLUME = 0.35
 const NIGHT_AMBIENT_VOLUME = 0.05
+/** The paper world's own bed. Under the island's, because up there the only
+ *  thing in earshot is air -- it should read as the island's sound having
+ *  dropped away rather than as a second track arriving over it.
+ *
+ *  Stated as a guess: I cannot hear how clouds.mp3 is mastered relative to
+ *  waves.mp3, and the comment above records that these two are already not
+ *  comparable as raw gains. If it sits wrong against the island it is this
+ *  number and nothing else. */
+const SKY_AMBIENT_VOLUME = 0.22
 // Long enough to read as the tide coming in rather than a track change. The
 // visual transition into night is far longer (AUTO_TRANSITION_SECONDS), so
 // there's no risk of the audio outlasting the phase it belongs to.
@@ -75,10 +84,24 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
     html5: true,
   }), "tides", { retry: false }))
 
+  // The paper world's bed. Silent until the journey arrives, like tides.
+  const [clouds] = useState(() => wireAudioFailures(new Howl({
+    src: ["/sound/clouds.mp3"],
+    volume: 0,
+    loop: true,
+    preload: false,
+    html5: true,
+  }), "clouds", { retry: false }))
+
   // currentPhase (useTimeOfDayCycle) only flips once a transition has fully
   // landed, so this goes true at the exact moment night arrives on screen --
   // which is where the crossfade should start.
   const isNight = currentPhase === "night"
+  // `inSkyJourney` flips when the camera ARRIVES at the top of the climb,
+  // not when the Poke Ball is clicked -- "after arriving in the sky". The
+  // whole five-second ascent therefore still has the island underneath it,
+  // and the beds change over as the paper world takes the screen.
+  const inSky = useAtomValue(inSkyJourney)
 
   useEffect(() => {
     if (!enabled) {
@@ -88,33 +111,50 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
       // which Chrome reports as `net::ERR_ABORTED /sound/tides.mp3` in the
       // console. Nothing is actually broken by it, but it's noise, and
       // there's no reason to pause a track that never began.
-      if (waves.playing()) waves.pause()
-      if (tides.playing()) tides.pause()
+      // ALL THREE BEDS, and forgetting the third is the bug behind "when I
+      // turn the sound button off, the music doesn't turn off". The sky's
+      // bed was added to the fade logic below but not to this early return,
+      // so switching sound off while up in the paper world left clouds.mp3
+      // playing with nothing able to stop it -- every later pass through
+      // this effect hits the same early return and never reaches the fades.
+      //
+      // Which is also why the island's bed never came back on the way home:
+      // with sound off the crossfade never ran at all, and with it on the
+      // still-playing clouds track was the one thing the fade below could
+      // not have silenced, because it had never been paused.
+      for (const bed of [waves, tides, clouds]) if (bed.playing()) bed.pause()
       return
     }
 
-    const [incoming, outgoing] = isNight ? [tides, waves] : [waves, tides]
-    const incomingVolume = isNight ? NIGHT_AMBIENT_VOLUME : AMBIENT_VOLUME
+    // THREE BEDS, ONE RULE. The sky wins over the time of day: up there the
+    // island's water is not in earshot whatever hour it is down below.
+    const incoming = inSky ? clouds : isNight ? tides : waves
+    const incomingVolume = inSky
+      ? SKY_AMBIENT_VOLUME
+      : isNight
+        ? NIGHT_AMBIENT_VOLUME
+        : AMBIENT_VOLUME
 
     if (incoming.state() === "unloaded") incoming.load()
     if (!incoming.playing()) incoming.play()
     incoming.fade(incoming.volume(), incomingVolume, CROSSFADE_MS)
 
-    // Only fade the outgoing track if it's actually audible -- fading a
+    // Only fade an outgoing track if it's actually audible -- fading a
     // stopped Howl from 0 to 0 is a no-op that still schedules a timer.
-    let stopOutgoing: ReturnType<typeof setTimeout> | undefined
-    if (outgoing.playing()) {
+    const stops: ReturnType<typeof setTimeout>[] = []
+    for (const outgoing of [waves, tides, clouds]) {
+      if (outgoing === incoming || !outgoing.playing()) continue
       outgoing.fade(outgoing.volume(), 0, CROSSFADE_MS)
       // Pause once silent rather than leaving a second stream decoding
-      // forever. Cleared below if the phase flips back mid-fade, so a
-      // fast dawn<->night bounce can't pause the track it just revived.
-      stopOutgoing = setTimeout(() => outgoing.pause(), CROSSFADE_MS)
+      // forever. Cleared below if the state flips back mid-fade, so a fast
+      // bounce can't pause the track it just revived.
+      stops.push(setTimeout(() => outgoing.pause(), CROSSFADE_MS))
     }
 
     return () => {
-      if (stopOutgoing) clearTimeout(stopOutgoing)
+      for (const t of stops) clearTimeout(t)
     }
-  }, [enabled, isNight, waves, tides])
+  }, [enabled, isNight, inSky, waves, tides, clouds])
 
   // Stop AND unload on unmount.
   //
@@ -127,7 +167,8 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
   useEffect(() => () => {
     waves.unload()
     tides.unload()
-  }, [waves, tides])
+    clouds.unload()
+  }, [waves, tides, clouds])
 
   // A refused play() was silent in every sense: no handler, no log, and a UI
   // that went on animating as though sound were playing. Both tracks retry on

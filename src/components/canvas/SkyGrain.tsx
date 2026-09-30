@@ -1,9 +1,6 @@
 "use client"
 
 import { useFrame } from "@react-three/fiber"
-import { useAtomValue } from "jotai"
-
-import { skySequenceStarted } from "@/helpers/StateProvider"
 import { SKY_GRAIN_OPACITY, skyAltitudeShare } from "@/config/paperSky"
 import { skyGrain } from "@/helpers/skyGrain"
 
@@ -37,13 +34,15 @@ import { skyGrain } from "@/helpers/skyGrain"
  *  is the caller's value, and writing through one from a frame callback is
  *  exactly what react-hooks/immutability rejects. */
 export function SkyGrain() {
-  const started = useAtomValue(skySequenceStarted)
-
   useFrame((state) => {
     const effect = skyGrain.effect
-    // Zero unless the sequence is running at all, so the island is never
-    // grainy even at the top of a hotspot flight that happens to be high up.
-    const share = started ? skyAltitudeShare(state.camera.position.y) : 0
+    // ALTITUDE ALONE, like the backdrop and the lens. Gating on the sequence
+    // flag took the grain off on the frame the home button was pressed,
+    // while the paper world was still on screen and the camera had its whole
+    // descent to go -- one more thing snapping instead of crossing over. The
+    // island's camera never reaches this ramp's floor, so off-sequence this
+    // is zero without being told.
+    const share = skyAltitudeShare(state.camera.position.y)
     const opacity = SKY_GRAIN_OPACITY * share
     if (effect) effect.blendMode.opacity.value = opacity
     // PUBLISHED, because "there was no graininess added" is not a thing that

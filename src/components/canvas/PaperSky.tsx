@@ -31,7 +31,6 @@ import {
   PROP_HALF_W,
   PROP_HALF_H,
   PROP_DROP_UNTIL,
-  PROP_LIFT_FROM,
   PROP_FAR_AXIAL,
   PROP_NEAR_AXIAL,
   PROP_RISE_WORLD,
@@ -136,8 +135,23 @@ function useFadeMaterial(
       const base = (Array.isArray(source) ? source[0] : source) as THREE.MeshStandardMaterial
       const clone = base.clone()
       clone.transparent = true
-      clone.depthWrite = false
-      clone.opacity = 0
+      // DEPTH WRITING STAYS ON, and the star is why.
+      //
+      // Turning it off is the usual move for a transparent material, and it
+      // is correct for a flat cutout: the cloud is a single plane, so it has
+      // nothing to sort against itself. The star is not flat. It is an
+      // extruded solid -- the model runs from z -0.31 to +0.30 -- and its
+      // material is authored doubleSided and OPAQUE. Without depth writing
+      // its own back faces draw over its front in whatever order the buffer
+      // happens to be in, which is the star appearing with pieces of itself
+      // missing and a differently-shaded shape sitting inside its outline.
+      //
+      // Nothing here needs the old behaviour any more: props no longer fade
+      // at all -- they arrive from above the frame and leave past the lens,
+      // so their opacity is a constant 1 -- and a material that is never
+      // actually translucent loses nothing by writing depth like a solid.
+      clone.depthWrite = true
+      clone.opacity = 1
       return clone
     })())
     // Re-asserted every frame rather than once: React owns this mesh's
@@ -675,6 +689,12 @@ function Prop({
     // scaled by the ratio of their distances so the pair still projects to
     // the same place on screen despite the star riding STAR_LEAD in front.
     const pairScale = partner >= 0 ? axial / Math.max(1, cloudAxial) : 1
+    // IN THE CLOUD'S OUTER LOWER CORNER, which is where it is supposed to be
+    // and where the reference puts it. I moved it inward for a round to stop
+    // it leading the exit off the frame edge, and that was the wrong trade:
+    // it put the star in the middle of the cloud, "no longer in the bottom
+    // corner like it's supposed to be". Its vertical offset carries the
+    // actual fix -- see STAR_OFFSET_UP.
     const starSide = partner >= 0 ? STAR_OFFSET_SIDE * PROP_HALF_W * state.sideSign * pairScale : 0
     const starUp = partner >= 0 ? STAR_OFFSET_UP * PROP_HALF_H * pairScale : 0
 
@@ -692,12 +712,7 @@ function Prop({
     // entrance is off the top of the picture. It was the fade, in the end,
     // that hid the drop all of this was meant to show.
     const restUp = viewAxisUp(ahead) + state.up + starUp
-    const fall =
-      sectionPhase < PROP_DROP_UNTIL
-        ? 1 - sectionPhase / PROP_DROP_UNTIL
-        : sectionPhase > PROP_LIFT_FROM
-          ? (sectionPhase - PROP_LIFT_FROM) / Math.max(0.001, 1 - PROP_LIFT_FROM)
-          : 0
+    const fall = Math.max(0, 1 - sectionPhase / PROP_DROP_UNTIL)
     // Eased, so the puppet slows onto its mark rather than stopping dead.
     const eased = fall * fall * (3 - 2 * fall)
     const dropNdc = PROP_DROP_NDC * eased

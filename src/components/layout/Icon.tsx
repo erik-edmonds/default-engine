@@ -85,7 +85,31 @@ export function Favicon() {
       }}
     >
       <svg width={56} height={56} viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="70" cy="70" r="70" fill={themes[theme]["background"]}/>
+          {/* A DRAWN RING, not just the filter contour above.
+              
+              Reported a fourth time. Measured this round at every phase: the
+              button is present, visible, opacity 1 and never covered by
+              anything -- so it is contrast, exactly as the note above says.
+              What the note got wrong is that the four 1px drop-shadows are
+              enough. They are not in the one case that keeps being reported:
+              at night the disc is BLACK, and against the island's near-black
+              rock a one-pixel outline on a 56px disc is nothing. The same
+              goes the other way for the white disc over pale water.
+              
+              This is the same idea at a weight that survives it -- a 6-unit
+              stroke in the viewBox, about 2.4px as rendered, in whatever tone
+              the disc is not. Drawn inside the circle rather than around it
+              so it costs no layout, and the glyph's furthest point sits at
+              radius 54 against the stroke's inner edge at 64, so nothing is
+              clipped. */}
+          <circle
+            cx="70"
+            cy="70"
+            r="67"
+            fill={themes[theme]["background"]}
+            stroke="var(--logo-edge)"
+            strokeWidth="6"
+          />
           <g fill={themes[theme]["lines"]}>
               <path d="M70 10 L114 35 L70 60 Z"/>
               <path d="M117 40 L117 96 L70 67 Z"/>

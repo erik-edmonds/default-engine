@@ -10,7 +10,7 @@ import {
   PAPER_FADE_MAX_DELTA,
   skyAltitudeShare,
 } from "@/config/paperSky"
-import { inSkyJourney, skySequenceStarted } from "@/helpers/StateProvider"
+import { inSkyJourney } from "@/helpers/StateProvider"
 import { useFrame } from "@react-three/fiber"
 // NOT drei's <Sky> -- the sky here is the custom two-colour smoothstep dome
 // below. (That import was dead and has been removed.)
@@ -266,10 +266,10 @@ export function Environment({
   // way to learn one boolean.
   const inSkyJourneyValue = useAtomValue(inSkyJourney)
   const inSkyJourneyRef = useRef(inSkyJourneyValue)
-  // The sequence flag, not the arrival flag: the paper world starts appearing
-  // partway UP the climb, which is long before `inSkyJourney` is true.
-  const skySequenceValue = useAtomValue(skySequenceStarted)
-  const skySequenceRef = useRef(skySequenceValue)
+  // The sequence flag is GONE from this file. It used to gate the paper
+  // backdrop, and gating on it is what made the trip home snap: see the
+  // note on paperTarget below. Altitude carries the whole hand-over now, in
+  // both directions.
   /** 0 on the island, 1 in the paper world, and every value between during the
    *  hand-over. One number drives the backdrop, the celestials and the fog, so
    *  they cannot get out of step with each other. */
@@ -281,7 +281,6 @@ export function Environment({
   const fogScratch = useRef(new THREE.Color())
   const paperFogColor = useRef(new THREE.Color(PAPER_SKY.base))
   useEffect(() => { inSkyJourneyRef.current = inSkyJourneyValue }, [inSkyJourneyValue])
-  useEffect(() => { skySequenceRef.current = skySequenceValue }, [skySequenceValue])
 
   // The single continuously-tweened source of truth. A ref (not state) --
   // this is read imperatively every frame in useFrame below, same pattern
@@ -431,11 +430,20 @@ export function Environment({
     //
     // Computed here, at the top of the frame, because the light rig below
     // reads it. It used to sit further down, next to the celestials.
-    // Driven by ALTITUDE, so the backdrop arrives with the climb rather than
-    // switching on when the camera stops. See PAPER_FADE_START_Y. The journey
-    // flag only says the sequence is running at all -- while it is off, and on
-    // the island, this is zero whatever height anything else is at.
-    const paperTarget = skySequenceRef.current ? skyAltitudeShare(state.camera.position.y) : 0
+    // Driven by ALTITUDE ALONE, so the backdrop arrives with the climb rather
+    // than switching on when the camera stops -- and, just as importantly,
+    // LEAVES with the descent. See PAPER_FADE_START_Y.
+    //
+    // The sequence flag used to gate this, and that is what made coming home
+    // awkward: handleGoHome drops the flag on the frame the button is
+    // pressed, so the paper sky dissolved back to the island's while the
+    // camera was still a hundred and fifty units up, and you then flew down
+    // through a world that had already gone. The lens next door had the
+    // identical bug and the identical fix -- its comment is worth reading,
+    // and its argument applies unchanged here: height is the honest input,
+    // and the island's own camera never goes above 16 units against this
+    // ramp's 22-unit floor, so off-sequence this is zero on its own.
+    const paperTarget = skyAltitudeShare(state.camera.position.y)
     paperBlendRef.current = THREE.MathUtils.damp(
       paperBlendRef.current,
       paperTarget,

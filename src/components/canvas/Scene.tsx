@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
-import { Bvh } from "@react-three/drei"
+import { Bvh, OrbitControls } from "@react-three/drei"
 import { registerCursorSurface } from "@/helpers/cursor"
 
 import { Clouds } from "@/components/canvas/Sky"
@@ -19,6 +19,7 @@ import { RainController } from "@/components/canvas/RainController"
 import { PaperSky } from "@/components/canvas/PaperSky"
 import { skyWorldMounted } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
+import { Sign } from "@/components/models/Sign"
 
 export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
@@ -100,6 +101,7 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeba
             <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
             <PalmTree scale={0.55} position={[-7,-3.5,-4.5]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
             <PalmTree scale={0.72} position={[7,-6,0]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
+            <Sign scale={0.75} position={[-4.1,-1.3,0]} rotation={[0,0,0]} />
             <Waterfall />
             {/* Both mounted once for the whole scene, not per-Clouds-group --
                 a strike and a downpour are whole-scene events regardless of
