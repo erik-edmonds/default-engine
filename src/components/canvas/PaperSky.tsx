@@ -7,6 +7,7 @@ import { useFrame, useThree } from "@react-three/fiber"
 import { useGLTF } from "@/helpers/useGLTF"
 import { makeTwineTextures, twineRepeat } from "@/helpers/twineTexture"
 import { skyScroll } from "@/helpers/skyScroll"
+import { frameHalfWidth, skyFrame, skyPropScale } from "@/helpers/skyFrame"
 import { CAMERA_BEHIND, flightBasis, makeFlightBasis, placeInFlightFrame, viewAxisUp } from "@/config/flightFrame"
 import { inSkyJourney } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
@@ -23,8 +24,7 @@ import {
   EDGE_CLOUD_OPACITY,
   EDGE_CLOUD_RISE,
   EDGE_CLOUD_SCALE,
-  EDGE_CLOUD_SIDE,
-  HALF_FOV_H,
+  EDGE_CLOUD_SIDE_NDC,
   CORRIDOR_POOL,
   CORRIDOR_TRAVEL_PER_OFFSET,
   PROP_DROP_NDC,
@@ -34,9 +34,8 @@ import {
   PROP_FAR_AXIAL,
   PROP_NEAR_AXIAL,
   PROP_RISE_WORLD,
-  PROP_SIDE_WORLD,
+  PROP_SIDE_NDC,
   PROP_CENTRED_SIDE_SCALE,
-  HALF_FOV_V,
   DROP_STAGGER,
   STRING_TOP,
   SKY_DRESSED_Y,
@@ -238,6 +237,7 @@ export function Rope({
   baseRef,
   opacityRef,
   onMaterial,
+  order = 0,
 }: {
   lengthRef: React.RefObject<number>
   radius: number
@@ -256,6 +256,17 @@ export function Rope({
   opacityRef?: React.RefObject<number>
   /** Publishes this rope's material, same reason as the cutouts'. */
   onMaterial?: (material: THREE.MeshStandardMaterial) => void
+  /** Paint order against the rest of the sky. Default 0, which is where a
+   *  cloud's own cord belongs -- with its cloud.
+   *
+   *  The SUBJECT's cord passes -1, so it paints before the block of words
+   *  (renderOrder 0) and the string runs BEHIND the type. Transparent objects
+   *  otherwise sort back-to-front by distance, and the cord is at 6.3 units
+   *  against the caption's 62, so it would always be painted last and across
+   *  the words -- which is the reason the cord used to be switched off
+   *  entirely in portrait. It cannot occlude anything by depth either way:
+   *  a faded cord sets depthWrite false. */
+  order?: number
 }) {
   const ref = useRef<THREE.Mesh>(null)
   const published = useRef(false)
@@ -326,7 +337,13 @@ export function Rope({
     // Caught on the subject's cord, which is mounted early and at altitude:
     // one reading at full opacity with the camera still 80 units below the
     // sky. Declared here, there is no such frame.
-    <mesh ref={ref} geometry={ROPE_GEOMETRY} frustumCulled={false} visible={!opacityRef}>
+    // Named so a rope can be told apart from the thing it is holding. Asked
+    // for by a report that "the rope is far off of the dragonite": the
+    // subject's own cord is not drawn in portrait at all
+    // (SUBJECT_ROPE_IN_PORTRAIT), so a rope in that frame belongs to a cloud
+    // -- and with nothing named, a probe could not say which, and neither
+    // could the eye.
+    <mesh ref={ref} name="sky-rope" geometry={ROPE_GEOMETRY} renderOrder={order} frustumCulled={false} visible={!opacityRef}>
       <meshStandardMaterial
         bumpScale={2.5}
         roughness={0.95}
@@ -454,7 +471,17 @@ function scatter(
   // lean for it, so neither of the two things that normally keep a cloud off
   // the words is working.
   const centred = skyTextFocus(skyScroll.display).centred === true
-  state.side = PROP_SIDE_WORLD * (0.9 + 0.2 * u) * (centred ? PROP_CENTRED_SIDE_SCALE : 1)
+  // MEASURED AGAINST THE FRAME THAT IS ACTUALLY ON SCREEN, once, here.
+  //
+  // PROP_SIDE_NDC is a fraction of the half-frame at the far end of the
+  // approach; turning it into a world distance at seeding time is what lets
+  // the cloud hold that distance for the rest of its pass and sweep out
+  // through the side as it arrives. A landscape window gets the 20 units this
+  // used to be hardcoded to; a phone gets the number that means the same
+  // thing in a frame 3.9 times narrower.
+  const farHalfWidth = frameHalfWidth(PROP_FAR_AXIAL - CAMERA_BEHIND)
+  state.side =
+    PROP_SIDE_NDC * farHalfWidth * (0.9 + 0.2 * u) * (centred ? PROP_CENTRED_SIDE_SCALE : 1)
 
   // WHICH HALF: the opposite of the block this crossing belongs to.
   //
@@ -673,8 +700,13 @@ function Prop({
     // front of it.
     const axial = cloudAxial + (partner >= 0 ? STAR_LEAD : 0)
     const ahead = axial - CAMERA_BEHIND
-    const frameH = Math.max(1, axial) * Math.tan(HALF_FOV_H)
-    const frameV = Math.max(1, axial) * Math.tan(HALF_FOV_V)
+    // THE LIVE LENS, not the design one. frameV was always honest -- three's
+    // fov is vertical -- but frameH was tan(HALF_FOV_H), frozen at 16:10, and
+    // it is the number `sideNdc` below is reported in. That is why sixteen
+    // green probe suites never noticed that the whole scene falls outside a
+    // portrait frame: they were being told the design frame's NDC.
+    const frameH = Math.max(1, axial) * skyFrame.tanH
+    const frameV = Math.max(1, axial) * skyFrame.tanV
     // A STAR'S OFFSET IS A FRACTION OF ITS CLOUD, NOT OF THE FRAME.
     //
     // STAR_OFFSET_SIDE/UP have always been multiples of the cloud's own half
@@ -735,7 +767,10 @@ function Prop({
     // but zero, which is what turned the caption cards into slivers.
     hang.rotation.y = basisRef.current ? Math.atan2(basisRef.current.fx, basisRef.current.fz) + Math.PI : Math.PI
     hang.position.y = 0
-    hang.scale.setScalar(state.scale)
+    // Shrunk with the frame, so a cloud covers the same share of a phone's
+    // picture as it does of a desktop's -- see skyPropScale. Without this a
+    // correctly PLACED cloud still blots out the subject on a narrow frame.
+    hang.scale.setScalar(state.scale * skyPropScale())
 
     // Straight up to the anchor, in the group's own space. The anchor is a
     // fixed height for every prop (STRING_TOP), so every string reaches the
@@ -755,8 +790,22 @@ function Prop({
     // 0.25 to 0.25. That is the "they're supposed to be attached to rope".
     ropeLength.current = STRING_TOP - localUp
     // Tie it to the TOP of the cutout, not its middle.
+    //
+    // AND AT THE SIZE THE CUTOUT IS ACTUALLY DRAWN. The cloud is scaled by
+    // `state.scale * skyPropScale()` (above), and the cord's radius by
+    // skyPropScale() too -- this one offset was left on the raw state.scale.
+    // skyPropScale is 1 on a 16:10 window, so the two agreed and nothing was
+    // wrong on a desktop; it is 0.256 at 404x986, so on a phone the cord's
+    // bottom end was parked almost four times the cloud's own half-height
+    // above it, hanging in open sky with nothing on the end. Reported as
+    // "the rope is far off of the dragonite" -- it is not his, the subject's
+    // own cord is not drawn in portrait at all (SUBJECT_ROPE_IN_PORTRAIT),
+    // and measurement named the owner as a sky-prop. It was the only cord in
+    // the frame, so it read as his.
     ropeBase.current =
-      ((kind === "star" ? STAR_NATIVE_HEIGHT : CLOUD_TOP_NATIVE * 2) / 2) * state.scale
+      ((kind === "star" ? STAR_NATIVE_HEIGHT : CLOUD_TOP_NATIVE * 2) / 2) *
+      state.scale *
+      skyPropScale()
 
     // THE OPACITY IS WRITTEN HERE, WITH THE POSITION IT BELONGS TO.
     //
@@ -832,7 +881,7 @@ function Prop({
       {partner < 0 && (
         <Rope
           lengthRef={ropeLength}
-          radius={ROPE_RADIUS_PROP}
+          radius={ROPE_RADIUS_PROP * skyPropScale()}
           baseRef={ropeBase}
           opacityRef={opacity}
           onMaterial={(m) => { ropeMaterial.current = m }}
@@ -896,7 +945,9 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
     const { u, v } = r2(index * 3 + 4409)
     const { u: u2, v: v2 } = r2(index * 3 + 7717)
     return {
-      side: EDGE_CLOUD_SIDE[0] + u * (EDGE_CLOUD_SIDE[1] - EDGE_CLOUD_SIDE[0]),
+      // A fraction of the half-frame at the distance these are first meant to
+      // be seen, resolved to world units here -- see EDGE_CLOUD_SIDE_NDC.
+      sideNdc: EDGE_CLOUD_SIDE_NDC[0] + u * (EDGE_CLOUD_SIDE_NDC[1] - EDGE_CLOUD_SIDE_NDC[0]),
       // Alternating rather than sampled: with seven of them a random sign
       // leaves one side bare about a quarter of the time, and a bare side is
       // the one thing "clouds on the outsides" cannot have.
@@ -939,14 +990,14 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
       basis,
       origin,
       ahead,
-      seed.sideSign * seed.side,
+      seed.sideSign * seed.sideNdc * frameHalfWidth(EDGE_CLOUD_FADE_AXIAL - CAMERA_BEHIND),
       // The vertical band is a fraction of the frame at this distance, so it
       // opens out with the frame instead of closing to a line at the far end.
-      viewAxisUp(ahead) + seed.rise * axial * Math.tan(HALF_FOV_V),
+      viewAxisUp(ahead) + seed.rise * axial * skyFrame.tanV,
       node.position,
     )
     node.rotation.y = Math.atan2(basis.fx, basis.fz) + Math.PI
-    node.scale.setScalar(seed.scale)
+    node.scale.setScalar(seed.scale * skyPropScale())
 
     const shown = THREE.MathUtils.clamp(
       (EDGE_CLOUD_DEPTH[1] - axial) / Math.max(1, EDGE_CLOUD_DEPTH[1] - EDGE_CLOUD_FADE_AXIAL),
@@ -963,7 +1014,7 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
 
     node.userData.axial = axial
     node.userData.sideSign = seed.sideSign
-    node.userData.side = seed.side
+    node.userData.side = seed.sideNdc
   })
 
   return (

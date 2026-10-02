@@ -8,7 +8,8 @@ import gsap from "gsap"
 import { easing } from "maath"
 import { publishSkyDisplay, resetSkyScroll } from "@/helpers/skyScroll"
 import { CAMERA_LOOK_ABOVE, setFlightBaseHeading } from "@/config/flightFrame"
-import { ISLAND_FOV_Y, SKY_FOV_Y, skyAltitudeShare } from "@/config/paperSky"
+import { ISLAND_FOV_Y, ISLAND_FOV_Y_PORTRAIT, SKY_FOV_Y, skyAltitudeShare } from "@/config/paperSky"
+import { publishSkyFrame, skyFrame } from "@/helpers/skyFrame"
 
 import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 import { cameraFlying, skySequenceStarted } from "@/helpers/StateProvider"
@@ -251,13 +252,28 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
       // the island's own camera never goes above 16 units against this ramp's
       // 22-unit floor, so off-sequence it is zero on its own.
       const share = skyAltitudeShare(camera.position.y)
-      const fov = ISLAND_FOV_Y + (SKY_FOV_Y - ISLAND_FOV_Y) * share
+      // The island end of the ramp widens on a narrow frame so the beach
+      // props stay in shot -- see ISLAND_FOV_Y_PORTRAIT. The sky end does
+      // not: the paper world lays itself out against whatever frame it is
+      // given (helpers/skyFrame), so it needs no help from the lens.
+      const islandFov = skyFrame.portrait ? ISLAND_FOV_Y_PORTRAIT : ISLAND_FOV_Y
+      const fov = islandFov + (SKY_FOV_Y - islandFov) * share
       // Guarded: updateProjectionMatrix is not free, and on the island this
       // would otherwise run every frame for a value that never changes.
       if (Math.abs(camera.fov - fov) > 0.001) {
         camera.fov = fov
         camera.updateProjectionMatrix()
       }
+      // AND PUBLISH THE FRAME IT ADDS UP TO.
+      //
+      // This is the one place that knows both halves of the lens: the fov
+      // above, and the aspect r3f keeps on the camera from the canvas size.
+      // Everything in the paper sky that places something sideways used to
+      // work from a frozen DESIGN_ASPECT instead -- see helpers/skyFrame for
+      // what that cost on a phone. Unguarded on purpose: it is four
+      // multiplications and it must be true on every frame, including the
+      // ones where the fov has not changed but the window has.
+      publishSkyFrame(camera.fov, camera.aspect)
     }
 
     const s = sky.current

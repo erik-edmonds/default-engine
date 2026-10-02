@@ -42,23 +42,20 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // /portfolio is retired: the four project cards it held now hang in the pool
-  // inside the Models portal, which you scroll down through.
+  // NO REDIRECT ON /portfolio ANY MORE.
   //
-  // Here rather than as a page calling `redirect()`. That version built, but
-  // the route is statically prerendered, so what shipped was a 200 with a full
-  // HTML document that redirected after hydration -- a real visitor sees a
-  // flash of nothing, and anything that does not run JavaScript (a crawler, a
-  // link unfurler, `curl`) sees a page that never goes anywhere. This is a 308
-  // from the server, before any of that.
+  // There was a permanent 308 from /portfolio to /item/01, added when the page
+  // was retired on the grounds that "the four project cards it held now hang
+  // in the pool inside the Models portal". They do not -- the cards were taken
+  // out of the water (see PortalInteriors.tsx) and never replaced, so the
+  // redirect pointed at an empty room. /portfolio is the written work again
+  // and the Models portal now links TO it, which is the direction that was
+  // always right: the 3D scene is how you find the work, not where it lives.
   //
-  // The four project pages UNDER it are untouched; `source` matches the exact
-  // path only, so /portfolio/election still resolves.
-  async redirects() {
-    return [
-      { source: "/portfolio", destination: "/item/01", permanent: true },
-    ];
-  },
+  // `permanent: true` means this shipped as a 308, which browsers and crawlers
+  // cache hard. Anyone who followed it while it was live may hold it until
+  // their cache clears; nothing can be done about that from here, and it is
+  // the reason a redirect on a URL you might want back should be 307.
 };
 
 export default nextConfig;

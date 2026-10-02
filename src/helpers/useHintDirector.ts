@@ -1,51 +1,60 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import * as THREE from "three"
 import { useAtomValue, useSetAtom } from "jotai"
 
 import { cameraFlying, musicEnabled, openPortalId, rainRequest } from "@/helpers/StateProvider"
 import {
   ARRIVAL_SETTLE_MS,
-  DISCOVER_IDLE_MS,
-  GUITAR_HINT_POSITION,
-  POKEBALL_HINT_POSITION,
-  DISCOVER_REARM_IDLE_MS,
   HINT_ABANDON_MS,
   HINT_MAX_VISIBLE_MS,
   HINT_MIN_VISIBLE_MS,
   HOME_BUTTON_HINT_ANCHOR,
   PORTAL_INSIDE_SETTLE_MS,
   activeHint,
-  cloudOnScreen,
   hintOnScreen,
   type ActiveHint,
   type HintId,
   PORTAL_HINT_MAX_DISTANCE,
 } from "@/helpers/hints"
+import {
+  FIRST_SUGGESTION_IDLE_MS,
+  activeSuggestion,
+  advanceSuggestion,
+  remainingSuggestions,
+  suggestions,
+  suggestionsMuted,
+  suggestionsSatisfied,
+  suggestionsSeen,
+} from "@/helpers/avatarBubble"
+import { SUGGESTIONS, type SuggestionSubject } from "@/config/suggestions"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 
 /** Priority order, highest first. Only one hint is ever on screen; a
  *  higher-priority one may take the slot from a lower one, but only once the
- *  lower one has served its minimum visible time. */
-// This list is also the switch for WHICH discovery hints are live at all -- a
-// hint absent from it is never even considered.
-//
-// `pokeball` is deliberately absent: the prop is in the scene now, but the
-// director would nudge toward it before the sky journey it opens is finished.
-// Everything else about it is intact (its copy in HINTS, its marker position,
-// the pokeballUsed input and the `done` bookkeeping below), so re-enabling it
-// is putting it back on this line.
-//
-// `scuba` used to sit here too. It is not parked, it is deleted -- the gear and
-// the dive are gone, and /portfolio is reached through the Models portal.
-//
-// Discovery order among the live ones is deliberate: the guitar and the clouds
-// change something in place rather than replacing the page, which is the right
-// opening suggestion for a first-time visitor.
-const PRIORITY: HintId[] = ["portalExit", "portalEnter", "guitar", "clouds"]
+ *  lower one has served its minimum visible time.
+ *
+ *  Both of the two left are portal beats. The three discovery nudges that used
+ *  to sit below them -- guitar, clouds, pokeball -- are suggestions in the
+ *  avatar's queue now; hints.ts's header says why those could move and these
+ *  two could not. With them went the whole idle-and-re-arm apparatus that
+ *  existed to ration one slot between four competing nudges, two of which
+ *  realistically never appeared. A queue the visitor steps through does not
+ *  need rationing. */
+const PRIORITY: HintId[] = ["portalExit", "portalEnter"]
 
 const EVALUATE_INTERVAL_MS = 400
+
+/** Which portal, once entered, retires which suggestion.
+ *
+ *  Keyed by the ids in config/portals.ts. He should not still be recommending
+ *  the thing you are standing inside. */
+const PORTAL_SATISFIES: Record<string, SuggestionSubject> = {
+  "01": "models",
+  "02": "about",
+  "03": "contact",
+}
 
 export interface HintDirectorInput {
   /** The loading screen is done and the scene is live. */
@@ -66,13 +75,16 @@ export interface HintDirectorInput {
   portalTargets: Record<string, THREE.Vector3>
 }
 
-// Decides which hint, if any, should be on screen right now.
+// Decides which hint, if any, should be on screen right now -- and keeps the
+// avatar's suggestion queue honest.
 //
-// Everything it needs to know about discovery it reads from atoms that already
-// existed -- musicEnabled says the guitar has been found, rainRequest says a
-// cloud has -- so neither Guitar.tsx nor Sky.tsx has to report anything. The
-// two portal beats key off openPortalId, which PortalRouteSync publishes from
-// the wouter route.
+// THE TWO JOBS ARE HERE TOGETHER FOR ONE REASON: both depend on the same
+// discovery state, and this hook already read all of it. musicEnabled says the
+// guitar has been found, rainRequest says a cloud has, openPortalId says which
+// portal has been entered. The hint half consumes that to decide what to show;
+// the queue half consumes it to decide what to stop offering. Splitting them
+// would mean two subscriptions to the same six atoms and two statements of
+// what "the visitor already found this" means.
 //
 // Runs on an interval rather than purely on dependency changes because most of
 // the conditions are *elapsed time* (idle for long enough, arrived long enough
@@ -83,9 +95,16 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
   const rainCount = useAtomValue(rainRequest)
   const openPortal = useAtomValue(openPortalId)
   const flying = useAtomValue(cameraFlying)
-  const cloudVisible = useAtomValue(cloudOnScreen)
   const onScreen = useAtomValue(hintOnScreen)
   const coarse = useCoarsePointer()
+
+  const setSuggestions = useSetAtom(suggestions)
+  const setSatisfied = useSetAtom(suggestionsSatisfied)
+  const advance = useSetAtom(advanceSuggestion)
+  const remaining = useAtomValue(remainingSuggestions)
+  const seen = useAtomValue(suggestionsSeen)
+  const speaking = useAtomValue(activeSuggestion)
+  const muted = useAtomValue(suggestionsMuted)
 
   // "The onboarding beat is over." On a mouse that's InteractionHint being
   // dismissed, which happens on the first pointermove. On touch there is no
@@ -95,15 +114,11 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
   // all. Nothing to wait behind, so don't wait.
   const introFinished = coarse || hasInteracted
 
-  // Sticky "the user has done this" flags. Sticky matters: musicEnabled goes
-  // back to false when the user toggles the guitar off again (and page.tsx
-  // clears it outright on the fly-up and the dive), and without this the
-  // director would decide the guitar was undiscovered all over again and nag
-  // about something they demonstrably already found.
+  // Sticky "the user has done this" flags. Sticky matters: openPortalId goes
+  // back to null the moment you leave, and without this the director would
+  // decide the portal was unentered all over again and re-offer the
+  // instruction for something demonstrably already done.
   const done = useRef<Record<HintId, boolean>>({
-    guitar: false,
-    clouds: false,
-    pokeball: false,
     portalEnter: false,
     portalExit: false,
   })
@@ -119,30 +134,59 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
 
   // Latest inputs, read by the interval below without making it re-subscribe
   // every time one of them changes.
-  const input = useRef({ started, introFinished, currentHotspot, portalTargets, flying, openPortal, cloudVisible, onScreen })
-  input.current = { started, introFinished, currentHotspot, portalTargets, flying, openPortal, cloudVisible, onScreen }
+  const input = useRef({
+    started, introFinished, currentHotspot, portalTargets, flying, openPortal, onScreen,
+    hasRemaining: remaining.length > 0, hasSeenAny: seen.size > 0, speaking: speaking !== null, muted,
+  })
+  input.current = {
+    started, introFinished, currentHotspot, portalTargets, flying, openPortal, onScreen,
+    hasRemaining: remaining.length > 0, hasSeenAny: seen.size > 0, speaking: speaking !== null, muted,
+  }
 
-  // Discovery. Each flips once and stays flipped.
+  // The queue, published once. Static today; an atom rather than a constant
+  // because retiring entries is a write and the bubble reads it from the far
+  // side of the canvas boundary.
   useEffect(() => {
-    if (musicOn) done.current.guitar = true
-  }, [musicOn])
+    setSuggestions(SUGGESTIONS)
+  }, [setSuggestions])
+
+  /** Retire a suggestion's subject because the visitor got there first.
+   *
+   *  Additive and idempotent: this is called from four separate effects and
+   *  nothing ever un-finds something. Memoised on jotai's setter, which is
+   *  itself stable, so the four effects below do not re-run every render. */
+  const satisfy = useCallback(
+    (subject: SuggestionSubject) => {
+      setSatisfied((prev) => (prev.has(subject) ? prev : new Set(prev).add(subject)))
+    },
+    [setSatisfied],
+  )
+
+  // Discovery. Each flips once and stays flipped. These are the same four
+  // signals the discovery hints used to key off; they retire queue entries now
+  // instead of cancelling captions.
   useEffect(() => {
-    if (rainCount > 0) done.current.clouds = true
-  }, [rainCount])
+    if (musicOn) satisfy("guitar")
+  }, [musicOn, satisfy])
   useEffect(() => {
-    if (pokeballUsed) done.current.pokeball = true
-  }, [pokeballUsed])
+    if (rainCount > 0) satisfy("clouds")
+  }, [rainCount, satisfy])
   useEffect(() => {
-    if (openPortal !== null) {
-      done.current.portalEnter = true
-      if (enteredAt.current === null) enteredAt.current = performance.now()
-    } else {
+    if (pokeballUsed) satisfy("pokeball")
+  }, [pokeballUsed, satisfy])
+  useEffect(() => {
+    if (openPortal === null) {
       // Left the portal: the exit hint has served its purpose whether or not
       // it was ever shown.
       if (enteredAt.current !== null) done.current.portalExit = true
       enteredAt.current = null
+      return
     }
-  }, [openPortal])
+    done.current.portalEnter = true
+    if (enteredAt.current === null) enteredAt.current = performance.now()
+    const subject = PORTAL_SATISFIES[openPortal]
+    if (subject) satisfy(subject)
+  }, [openPortal, satisfy])
 
   // The idle clock. Reset by anything that counts as the user engaging with
   // the scene -- a cloud, the guitar, arriving somewhere new, opening a
@@ -183,29 +227,6 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
           // to double-click.
           return { id, target: { kind: "world", position, maxDistance: PORTAL_HINT_MAX_DISTANCE } }
         }
-
-        // The two discovery nudges share a gate: only at the home viewpoint
-        // (both objects are there), only once the onboarding hint is done,
-        // only while nothing else is going on, and only after a real idle
-        // stretch.
-        case "guitar":
-        case "clouds":
-        case "pokeball": {
-          if (!state.introFinished || state.currentHotspot !== "home") return null
-          if (state.flying || state.openPortal !== null) return null
-          // The first nudge waits out a full idle stretch; later ones re-arm
-          // sooner, or with four discovery hints sharing one slot the last two
-          // would never be reached. See DISCOVER_REARM_IDLE_MS.
-          const idleNeeded = spent.current.size > 0 ? DISCOVER_REARM_IDLE_MS : DISCOVER_IDLE_MS
-          if (now - idleSince.current < idleNeeded) return null
-          if (id === "guitar") return { id, target: { kind: "world", position: GUITAR_HINT_POSITION } }
-          if (id === "pokeball") return { id, target: { kind: "world", position: POKEBALL_HINT_POSITION } }
-          // Cloud positions are randomised per load, so there may be no cloud
-          // in frame to point at. Spending the hint on one that's off-screen
-          // would burn it silently.
-          if (!state.cloudVisible) return null
-          return { id, target: { kind: "cloud" } }
-        }
       }
     }
 
@@ -214,14 +235,33 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
       activeId.current = null
       shownAt.current = null
       activatedAt.current = null
-      // Restart the idle clock so a second discovery nudge waits its own full
-      // window rather than following straight on from the first.
       idleSince.current = now
       setActive(null)
     }
 
+    /** HE OPENS THE FIRST ONE HIMSELF, AND ONLY THE FIRST.
+     *
+     *  A numbered badge over a character in a 3D scene is not self-evidently
+     *  something you click. One unprompted line teaches the mechanic; from
+     *  then on the badge is enough and the pace is the visitor's. Gated on the
+     *  same conditions the discovery nudges had -- at home, nothing else going
+     *  on, and a real idle stretch -- because interrupting someone who is
+     *  already busy is the thing worth not doing. */
+    const maybeOpenFirst = (now: number) => {
+      const state = input.current
+      // Muted means he has been asked to stop; the unprompted opener is
+      // exactly the thing that must not come back after that.
+      if (state.muted) return
+      if (state.hasSeenAny || state.speaking || !state.hasRemaining) return
+      if (!state.introFinished || state.currentHotspot !== "home") return
+      if (state.flying || state.openPortal !== null) return
+      if (now - idleSince.current < FIRST_SUGGESTION_IDLE_MS) return
+      advance()
+    }
+
     const evaluate = () => {
       const now = performance.now()
+      maybeOpenFirst(now)
       const current = activeId.current
 
       if (current) {
@@ -275,7 +315,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
 
     const timer = setInterval(evaluate, EVALUATE_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [started, setActive])
+  }, [started, setActive, advance])
 
   // Clear on unmount so a hint can't outlive the page it points into.
   useEffect(() => () => setActive(null), [setActive])

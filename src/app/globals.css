@@ -948,3 +948,212 @@ html[data-keyboard="true"] .keyboard-rail {
   .sky-contact-link:hover,
   .sky-contact-link:focus-visible { transform: none }
 }
+
+
+/* --- the avatar's speech bubble ------------------------------------------ */
+/*
+ * Positioned entirely from script: AvatarAnchor projects the avatar's head
+ * every frame and writes `transform` onto the two outer elements below, so
+ * nothing here may set `transform`, `left` or `top`.
+ *
+ * Both are zero-sized anchors pinned to the top-left of the viewport and
+ * moved into place. The visible panel hangs off the anchor, which is what
+ * lets `data-bubble-side` flip it to whichever side has room without the
+ * projector knowing anything about the markup.
+ */
+.avatar-bubble,
+.avatar-unread {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 7;
+}
+
+.avatar-bubble-panel {
+  position: absolute;
+  bottom: 8px;
+  left: 14px;
+  width: max-content;
+  /* --bubble-room is the distance from the avatar to the edge he is opening
+     toward, written every frame by AvatarAnchor; that file says why the
+     viewport width was the wrong thing to clamp against. The fallback is for
+     the frame before the projector has run. */
+  max-width: var(--bubble-room, 17rem);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  /* The same cut-paper chip language as the sky's contact links, not the
+     black glass the old hints used. Those were chrome; this is someone
+     talking, and it should look like it belongs to the island. */
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(24, 34, 48, 0.72);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+
+/* Opens leftward near the right edge, where a rightward panel would run off
+   the viewport. Set by the projector from the avatar's screen x. */
+.avatar-bubble[data-bubble-side="left"] .avatar-bubble-panel {
+  left: auto;
+  right: 14px;
+}
+
+/* NEITHER SIDE HAS ROOM: span the viewport and keep only the vertical
+   anchor. On a phone he stands near the middle of a 404px frame, so both
+   halves are about 190px -- twenty characters a line. Cancelling his own x
+   (which the outer element's transform applied) and re-adding a gutter puts
+   the panel's left edge at a fixed 16px from the viewport while it still
+   rides up and down with his head. */
+.avatar-bubble[data-bubble-fit="viewport"] .avatar-bubble-panel {
+  left: calc(16px - var(--bubble-x, 0px));
+  right: auto;
+  width: calc(100vw - 32px);
+  max-width: none;
+}
+
+.avatar-bubble[data-shown="true"] .avatar-bubble-panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.avatar-bubble-panel p {
+  margin: 0;
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #fff;
+  text-wrap: pretty;
+}
+
+/* The two offers sit on one line and wrap rather than stacking by default:
+   "Tell me more" is always there and "Show me" only sometimes, so a column
+   would change the panel's height every time a suggestion happens to carry a
+   destination. */
+.avatar-bubble-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.avatar-bubble-next,
+.avatar-bubble-go {
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Going somewhere is the louder of the two, so it carries the accent and
+   "tell me more" steps back to a quieter white. The old single button had the
+   accent; handing it to the action that leaves the spot is what keeps one
+   emphasis in the panel rather than two. */
+.avatar-bubble-go {
+  color: #ffcda8;
+}
+
+.avatar-bubble-next {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* ...unless it is the only thing in the row, in which case it is the one
+   thing to click and should look like it. Most suggestions have no
+   destination. */
+.avatar-bubble-next:only-child {
+  color: #ffcda8;
+}
+
+/* The off switch. Quietest thing in the panel -- it is there for the visitor
+   who wants it gone, and it should not compete with the thing that moves the
+   experience forward. */
+.avatar-bubble-mute {
+  margin-left: auto;
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.avatar-bubble-next:hover,
+.avatar-bubble-next:focus-visible,
+.avatar-bubble-go:hover,
+.avatar-bubble-go:focus-visible,
+.avatar-bubble-mute:hover,
+.avatar-bubble-mute:focus-visible {
+  color: #fff;
+}
+
+/* The unread marker: a small count that sits where the bubble would be. */
+.avatar-unread {
+  --size: 26px;
+}
+
+.avatar-unread > span {
+  position: absolute;
+  bottom: 2px;
+  left: 14px;
+  display: grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 999px;
+  /* Solid accent, deliberately louder than the bubble itself. SoundToggle's
+     nudge makes the same distinction for the same reason: a translucent chip
+     is an invitation, a solid one is asking for attention. */
+  background: #d25a1a;
+  color: #fff;
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.8);
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+
+.avatar-unread[data-bubble-side="left"] > span {
+  left: auto;
+  right: 14px;
+}
+
+.avatar-unread[data-shown="true"] > span {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+/* A slow breath, so it reads as waiting rather than as an alert. */
+@keyframes avatar-unread-breathe {
+  0%, 100% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(210, 90, 26, 0.5) }
+  50%      { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 0 7px rgba(210, 90, 26, 0) }
+}
+
+.avatar-unread[data-shown="true"] > span {
+  animation: avatar-unread-breathe 2.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-bubble-panel,
+  .avatar-unread > span { transition: none }
+  .avatar-unread[data-shown="true"] > span { animation: none }
+}

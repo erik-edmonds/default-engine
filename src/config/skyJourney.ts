@@ -33,6 +33,7 @@ import {
  *  re-exported here, so the many existing importers are undisturbed -- see that
  *  file for why it cannot live in this one. */
 import { SKY_JOURNEY_DISTANCE } from "@/config/skyAxis"
+import { skyFrame } from "@/helpers/skyFrame"
 export { SKY_JOURNEY_DISTANCE }
 
 /** How long the displayed offset takes to catch up to the scrolled-to target.
@@ -305,7 +306,21 @@ export function cameraSkyPose(
   // it and reads as a camera rather than a pan. Both are scaled by the block's
   // own weight, so the lean arrives and leaves with the words.
   const focus = skyTextFocus(offset)
-  const lean = focus.lean
+  // NO LEAN IN PORTRAIT.
+  //
+  // The lean exists to open up one half of a wide frame for a block of text
+  // and push the subject into the other half. A phone has no second half --
+  // the words are stacked on the flight axis above the subject there (see
+  // SkyCaptionBillboard) -- so there is nothing to make room for, and leaning
+  // only drags the one thing worth looking at off centre. Measured before
+  // this: an on-axis block reading ndc 0.41 and 0.81 purely from the camera
+  // turning toward where it would have been on a desktop.
+  //
+  // Read from the live frame rather than passed in, because every caller of
+  // this is a frame callback and the alternative is threading a viewport
+  // through the whole choreography. skyFrame imports nothing, so there is no
+  // cycle back into this file.
+  const lean = skyFrame.portrait ? 0 : focus.lean
   // The rise is unsigned: it happens whenever the camera is off the subject at
   // all, whichever way it has gone.
   const leaning = Math.abs(lean)
@@ -356,26 +371,46 @@ export function corridorOrigin(offset: number, out: { x: number; y: number; z: n
  *  it can be as long as it needs to be and is read by a screen reader for free.
  *
  *  SIDE alternates, and the camera leans with it -- see skyTextFocus. */
+/** THE FIVE BLOCKS, AND WHY THERE ARE STILL FIVE.
+ *
+ *  These were all personal register -- nomad, Pokémon, scuba, side project --
+ *  151 words that told you what Erik is like and nothing about what he does.
+ *  The sky is also the hardest place on the site to reach, behind the Poké
+ *  Ball, so it is the worst place to spend a visitor's attention on trivia
+ *  alone. Each block now carries one professional fact and keeps its hook.
+ *
+ *  THE COUNT DID NOT CHANGE, deliberately. The corridor is timed against
+ *  these sections -- one cloud crosses per block (SKY_SECTION_START) -- so
+ *  adding blocks without lengthening SKY_JOURNEY_DISTANCE makes every cloud
+ *  cross faster, and lengthening the axis changes a pace that took three
+ *  rounds to settle and that has been signed off. Rewriting five blocks costs
+ *  nothing geometric; adding a sixth re-opens all of it.
+ *
+ *  THE BODY CEILING IS ABOUT 36 WORDS. Not a guess: that is the longest of
+ *  the blocks this replaces, which is the longest length known to fit, and
+ *  portrait paints the same words into a 210px column (see paint() in
+ *  SkyCaptionBillboard) where a longer block grows downward with nothing
+ *  clamping it. Nothing below exceeds it. */
 const CUE_CONTENT = [
   {
-    text: "Digital Nomad",
-    body: "Work happens wherever the wifi holds. Five countries in the last two years, most of the good ideas arriving somewhere between a departure lounge and a borrowed kitchen table.",
+    text: "Data Scientist, Mostly Remote",
+    body: "Models, computer vision, and the visualisation that makes them legible. Work happens wherever the wifi holds -- five countries in two years, most good ideas arriving between a departure lounge and a borrowed kitchen table.",
+  },
+  {
+    text: "Photographs In, Scenes Out",
+    body: "Gaussian splatting is the work I would lead with: a few million fitted gaussians turning ordinary photographs into a scene you can fly a camera through, in real time, in a browser.",
   },
   {
     text: "Pokémon Trainer at Heart",
-    body: "The first thing I ever built was a type-matchup calculator, written badly, for a schoolyard argument I was losing. The habit of turning an argument into a model never really went away.",
+    body: "The first thing I ever built was a type-matchup calculator, written badly, for a schoolyard argument I was losing. Turning an argument into a model is still the job -- lately on driving policies, in CARLA.",
   },
   {
     text: "Certified Scuba Diver",
     body: "Open water since 2019. Thirty metres down there is no signal, no backlog and nothing to optimise -- which turns out to be the only reliable way I have found to think about a hard problem.",
   },
   {
-    text: "Perpetual Side Project",
-    body: "There is always one running in the background: a scraper, a model, some small tool nobody asked for. This island is the current one, and it has eaten more evenings than I will put in writing.",
-  },
-  {
     text: "Let's Connect",
-    body: "Always glad to talk about data, models, or the least sensible place you have ever opened a laptop.",
+    body: "Available for freelance and contract work: modelling, computer vision, simulation, and making the results legible to whoever is paying for them. Glad to talk about any of it.",
   },
 ]
 

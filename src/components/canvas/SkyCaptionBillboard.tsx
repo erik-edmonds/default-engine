@@ -6,16 +6,23 @@ import { useFrame } from "@react-three/fiber"
 
 import { skyScroll } from "@/helpers/skyScroll"
 import { skyCaptionBox } from "@/helpers/skyCaptionBox"
+import { frameHalfHeight, frameHalfWidth, skyFrame } from "@/helpers/skyFrame"
 import { flightBasis, makeFlightBasis, placeInFlightFrame, viewAxisUp } from "@/config/flightFrame"
 import { corridorOrigin, skyTextFocus, SKY_TEXT_CUES } from "@/config/skyJourney"
 import {
   CAPTION_CSS_WIDTH,
+  CAPTION_CSS_WIDTH_PORTRAIT,
+  CAPTION_TYPE_PORTRAIT,
   CAPTION_FADE_IN,
   CAPTION_FAR_AXIAL,
   CAPTION_NEAR_AXIAL,
-  CAPTION_SIDE_OFFSET,
-  CAPTION_UP_OFFSET,
-  CAPTION_WORLD_WIDTH,
+  CAPTION_READ_AXIAL,
+  CAPTION_SIDE_NDC,
+  CAPTION_UP_NDC,
+  CAPTION_UP_NDC_PORTRAIT,
+  CAPTION_TOP_LIMIT_NDC,
+  CAPTION_WIDTH_NDC,
+  CAPTION_WIDTH_NDC_PORTRAIT,
 } from "@/config/paperSky"
 import { CAMERA_BEHIND } from "@/config/flightFrame"
 
@@ -83,31 +90,98 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   return lines
 }
 
+/** Draw one line flush to BOTH edges of the column.
+ *
+ *  Canvas has no justified text -- `textAlign` offers start/end/centre and
+ *  nothing else -- so the slack is distributed by hand: measure the words,
+ *  divide what is left of the column between the gaps, and place each word
+ *  itself. Asked for because portrait stacks the block on the flight axis,
+ *  where there is no subject beside it for a ragged edge to run against:
+ *  "since there's no left or right side to align with, make the text
+ *  justified."
+ *
+ *  THE LAST LINE OF A BLOCK IS NEVER JUSTIFIED. Stretching four words across
+ *  a full measure is the classic justification failure -- rivers of white
+ *  with a few words floating in them -- and every typesetter leaves the last
+ *  line short. A line with one word cannot be justified at all.
+ *
+ *  Returns nothing; it draws. `ctx.textAlign` must already be "left".
+ */
+function fillJustified(
+  ctx: CanvasRenderingContext2D,
+  line: string,
+  x: number,
+  y: number,
+  width: number,
+  last: boolean,
+) {
+  const words = line.split(" ")
+  if (last || words.length < 2) {
+    ctx.fillText(line, x, y)
+    return
+  }
+  const wordWidth = words.reduce((sum, w) => sum + ctx.measureText(w).width, 0)
+  const gap = (width - wordWidth) / (words.length - 1)
+  // A line that is already over the measure (one very long word plus a short
+  // one) would get a negative gap and overlap itself. Fall back to normal
+  // spacing rather than drawing letters on top of each other.
+  if (gap <= 0) {
+    ctx.fillText(line, x, y)
+    return
+  }
+  let cursor = x
+  for (const word of words) {
+    ctx.fillText(word, cursor, y)
+    cursor += ctx.measureText(word).width + gap
+  }
+}
+
 /** Draw one block, and report how tall it came out so the plane can match. */
 function paint(canvas: HTMLCanvasElement, cue: (typeof SKY_TEXT_CUES)[number]) {
   const s = TEXTURE_SCALE
-  const W = CAPTION_CSS_WIDTH
+  // A NARROWER COLUMN WITH SMALLER TYPE IN PORTRAIT, not the wide one shrunk.
+  //
+  // The block lands about 202 physical pixels wide on a 404px phone. Painting
+  // the landscape column at 360 and letting the plane scale it down to that
+  // is a 0.56x resample and the body copy turns to grey mush -- which is what
+  // the first portrait build looked like. Authored at 210 it arrives close to
+  // 1:1. The type sizes shrink in step so the line lengths stay about the
+  // same in CHARACTERS, which is what decides whether prose reads.
+  const portrait = skyFrame.portrait
+  const W = portrait ? CAPTION_CSS_WIDTH_PORTRAIT : CAPTION_CSS_WIDTH
+  const T = portrait
+    ? CAPTION_TYPE_PORTRAIT
+    : { head: 54, headLead: 57, body: 21, bodyLead: 33, eyebrow: 15 }
   const family = nunito()
   const ctx = canvas.getContext("2d")!
 
   // Measured first, on a throwaway pass, because the height depends on how the
   // body wraps and the canvas has to be sized before anything is drawn.
-  ctx.font = `400 21px ${family}`
+  ctx.font = `400 ${T.body}px ${family}`
   const bodyLines = wrap(ctx, cue.body, W)
-  ctx.font = `700 54px ${family}`
+  ctx.font = `700 ${T.head}px ${family}`
   const headLines = wrap(ctx, cue.text, W)
-  const height = 15 + 16 + headLines.length * 57 + 18 + bodyLines.length * 33
+  const height =
+    15 + 16 + headLines.length * T.headLead + 18 + bodyLines.length * T.bodyLead
 
   canvas.width = W * s
   canvas.height = Math.ceil(height) * s
   ctx.setTransform(s, 0, 0, s, 0, 0)
   // Aligned toward the middle of the picture, so the straight edge of the type
-  // runs down the side the subject is on -- except the contact card, which is
-  // ON the middle and so is set centred. Ragging it toward one side would
-  // pull it off the axis it was just put on.
+  // runs down the side the subject is on. That is a LANDSCAPE rule and it
+  // depends on there being a side: the block sits in one half of the frame
+  // with the subject in the other, and the type rags away from him.
+  //
+  // JUSTIFIED WHEN THE BLOCK IS STACKED ON THE AXIS. In portrait, and for the
+  // contact card on any viewport, the words are centred over the flight line
+  // and there is no subject beside them -- "since there's no left or right
+  // side to align with, make the text justified". Both edges flush is what
+  // gives a column standing on its own a shape; centring left it with two
+  // ragged edges and no architecture at all.
+  const justified = skyFrame.portrait || cue.centred
   const right = cue.side < 0
-  ctx.textAlign = cue.centred ? "center" : right ? "right" : "left"
-  const x = cue.centred ? W / 2 : right ? W : 0
+  ctx.textAlign = justified ? "left" : right ? "right" : "left"
+  const x = justified ? 0 : right ? W : 0
 
   // The same shadow the DOM block carried: the paper sky is bright and its
   // value changes as clouds pass, so the type brings its own contrast rather
@@ -117,27 +191,37 @@ function paint(canvas: HTMLCanvasElement, cue: (typeof SKY_TEXT_CUES)[number]) {
   ctx.shadowOffsetY = 1
 
   let y = 15
-  ctx.font = `700 15px ${family}`
+  ctx.font = `700 ${T.eyebrow}px ${family}`
   ctx.fillStyle = "rgba(255,255,255,0.82)"
-  ctx.letterSpacing = "3.3px"
+  ctx.letterSpacing = `${(3.3 * T.eyebrow) / 15}px`
   ctx.fillText(cue.eyebrow.toUpperCase(), x, y)
   ctx.letterSpacing = "0px"
 
-  y += 16 + 44
-  ctx.font = `700 54px ${family}`
+  y += 16 + T.head * 0.815
+  ctx.font = `700 ${T.head}px ${family}`
   ctx.fillStyle = "#ffffff"
-  for (const l of headLines) {
+  // THE HEADLINE IS NOT JUSTIFIED, even when the body is.
+  //
+  // Justification distributes slack between the gaps, so the fewer words on a
+  // line the wider each gap has to open. The body runs eight or nine words to
+  // a line and closes up invisibly; the headline is 27px display type in a
+  // 210px column, which is two or three words, and "Data Scientist," came out
+  // with a visible river down the middle of the first line -- it reads as a
+  // typesetting fault rather than as a decision. Display type is left ragged
+  // for this reason just about everywhere it is set.
+  headLines.forEach((l) => {
     ctx.fillText(l, x, y)
-    y += 57
-  }
+    y += T.headLead
+  })
 
-  y += 18 - 57 + 33
-  ctx.font = `400 21px ${family}`
+  y += 18 - T.headLead + T.bodyLead
+  ctx.font = `400 ${T.body}px ${family}`
   ctx.fillStyle = "rgba(255,255,255,0.92)"
-  for (const l of bodyLines) {
-    ctx.fillText(l, x, y)
-    y += 33
-  }
+  bodyLines.forEach((l, i) => {
+    if (justified) fillJustified(ctx, l, x, y, W, i === bodyLines.length - 1)
+    else ctx.fillText(l, x, y)
+    y += T.bodyLead
+  })
   return height
 }
 
@@ -165,6 +249,11 @@ export function SkyCaptionBillboard() {
   // `focus` -- so the words on the plane and the plane's position cannot
   // disagree, whatever the frame rate.
   const painted = useRef(-1)
+  // Which SHAPE the canvas was painted for. Portrait and landscape use
+  // different column widths and type sizes, so a block painted in one and
+  // shown in the other is either a soft downscale or an overflow -- and the
+  // cue index alone would not notice a device being rotated.
+  const paintedPortrait = useRef<boolean | null>(null)
   const aspect = useRef(1)
   const fontsReady = useRef(false)
   // Lazily, inside the frame loop: a vector made during render is a render
@@ -202,12 +291,12 @@ export function SkyCaptionBillboard() {
     node.visible = true
 
     // PAINTED HERE, BEFORE IT IS PLACED. Same frame, same `focus`.
-    if (focus.index !== painted.current) {
+    if (focus.index !== painted.current || skyFrame.portrait !== paintedPortrait.current) {
       const cue = SKY_TEXT_CUES[focus.index]
       if (cue) {
         const c = (canvas.current ??= document.createElement("canvas"))
         const height = paint(c, cue)
-        aspect.current = height / CAPTION_CSS_WIDTH
+        aspect.current = height / (skyFrame.portrait ? CAPTION_CSS_WIDTH_PORTRAIT : CAPTION_CSS_WIDTH)
         // A NEW TEXTURE WHENEVER THE CANVAS RESIZES, not a re-upload of the
         // old one. Blocks wrap to different numbers of lines, so the canvas
         // changes height from one to the next, and handing a driver a
@@ -229,22 +318,57 @@ export function SkyCaptionBillboard() {
           material.current.needsUpdate = true
         }
         painted.current = focus.index
+        paintedPortrait.current = skyFrame.portrait
       }
     }
     // The plane is authored square and SCALED to the block's proportions, so
     // the shape follows the paint in the same frame. Rebuilding
     // <planeGeometry> through React state was the other half of the lag.
-    if (mesh.current) mesh.current.scale.set(1, aspect.current, 1)
+    // SIZED AND PLACED AGAINST THE FRAME THAT IS ACTUALLY ON SCREEN.
+    //
+    // All three numbers below are fractions of the frame at the block's
+    // READING distance -- a fixed reference, not the block's live distance --
+    // so the block keeps one world size and one world offset for the whole of
+    // its pass and still sweeps out past the lens at the end. Re-deriving
+    // them at the live distance would pin the block to the screen and it
+    // would never leave.
+    const readAhead = CAPTION_READ_AXIAL - CAMERA_BEHIND
+    const halfW = frameHalfWidth(readAhead)
+    const halfH = frameHalfHeight(readAhead)
+    const worldWidth =
+      (skyFrame.portrait ? CAPTION_WIDTH_NDC_PORTRAIT : CAPTION_WIDTH_NDC) * 2 * halfW
+    // The plane is authored 1x1 and scaled, so its width is a live value
+    // rather than a geometry argument React would have to rebuild.
+    if (mesh.current) mesh.current.scale.set(worldWidth, worldWidth * aspect.current, 1)
 
     const axial = CAPTION_FAR_AXIAL + (CAPTION_NEAR_AXIAL - CAPTION_FAR_AXIAL) * focus.turn
     const ahead = axial - CAMERA_BEHIND
+    // STACKED IN PORTRAIT, BESIDE IN LANDSCAPE.
+    //
+    // A narrow frame has no second half to put a paragraph in -- the subject
+    // is already most of its width -- so the words go overhead on the flight
+    // axis instead and the composition becomes vertical. The contact card has
+    // behaved exactly this way on every viewport since it became a
+    // destination; portrait simply makes every block behave like it.
+    const stacked = focus.centred || skyFrame.portrait
+    // HOW HIGH THE CENTRE GOES, GIVEN WHERE THE TOP HAS TO STAY.
+    //
+    // The two CAPTION_UP_NDC constants place the centre, and the block's
+    // height is whatever paint() wrapped the copy into -- so a longer
+    // headline pushes the first line off the top of the frame and nothing
+    // notices. Measured in portrait after Round 33's rewrite: top edge at ndc
+    // 1.05, eyebrow outside the picture. CAPTION_TOP_LIMIT_NDC says where the
+    // top may reach; a block that already fits is not moved, and a taller one
+    // comes down by exactly its overflow.
+    const wantUp = skyFrame.portrait ? CAPTION_UP_NDC_PORTRAIT : CAPTION_UP_NDC
+    const halfHeightNdc = (worldWidth * aspect.current) / 2 / halfH
+    const upNdc = Math.min(wantUp, CAPTION_TOP_LIMIT_NDC - halfHeightNdc)
     placeInFlightFrame(
       flightBasis(skyScroll.display, (basis.current ??= makeFlightBasis())),
       corridorOrigin(skyScroll.display, (origin.current ??= { x: 0, y: 0, z: 0 })),
       ahead,
-      // ON THE AXIS for the contact card -- see `centred` in skyTextFocus.
-      focus.centred ? 0 : focus.side * CAPTION_SIDE_OFFSET,
-      viewAxisUp(ahead) + CAPTION_UP_OFFSET,
+      stacked ? 0 : focus.side * CAPTION_SIDE_NDC * halfW,
+      viewAxisUp(ahead) + upNdc * halfH,
       node.position,
     )
     // Square to the corridor, like every other flat thing out here -- see the
@@ -307,7 +431,10 @@ export function SkyCaptionBillboard() {
     <group ref={group} name="sky-caption-3d" visible={false}>
       <mesh ref={mesh} frustumCulled={false}>
         {/* Square, and scaled to the block's aspect in the frame loop. */}
-        <planeGeometry args={[CAPTION_WORLD_WIDTH, CAPTION_WORLD_WIDTH]} />
+        {/* Authored 1x1 and scaled every frame -- see the frame maths in
+            the callback above. The width has to follow the viewport, and a
+            geometry argument would mean rebuilding the buffer to change it. */}
+        <planeGeometry args={[1, 1]} />
         {/* depthTest ON is the whole point -- it is what lets the Dragonite
             stand in front of the words. depthWrite OFF because the plane is
             mostly transparent and would otherwise punch a hole in whatever is

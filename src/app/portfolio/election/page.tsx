@@ -116,6 +116,16 @@ export default function ElectionPage() {
   const [mode, setMode] = useState<Mode>("county");
   const [areaMode, setAreaMode] = useState<AreaMode>("vote");
   const [searchInput, setSearchInput] = useState("");
+  /** THE DATA IS NOT IN THE REPOSITORY.
+   *
+   *  The three CSVs this reads live under public/election-data/, a directory
+   *  that does not exist -- so `setup()` below used to reject into nothing
+   *  (it was called with no catch) and the page rendered its full control bar
+   *  over a permanently empty chart. 810 lines of working D3 presenting
+   *  itself as broken is worse than 810 lines admitting what is missing, so
+   *  the failure is caught and said out loud. Drop the files in and this
+   *  state never appears again. */
+  const [dataMissing, setDataMissing] = useState(false);
 
   const demographicMode = useMemo(
     () => mode === "race" || mode === "gender" || mode === "age" || mode === "education",
@@ -697,7 +707,11 @@ export default function ElectionPage() {
       };
     }
 
-    setup();
+    // Catching rather than letting it reject into nothing: a missing CSV is
+    // the one failure this page actually has, and it is silent.
+    setup().catch(() => {
+      if (!cancelled) setDataMissing(true);
+    });
     window.addEventListener("resize", resize);
 
     return () => {
@@ -716,6 +730,39 @@ export default function ElectionPage() {
     setSearchInput("");
     apiRef.current?.search("");
   };
+
+  if (dataMissing) {
+    // NOT `.election-page`. That class is the chart's own stylesheet -- a
+    // white ground and a serif face, authored when this was a standalone
+    // page -- and wearing it inside the portfolio's dark column paints a
+    // light slab with grey-on-grey text in it. The written fallback belongs
+    // to the layout it is sitting in, so it uses the layout's classes.
+    return (
+      <main>
+        <p className="pf-eyebrow">Data visualisation</p>
+        <h1 className="pf-title">The Election Map</h1>
+        <p className="pf-lead">
+          Every US county plotted by turnout against margin, with area carrying raw votes,
+          electoral votes or vote power — and the same view cross-cut by race, sex, age and
+          education, steppable by year.
+        </p>
+        <div className="pf-sections">
+          <section className="pf-section">
+            <h2 className="pf-h2">Not loaded</h2>
+            <p className="pf-body">
+              The chart is here and working — 810 lines of live D3. Its three data files are
+              not: they are large, they are generated, and they are not in this repository
+              yet.
+            </p>
+            <p className="pf-body pf-note">
+              Expected at <code>public/election-data/county_2020.csv</code>,{" "}
+              <code>state_2020.csv</code> and <code>demographic.csv</code>.
+            </p>
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="election-page" ref={rootRef}>

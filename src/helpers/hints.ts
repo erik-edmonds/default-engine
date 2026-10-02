@@ -6,22 +6,37 @@ import { atom } from "jotai"
 // The vocabulary shared by the hint director (useHintDirector.ts), the
 // in-canvas projector (HintAnchor.tsx) and the DOM half (SceneHint.tsx).
 //
+// WHAT IS LEFT HERE, AND WHY ONLY THIS. There used to be three discovery
+// nudges in this file too -- play the guitar, make it rain, open the Poké Ball
+// -- drawn as black-glass captions pinned over the prop in question. They are
+// gone: those were anonymous chrome telling you to click something, and they
+// are entries in the avatar's suggestion queue now (config/suggestions.ts),
+// where the same information has someone saying it and can carry a sentence
+// about the person whose site this is.
+//
+// The two that remain are not discovery and could not move. Both fire while
+// the camera is at or inside a portal, which is exactly where the avatar is
+// not on screen to say anything -- a bubble anchored to him would be held
+// hidden by AvatarAnchor for the entire time the visitor needs to be told how
+// to get back out. They are instructions about the state you are in, pinned to
+// the thing that changes it.
+//
 // Deliberately separate from the existing InteractionHint: that one is the
 // single "the scene is interactive at all" onboarding beat and finishes long
-// before any of these can fire. These are contextual nudges toward specific
-// objects, at most one on screen at a time.
+// before either of these can fire.
 
-export type HintId = "guitar" | "clouds" | "pokeball" | "portalEnter" | "portalExit"
+export type HintId = "portalEnter" | "portalExit"
 
 /** Where a hint pins itself.
  *
  *  - `world`  a fixed point in the scene, projected every frame.
- *  - `cloud`  resolved to whichever registered cloud is nearest screen centre.
- *             Cloud positions are `Math.random()` at module load (see
- *             config/store.ts), so unlike the guitar there is no fixed point
- *             to aim at -- it has to be picked from live instances.
  *  - `screen` a fixed viewport offset, for pointing at DOM chrome (the home
- *             button) rather than at anything in the scene. */
+ *             button) rather than at anything in the scene.
+ *
+ *  A `cloud` kind sat here too, resolving to whichever registered cloud was
+ *  nearest screen centre, because cloud positions are `Math.random()` at
+ *  module load and there was no fixed point to aim at. It went with the clouds
+ *  hint, and so did the registry in Sky.tsx that fed it. */
 export type HintTarget =
   /** A fixed point in the scene, projected every frame.
    *
@@ -33,7 +48,6 @@ export type HintTarget =
    *  act on this from here -- rather than on which hotspot some variable
    *  believes you are at, makes the hint correct by construction. */
   | { kind: "world"; position: THREE.Vector3; maxDistance?: number }
-  | { kind: "cloud" }
   | { kind: "screen"; left: number; top: number }
 
 export interface ActiveHint {
@@ -45,40 +59,17 @@ export interface ActiveHint {
 //
 // Two copy variants only where the gesture itself differs by input device -- a
 // portal opens on double-click with a mouse and on a long press by touch
-// (Card.tsx) -- and one shared string everywhere else, since "play the guitar"
-// reads the same however you happen to be pointing at it. Rendered uppercase
-// by CSS, so these stay sentence case here.
+// (Card.tsx). Rendered uppercase by CSS, so these stay sentence case here.
 //
-// `marker` is what separates the two jobs these hints do. The discovery ones
-// have to single out one small prop in a busy scene, so they need a dot to
-// point with. The portal ones don't: their subject is either the thing filling
-// the frame or a button in the corner, both unmistakable, and a dot next to
-// the caption there is just clutter hanging off the text.
+// `marker` is false for both of these, and that is not a coincidence now that
+// the discovery hints are gone: the dot existed to single out one small prop
+// in a busy scene. These two point at the thing filling the frame and at a
+// button in the corner, both unmistakable, and a dot beside the caption there
+// is clutter hanging off the text.
 export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boolean }> = {
-  guitar: { fine: "Play the guitar", coarse: "Play the guitar", marker: true },
-  clouds: { fine: "Make it rain", coarse: "Make it rain", marker: true },
-  // Parked, not retired: both props are commented out of Scene.tsx until the
-  // sky and underwater scenes are finished, so neither id appears in PRIORITY
-  // (useHintDirector.ts) and neither hint can fire. Kept here, with their
-  // marker positions below, so switching them back on is one line in that list.
-  pokeball: { fine: "Open the Poké Ball", coarse: "Open the Poké Ball", marker: true },
   portalEnter: { fine: "Double-click to enter", coarse: "Press and hold to enter", marker: false },
   portalExit: { fine: "Click home to exit", coarse: "Tap home to exit", marker: false },
 }
-
-/** The guitar's world position. Scene.tsx mounts it at [0.1, -0.7, 1] inside a
- *  group with no transform of its own, so scene-local is world here; the
- *  marker is lifted a little so the label sits above the instrument rather
- *  than over it. */
-export const GUITAR_HINT_POSITION = new THREE.Vector3(0.1, -0.35, 1)
-
-/** Same lift as the guitar's, over the prop's own world position -- Scene.tsx
- *  mounts the Poke Ball at [-3.25, -1.5, 0], inside an untransformed group.
- *
- *  GEAR_HINT_POSITION sat beside this and pointed at the scuba gear. Both it
- *  and the gear are gone: /portfolio is reached through the Models portal now,
- *  so there is no prop on the beach left to nudge anyone toward. */
-export const POKEBALL_HINT_POSITION = new THREE.Vector3(-3.25, -0.95, 0)
 
 /** Where the portalExit caption starts: immediately to the right of the 56px
  *  home logo and vertically centred on it, so it reads as a label *for* the
@@ -87,18 +78,6 @@ export const POKEBALL_HINT_POSITION = new THREE.Vector3(-3.25, -0.95, 0)
  *  12px gap, and 48 for the centre line. */
 export const HOME_BUTTON_HINT_ANCHOR = { left: 88, top: 48 } as const
 
-// How long the user has to go without touching anything interactive before a
-// discovery nudge appears. Nudging someone who is already busy is the
-// disruption worth avoiding, so this is an idle gate, not a timer from load.
-export const DISCOVER_IDLE_MS = 10000
-/** ...and how long once a discovery hint has already been shown. Only one may
- *  be on screen at a time and retiring one resets the idle clock, so at a flat
- *  10s a visitor realistically sees the first and the rest may as well not
- *  exist. A shorter re-arm keeps the first nudge unhurried while letting a
- *  lingering visitor actually reach the later ones. (Two are live today --
- *  see PRIORITY in useHintDirector.ts, which is also the list that decides
- *  which exist at all.) */
-export const DISCOVER_REARM_IDLE_MS = 6000
 /** Floor, so a hint satisfied almost immediately still reads as deliberate
  *  rather than as a flicker. Matches InteractionHint's own MIN_VISIBLE_MS. */
 export const HINT_MIN_VISIBLE_MS = 2000
@@ -124,11 +103,6 @@ export const LONG_PRESS_SLOP_PX = 12
 /** The hint currently on screen, or null. Written only by useHintDirector. */
 export const activeHint = atom<ActiveHint | null>(null)
 
-/** Whether any registered cloud is currently on screen. Written by HintAnchor
- *  (which has the camera) and read by the director (which doesn't) as a
- *  precondition, so the clouds hint is never spent pointing off-frame. */
-export const cloudOnScreen = atom(false)
-
 /** Whether the active hint is actually rendered where someone can see it.
  *  False between a hint being chosen and the projector's next frame placing it
  *  (and for as long as its subject is out of frame). The director holds both
@@ -136,25 +110,6 @@ export const cloudOnScreen = atom(false)
  *  hint can burn its whole 7s ceiling before it has been drawn once, which is
  *  exactly what happens when the render loop stalls. */
 export const hintOnScreen = atom(false)
-
-// The clouds eligible to carry a hint. Sky.tsx registers only the instances
-// that actually render (drei's <Instances range> draws a prefix of the
-// children, while the data array itself is 1000 long), and unregisters on
-// unmount. A Set because registration order carries no meaning -- HintAnchor
-// picks by screen position, not by index.
-const hintClouds = new Set<THREE.Object3D>()
-
-export function registerHintCloud(node: THREE.Object3D) {
-  hintClouds.add(node)
-}
-
-export function unregisterHintCloud(node: THREE.Object3D) {
-  hintClouds.delete(node)
-}
-
-export function getHintClouds(): ReadonlySet<THREE.Object3D> {
-  return hintClouds
-}
 
 // SceneHint's outer element, published so HintAnchor can write transforms
 // straight onto it from inside <Canvas>. The two live on opposite sides of the

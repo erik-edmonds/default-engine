@@ -7,7 +7,7 @@ import { useGLTF } from '@/helpers/useGLTF'
 import { useSetAtom } from 'jotai'
 import { rainRequest, thunder } from '@/helpers/StateProvider'
 import { MAGNETIC_SNAP_RADIUS, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
-import { registerHintCloud, unregisterHintCloud } from '@/helpers/hints'
+
 
 /** What the group's single frame loop needs to know about one cloud. Hover
  *  lives here rather than in React state: the only thing that reads it is the
@@ -149,25 +149,12 @@ function Cloud({ random, ...props }: CloudDatum) {
     }
   }, [entries, random])
 
-  // Offer this instance to the hint system. Registering the <Instance> rather
-  // than the wrapping group is deliberate: the bob is written onto the
-  // instance's own position, so its world position is the cloud's actual
-  // on-screen position, bob included. Cloud placement is randomised per visit
-  // (config/store.ts), so there's no fixed point a hint could aim at -- it has
-  // to pick from whatever is live.
-  //
-  // Every cloud is offered now. There used to be a `hintTarget` prop gating
-  // this on `i < range`, because the data arrays were 1000 long and only the
-  // first few drew; the arrays are now exactly the sky, so every entry is a
-  // cloud someone can actually see and point at.
-  useEffect(() => {
-    // Cast because this file's refs are untyped throughout; drei's <Instance>
-    // resolves to a PositionMesh, which is a real Object3D in the graph.
-    const node = ref.current as THREE.Object3D | undefined
-    if (!node) return
-    registerHintCloud(node)
-    return () => unregisterHintCloud(node)
-  }, [])
+  // Clouds used to register themselves with the hint system here, so a
+  // "make it rain" caption could pick whichever one was nearest screen centre
+  // -- placement is randomised per visit (config/store.ts), so there was no
+  // fixed point to aim at. That hint is a line in the avatar's suggestion
+  // queue now (config/suggestions.ts); he says it from where he is standing
+  // and needs no cloud to point at, so the registry went with it.
 
   // A cloud is hover-highlighted and click-to-rain, so it is exactly the kind
   // of thing the cursor should be drawn to -- but it was the one interactive

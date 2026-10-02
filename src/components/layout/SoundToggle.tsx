@@ -135,13 +135,43 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
         ? NIGHT_AMBIENT_VOLUME
         : AMBIENT_VOLUME
 
+    const stops: ReturnType<typeof setTimeout>[] = []
+
     if (incoming.state() === "unloaded") incoming.load()
-    if (!incoming.playing()) incoming.play()
+    const wasPlaying = incoming.playing()
+    if (!wasPlaying) incoming.play()
     incoming.fade(incoming.volume(), incomingVolume, CROSSFADE_MS)
+
+    // ...AND THEN MAKE SURE IT ACTUALLY GOT THERE.
+    //
+    // "On return to the earth, the island ambient noise doesn't start up
+    // again, it's just silence." Measured across a round trip, reading
+    // Howler's own state: on the island tides.mp3 playing at 0.05 and rising,
+    // in the sky clouds.mp3 at 0.18, and back home waves.mp3 reporting
+    // `playing: true` at volume `0`. The bed resumes and the ramp never
+    // happens, which is silence that looks like it is working.
+    //
+    // A fade issued in the same tick as play() can be lost on these beds:
+    // they are html5 streams, Howler applies a fade to the sounds currently
+    // playing, and an <audio> element that has only just been told to start
+    // has none yet -- so the fade is applied to nothing and the volume stays
+    // where the last fade-out left it. The resume path is the one that hits
+    // it, because that is the only one where the Howl was paused at zero.
+    //
+    // Asserted rather than re-architected: let the fade do its work, then
+    // check. If it took, this is a no-op; if it was lost, the bed arrives a
+    // beat late instead of never. Cleared with the others below, so a flip
+    // back mid-crossfade cannot shout a track that is on its way out.
+    stops.push(
+      setTimeout(() => {
+        if (incoming.playing() && incoming.volume() < incomingVolume - 0.01) {
+          incoming.volume(incomingVolume)
+        }
+      }, CROSSFADE_MS + 80),
+    )
 
     // Only fade an outgoing track if it's actually audible -- fading a
     // stopped Howl from 0 to 0 is a no-op that still schedules a timer.
-    const stops: ReturnType<typeof setTimeout>[] = []
     for (const outgoing of [waves, tides, clouds]) {
       if (outgoing === incoming || !outgoing.playing()) continue
       outgoing.fade(outgoing.volume(), 0, CROSSFADE_MS)

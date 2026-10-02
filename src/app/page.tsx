@@ -9,8 +9,8 @@ import { Canvas } from "@react-three/fiber";
 import { PerformanceMonitor, Preload, useProgress } from '@react-three/drei'
 import { budgetPortalTargets } from '@/helpers/usePortalTargetBudget'
 import { skyScroll, resetSkyScroll, impulseSkyScroll, advanceSkyScroll } from '@/helpers/skyScroll'
-import { Bloom, EffectComposer, N8AO, Noise, ToneMapping } from "@react-three/postprocessing";
-import { BlendFunction, ToneMappingMode } from "postprocessing";
+import { Bloom, EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
+import { ToneMappingMode } from "postprocessing";
 import { useAppState, raining, clicked, pointer, inSkyJourney, goHomeRequest, musicEnabled, titleScreenActive, sfxEnabled, portalExitRequest, portalEnterRequest , skyWorldMounted, skySequenceStarted} from "@/helpers/StateProvider";
 import { useSfx } from "@/helpers/useSfx";
 import SoundToggle from "@/components/layout/SoundToggle";
@@ -19,12 +19,11 @@ import { CameraController, type CameraControllerHandle } from "@/components/canv
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { SunFlare } from "@/components/canvas/SunFlare";
-import { SkyGrain } from "@/components/canvas/SkyGrain";
-import { skyGrain } from "@/helpers/skyGrain";
+import { AvatarAnchor } from "@/components/canvas/AvatarAnchor";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { timeOfDay } from "@/helpers/timeOfDay";
 import { PRESETS } from "@/components/canvas/environmentPresets";
-import { PORTALS, portalById } from "@/config/portals";
+import { PORTALS, portalById, type PortalHotspotId } from "@/config/portals";
 import { PortalInterior } from "@/components/canvas/PortalInteriors";
 import { PortalDestination } from "@/components/layout/PortalDestination";
 import { openPortalId } from "@/helpers/StateProvider";
@@ -58,6 +57,7 @@ import {
 import { SKY_SCROLL_LIMIT, SKY_TEXT_CUES, SKY_TEXT_HOLDS, SKY_TEXT_LEAD } from "@/config/skyJourney";
 import { SkyCaption } from "@/components/layout/SkyCaption";
 import { SkyContact } from "@/components/layout/SkyContact";
+import { AvatarBubble } from "@/components/layout/AvatarBubble";
 // The island's lens. The sky narrows to SKY_FOV_Y during the climb (see
 // CameraController), and the corridor's geometry is derived from THAT.
 import { ISLAND_FOV_Y } from "@/config/paperSky";
@@ -561,13 +561,16 @@ export default function Page() {
     return () => window.removeEventListener("pointermove", dismiss, opts);
   }, [started]);
 
-  // Contextual hints, picked up where InteractionHint leaves off: nudges
-  // toward the guitar and the clouds once the user has gone quiet without
-  // finding them, then how to open a portal on arrival and how to leave one
-  // from inside. At most one on screen at a time, each at most once per load.
-  // It infers what's already been discovered from atoms that exist anyway
-  // (musicEnabled, rainRequest, openPortalId), so nothing in the scene has to
-  // report to it.
+  // Contextual hints, picked up where InteractionHint leaves off: how to open
+  // a portal on arrival, and how to leave one from inside. At most one on
+  // screen at a time, each at most once per load.
+  //
+  // It used to nudge toward the guitar, the clouds and the Poke Ball too.
+  // Those are the avatar's to say now -- the same hook still owns the queue
+  // he says them from, because both halves key off the same discovery state;
+  // see its own header. It infers what's already been found from atoms that
+  // exist anyway (musicEnabled, rainRequest, openPortalId), so nothing in the
+  // scene has to report to it.
   useHintDirector({
     started,
     hasInteracted,
@@ -695,6 +698,23 @@ export default function Page() {
   const handleLeftTreeHotspotClick = () => flyToHotspot("left-tree", LEFT_TREE_VIEWPOINT_POSITION, LEFT_TREE_VIEWPOINT_ROTATION);
   const handleMoonIslandHotspotClick = () => flyToHotspot("moon-island", MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION);
   const handleHomeHotspotClick = () => flyToHotspot("home", HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION);
+
+  /** "Show me" in the avatar's bubble.
+   *
+   *  The same three flights the ring markers run -- a suggestion that offers
+   *  to take you somewhere must land exactly where clicking the marker would,
+   *  or the bubble becomes a fourth way of moving the camera with its own
+   *  behaviour. Withheld while a portal is open: AvatarBubble draws no button
+   *  when the callback is absent, so the offer is never shown in a state where
+   *  flying somewhere would first have to close something. */
+  const avatarGoTo =
+    openPortal !== null
+      ? undefined
+      : (hotspot: PortalHotspotId) => {
+          if (hotspot === "upper") return handleUpperIslandHotspotClick();
+          if (hotspot === "left-tree") return handleLeftTreeHotspotClick();
+          return handleMoonIslandHotspotClick();
+        };
 
 
   // --- touch navigation: scrolling through the scene -----------------------
@@ -1151,11 +1171,38 @@ export default function Page() {
           }
         >
           <div className={isShortViewport ? "flex flex-row items-baseline gap-2" : "relative"}>
-            {revealStage >= 1 && <h1 data-cursor="text" className={`scene-type animate-stamp font-nunito uppercase ${isShortViewport ? "text-2xl" : "text-4xl sm:text-5xl md:text-6xl"} tracking-tight text-[#d25a1a]`}>Erik Edmonds</h1>}
-            {/* Dropped entirely on a landscape phone rather than shrunk: at
-                that height every line costs more than it gives, and the role
-                is the least load-bearing string on screen. */}
-            {nameStamped && !isShortViewport && <p data-cursor="text" className="scene-type font-nunito font-semibold text-[#d25a1a] text-xl sm:text-2xl md:text-3xl">Data Scientist</p>}
+            {revealStage >= 1 && <h1 data-cursor="text" className={`scene-type animate-stamp font-nunito uppercase ${isShortViewport ? "text-2xl" : "text-[clamp(1.5rem,7.2vw,2.25rem)] sm:text-5xl md:text-6xl"} tracking-tight text-[#d25a1a]`}>Erik Edmonds</h1>}
+            {/* FLUID BELOW THE FIRST BREAKPOINT, because the name is twelve
+                characters and Tailwind's base step is a fixed 36px: at 404px
+                "ERIK EDMONDS" measured 400px wide against a 40px left inset
+                and lost its last letter off the right edge. Every breakpoint
+                here is min-width, so nothing below `sm` was ever adapting.
+                Clamped rather than stepped so a 320px phone is covered too,
+                and capped at the 2.25rem it used to be so `sm:` and up are
+                untouched. */}
+            {/* KEPT ON A LANDSCAPE PHONE, BESIDE THE NAME. It used to be
+                dropped there -- "at that height every line costs more than it
+                gives, and the role is the least load-bearing string on
+                screen". The first half of that was right and the second was
+                wrong: it is the only place on the island that states the
+                profession at all, and dropping it hid that from the device
+                most likely to see this site first.
+
+                It costs nothing to keep. The short-viewport container is
+                already `flex-row items-baseline`, so at a smaller size the
+                role sits on the SAME line as the name and the lockup is no
+                taller than it was. A landscape phone has width to spare; it
+                was height that was short. */}
+            {nameStamped && (
+              <p
+                data-cursor="text"
+                className={`scene-type font-nunito font-semibold text-[#d25a1a] ${
+                  isShortViewport ? "text-sm" : "text-xl sm:text-2xl md:text-3xl"
+                }`}
+              >
+                Data Scientist
+              </p>
+            )}
           </div>
         </div>
         {/* The sky journey's text, back in the DOM and visible again.
@@ -1176,6 +1223,11 @@ export default function Page() {
             mounting it late would mean its first frame landed before it had
             a box to sit against. See SkyContact. */}
         {skySequenceValue && <SkyContact />}
+        {/* The avatar's own prompts. Mounted for the life of the page and
+            hidden with `visibility` rather than gated on a flag -- see the
+            note in AvatarBubble about why an element that mounts and then
+            waits a frame for its transform flashes in the corner. */}
+        <AvatarBubble onGoTo={avatarGoTo} />
         <div
           className={`flex flex-row items-center gap-2 absolute z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}
           style={{ top: "calc(1.25rem + var(--safe-top))", right: "calc(1.25rem + var(--safe-right))" }}
@@ -1326,25 +1378,15 @@ export default function Page() {
                 glare, day's brightest sand losing all texture). AgX rolls
                 highlights off filmically instead. Outside the `started` gate
                 so the curve exists on frame one. */}
-            {/* FILM GRAIN over the paper world. Mounted unconditionally and
-                held at zero on the island -- see the note on <N8AO> above for
-                why nothing here is ever mounted or unmounted mid-session.
-                Its strength is written straight onto the uniform by
-                <SkyGrain>, which rides the same altitude ramp the backdrop
-                and the field of view do. */}
-            {/* NOT premultiplied. NoiseEffect's premultiply multiplies the
-                grain by the colour underneath it before blending, and the
-                paper sky is a narrow band of mid blues -- so the grain was
-                being scaled down by the very thing it was supposed to sit
-                on, which is a good way to add an effect and see nothing. */}
-            <Noise
-              ref={(effect: unknown) => { skyGrain.effect = effect as { blendMode: { opacity: { value: number } } } | null }}
-              blendFunction={BlendFunction.OVERLAY}
-              opacity={0}
-            />
+            {/* The film grain that used to sit here is GONE, not disabled.
+                It was an OVERLAY <Noise> pass driven by <SkyGrain> off the
+                altitude ramp, added when the sky wanted "an old time grainy
+                texture of homemade films", and taken out on the plain note
+                that it is not wanted. Removed rather than held at zero: a
+                full-screen pass costs its fill every frame whatever its
+                opacity, and this scene is already fill-bound. */}
             <ToneMapping mode={ToneMappingMode.AGX} />
           </EffectComposer>
-          <SkyGrain />
           <color attach="background" args={["#0a0a0a"]} />
           {islandMounted && <Suspense fallback={null}>
             <Environment from={dayFrom} target={day} transitionSeconds={transitionSeconds} />
@@ -1442,6 +1484,11 @@ export default function Page() {
                 the camera so it lives in here, while the thing it positions is
                 a DOM node outside the canvas (SceneHint, below). */}
             <HintAnchor />
+            {/* Projects the avatar's head so his bubble can hang off it.
+                He has been a named node since the sky sequence needed to
+                find a subject with no skeleton; this is the first thing to
+                ask where he actually is on screen. */}
+            <AvatarAnchor />
             {/* Same split as the projectors above: the driver needs the camera
                 so it lives in here, while the thing it positions is a DOM node
                 outside the canvas (SceneCursor, below). Desktop only -- there

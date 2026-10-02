@@ -12,14 +12,30 @@ import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type Magn
 const PROP_MAGNETIC_STRENGTH = 1.05
 const PROP_MAGNETIC_RADIUS = 155
 
-const BEAM_LOCAL_TARGET: [number, number, number] = [1.0430, 0.4250, -0.3359]
-const BEAM_LOCAL_LENGTH = 1.1753
-const BEAM_LOCAL_ROTATION: [number, number, number] = [-0.2951, 0.1874, -1.1273]
-const BEAM_DIRECTION: [number, number, number] = [
-  BEAM_LOCAL_TARGET[0] / BEAM_LOCAL_LENGTH,
-  BEAM_LOCAL_TARGET[1] / BEAM_LOCAL_LENGTH,
-  BEAM_LOCAL_TARGET[2] / BEAM_LOCAL_LENGTH,
-]
+/** THE BEAM AIMS AT THE AVATAR, IT IS NOT AIMED BY HAND ANY MORE.
+ *
+ *  It used to be three baked constants -- a target, a length and an Euler
+ *  rotation -- all in the ball's own local space, measured once against the
+ *  ball standing at [-3.25, -1.5, 0]. Moving the ball out from behind the
+ *  About Me sign moved the beam with it, so the release fired off into empty
+ *  sand: "since the pokeball moved, the light needs to be fixed. The light is
+ *  all off, it no longer align with the dragonite."
+ *
+ *  Baking the relationship was the fault, not the numbers. The beam's whole
+ *  job is to point at the thing being released, so it reads the avatar's
+ *  actual world position at the moment it fires and orients itself. The ball
+ *  can now be put anywhere on the beach and the beam still lands on him.
+ *
+ *  BEAM_UNIT_LENGTH is just the cylinder's authored height -- the geometry is
+ *  built once at this length and the aim group scales it to whatever the real
+ *  distance turns out to be. */
+const BEAM_UNIT_LENGTH = 1.1753
+/** Where on the avatar the beam lands, above his origin (which is at his
+ *  feet). Chest height, so the release reads as hitting the figure rather
+ *  than the sand he stands on. */
+const BEAM_AIM_UP = 1.1
+/** The cylinder is built along +Y, so this is the axis the aim rotates FROM. */
+const BEAM_AXIS = new THREE.Vector3(0, 1, 0)
 /** The beam is a beat, not a scene.
  *
  *  It held for 2.8 seconds and took another 0.45 to pull back -- three and a
@@ -54,6 +70,13 @@ function Pokeball({ onRelease, ...props }, ref) {
   const [showEnergy, setShowEnergy] = useState(false)
   const uProgress = useRef(0)
   const beamElapsed = useRef(0)
+  /** The group that carries the beam's direction and length. The two beam
+   *  meshes animate INSIDE it along a plain +Y, so the grow and the retract
+   *  stay exactly as authored and only the aim is new. */
+  const beamAimRef = useRef<THREE.Group>(null)
+  /** Set on each firing; consumed by the first frame after it, which is the
+   *  first moment the avatar's world matrix is certain to be current. */
+  const needsAim = useRef(false)
 
   const ballGltf = useGLTF('/models/pokeball.glb') as any
 
@@ -97,6 +120,10 @@ function Pokeball({ onRelease, ...props }, ref) {
       // it and did not have it.
       beamRef.current?.position.set(0, 0, 0)
       beamGlowRef.current?.position.set(0, 0, 0)
+      // Re-aimed on every firing rather than once: the avatar can be in a
+      // different place (and is, after a trip to the sky and back), and the
+      // ball itself can be moved in the scene without this file knowing.
+      needsAim.current = true
       if (particlesRef.current) {
         ;(particlesRef.current.material as THREE.PointsMaterial).opacity = 1
       }
@@ -151,16 +178,44 @@ function Pokeball({ onRelease, ...props }, ref) {
 
   useFrame((state, delta) => {
     if (showEnergy) {
+      // AIM AT WHERE HE ACTUALLY IS, on the first frame of the firing.
+      //
+      // Done here and not in the click handler because the avatar's world
+      // matrix is only guaranteed current once the frame loop is running --
+      // and r3f updates matrices between commit and render, so a value read
+      // during the click can be one frame stale.
+      if (needsAim.current && beamAimRef.current && rootRef.current) {
+        const avatar = state.scene.getObjectByName("avatar-root")
+        if (avatar) {
+          needsAim.current = false
+          const aim = avatar.getWorldPosition(new THREE.Vector3())
+          aim.y += BEAM_AIM_UP
+          // Into the ball group's own space, so the result is independent of
+          // the group's position, its -45 degree yaw and its scale.
+          const local = rootRef.current.worldToLocal(aim)
+          const length = local.length()
+          if (length > 1e-4) {
+            beamAimRef.current.quaternion.setFromUnitVectors(
+              BEAM_AXIS,
+              local.clone().normalize(),
+            )
+            // One uniform scale, so the beam keeps its taper instead of being
+            // stretched; the geometry is authored at BEAM_UNIT_LENGTH.
+            beamAimRef.current.scale.setScalar(length / BEAM_UNIT_LENGTH)
+            // The sparkles burst where the beam lands. They live outside the
+            // aim group so their velocities stay in the ball's own units.
+            particlesRef.current?.position.copy(local)
+          }
+        }
+      }
       beamElapsed.current += delta
       if (beamRef.current && beamGlowRef.current) {
         if (beamElapsed.current >= BEAM_HOLD_SECONDS) {
           const s = Math.min((beamElapsed.current - BEAM_HOLD_SECONDS) / BEAM_RETRACT_SECONDS, 1)
           const shrink = 1 - s
-          beamRef.current.position.set(
-            BEAM_DIRECTION[0] * BEAM_LOCAL_LENGTH * s,
-            BEAM_DIRECTION[1] * BEAM_LOCAL_LENGTH * s,
-            BEAM_DIRECTION[2] * BEAM_LOCAL_LENGTH * s
-          )
+          // Straight up the aim group's own axis: the direction lives on the
+          // group now, so the retract is one component instead of three.
+          beamRef.current.position.set(0, BEAM_UNIT_LENGTH * s, 0)
           beamRef.current.scale.set(0.55 * shrink, 1 * shrink, 0.55 * shrink)
           beamGlowRef.current.position.copy(beamRef.current.position)
           beamGlowRef.current.scale.copy(beamRef.current.scale)
@@ -244,13 +299,13 @@ function Pokeball({ onRelease, ...props }, ref) {
   const initialPointsArray = useMemo(() => new Float32Array(particleCount * 3), [])
 
   const coreGeometry = useMemo(() => {
-    const g = new THREE.CylinderGeometry(0.008, 0.028, BEAM_LOCAL_LENGTH, 16, 1, true)
-    g.translate(0, BEAM_LOCAL_LENGTH / 2, 0)
+    const g = new THREE.CylinderGeometry(0.008, 0.028, BEAM_UNIT_LENGTH, 16, 1, true)
+    g.translate(0, BEAM_UNIT_LENGTH / 2, 0)
     return g
   }, [])
   const glowGeometry = useMemo(() => {
-    const g = new THREE.CylinderGeometry(0.024, 0.07, BEAM_LOCAL_LENGTH, 16, 1, true)
-    g.translate(0, BEAM_LOCAL_LENGTH / 2, 0)
+    const g = new THREE.CylinderGeometry(0.024, 0.07, BEAM_UNIT_LENGTH, 16, 1, true)
+    g.translate(0, BEAM_UNIT_LENGTH / 2, 0)
     return g
   }, [])
 
@@ -263,46 +318,52 @@ function Pokeball({ onRelease, ...props }, ref) {
           additive VFX, but they still sit in the scene graph inside this
           group's onPointerOver -- and the sparkle <points> in particular
           defaults to a 1-unit raycast threshold with all its particles
-          stacked on BEAM_LOCAL_TARGET, which lands (scale 2) essentially on
-          top of the avatar. That's what made the avatar show a pointer
-          cursor and read as clickable, when nothing there does anything. */}
-      <mesh
-        ref={beamRef}
-        raycast={() => null}
-        geometry={coreGeometry}
-        position={[0, 0, 0]}
-        rotation={BEAM_LOCAL_ROTATION}
-        scale={[0, 0, 0]}
-      >
-        <meshBasicMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.95}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh
-        ref={beamGlowRef}
-        raycast={() => null}
-        geometry={glowGeometry}
-        position={[0, 0, 0]}
-        rotation={BEAM_LOCAL_ROTATION}
-        scale={[0, 0, 0]}
-      >
-        <meshBasicMaterial
-          color="#bfe9ff"
-          transparent
-          opacity={0.28}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
+          stacked at the beam's far end, which lands essentially on top of
+          the avatar. That's what made the avatar show a pointer cursor and
+          read as clickable, when nothing there does anything. */}
+      {/* THE AIM GROUP. Carries the direction to the avatar and the distance
+          to him; the two meshes inside animate along a plain +Y, which is
+          what lets the grow and the retract stay exactly as they were while
+          the aim became dynamic. Written once per firing in the frame loop
+          above -- see the note on BEAM_UNIT_LENGTH. */}
+      <group ref={beamAimRef}>
+        <mesh
+          ref={beamRef}
+          raycast={() => null}
+          geometry={coreGeometry}
+          position={[0, 0, 0]}
+          scale={[0, 0, 0]}
+        >
+          <meshBasicMaterial
+            color="#ffffff"
+            transparent
+            opacity={0.95}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+        <mesh
+          ref={beamGlowRef}
+          raycast={() => null}
+          geometry={glowGeometry}
+          position={[0, 0, 0]}
+          scale={[0, 0, 0]}
+        >
+          <meshBasicMaterial
+            color="#bfe9ff"
+            transparent
+            opacity={0.28}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+      </group>
 
-      {/* Sparkle particles at the beam's target end, by the avatar */}
-      <points ref={particlesRef} raycast={() => null} position={BEAM_LOCAL_TARGET}>
+      {/* Sparkle particles at the beam's target end, by the avatar. Placed by
+          the frame loop on each firing, for the same reason the beam is. */}
+      <points ref={particlesRef} raycast={() => null}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[initialPointsArray, 3]} />
         </bufferGeometry>

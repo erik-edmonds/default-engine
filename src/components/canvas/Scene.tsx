@@ -101,6 +101,19 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeba
             <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
             <PalmTree scale={0.55} position={[-7,-3.5,-4.5]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
             <PalmTree scale={0.72} position={[7,-6,0]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
+            {/* BACK WHERE IT STARTED, and the LENS moved instead.
+                
+                This was dragged 1.07 units inboard so the board would be in
+                frame on a phone, which worked and cost more than it bought:
+                it landed on top of the Poke Ball, and two rounds of shuffling
+                the ball around it produced a beach where the sign, the ball,
+                the deck chair and the avatar were all stacked into the same
+                corner -- "it feels too squeezed in".
+                
+                The composition was never the problem; the field of view was.
+                ISLAND_FOV_Y_PORTRAIT opens far enough to hold the original
+                layout instead, which is the change that was rejected earlier
+                as too large and is the right one. */}
             <Sign scale={0.75} position={[-4.1,-1.3,0]} rotation={[0,0,0]} />
             <Waterfall />
             {/* Both mounted once for the whole scene, not per-Clouds-group --
@@ -126,6 +139,13 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeba
                 setSkyOffset were empty functions, so releasing the Dragonite
                 used to leave the camera sitting still while the avatar and the
                 captions ran the whole sequence without it. */}
+            {/* BACK WHERE IT STARTED TOO, on the sign's right.
+                
+                The sign's arrow points RIGHT -- left-to-right under the words
+                with its head at the board's right end -- so this is the side
+                the ball always belonged on, and the pair read correctly until
+                the sign was moved on top of it. With the sign returned and
+                the lens opened, neither has to give way to the other. */}
             <Pokeball ref={pokeballRef} scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth

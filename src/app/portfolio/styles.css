@@ -1,59 +1,339 @@
-@import "tailwindcss";
+/* The portfolio's own chrome.
+ *
+ *  NO `@import "tailwindcss"` HERE. app/globals.css already imports it once
+ *  for the whole app, and a second import bundles the entire framework again.
+ *  This file used to be the Next.js starter's globals, sitting at the
+ *  portfolio root imported by nothing, next to a duplicate of itself under
+ *  driving/. It is the shared stylesheet now, imported by app/portfolio/layout.tsx.
+ *
+ *  THESE PAGES ARE THE QUIET HALF OF THE SITE. The island is the thing people
+ *  remember; this is where someone who is considering hiring Erik goes to
+ *  read, usually on a phone, usually quickly. So: one column, generous
+ *  measure, no parallax, nothing that animates while you are trying to read a
+ *  paragraph. The only thing carried across from the scene is the accent and
+ *  the typefaces, so it still reads as the same site.
+ *
+ *  Single-theme on purpose, and it matches globals.css's own note on why:
+ *  there is no light-mode version of this site. Every colour is stated
+ *  explicitly rather than inherited, so the page holds on any host ground. */
 
-:root {
-  --foreground: #e2e8f0;
+.pf {
+  /* A cool near-black rather than #000: the scene's water and night sky are
+     both blue-biased, and a pure neutral next to them reads as a different
+     product. */
+  --pf-ground: #0b0d10;
+  --pf-surface: #13171d;
+  --pf-line: #242b34;
+  --pf-text: #e9ecef;
+  --pf-muted: #98a2ad;
+  /* The island's orange, already in use on the name stamp and the hint
+     markers. Per-project accents override --pf-accent inline. */
+  --pf-accent: #ff7d1c;
+
+  min-height: 100vh;
+  background: var(--pf-ground);
+  color: var(--pf-text);
+  /* One gutter, set once, on the one element. Vertical padding uses
+     padding-block so it cannot zero the sides. */
+  padding-inline: 20px;
+  padding-block: 96px 72px;
 }
 
-@theme inline {
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.pf-wrap {
+  max-width: 44rem;
+  margin: 0 auto;
 }
 
-body {
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  overflow-x: hidden;
+/* ---------------------------------------------------------------- type */
+
+.pf-eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pf-accent);
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+.pf-title {
+  margin: 0;
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(2.1rem, 7vw, 3.4rem);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
+.pf-lead {
+  margin: 20px 0 0;
+  font-size: clamp(1.05rem, 2.6vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--pf-muted);
+  text-wrap: pretty;
 }
-::-webkit-scrollbar-thumb {
+
+.pf-h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+}
+
+.pf-body {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.68;
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------------- sections */
+
+/* Spacing is the layout's job, not each block's: gap cannot collapse or
+   double the way stacked margins silently do. */
+.pf-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  margin-top: 56px;
+}
+
+/* A hairline rule, not a card. Three prose sections in a row of bordered
+   boxes would say "three separate objects" about one continuous argument. */
+.pf-section {
+  border-top: 1px solid var(--pf-line);
+  padding-top: 22px;
+}
+
+/* ----------------------------------------------------------- stack chips */
+
+.pf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pf-chips li {
+  padding: 5px 11px;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  background: var(--pf-surface);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--pf-muted);
+}
+
+/* ---------------------------------------------------------------- links */
+
+.pf-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pf-link {
+  color: var(--pf-accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--pf-accent) 40%, transparent);
+  padding-bottom: 1px;
+}
+
+.pf-link:hover,
+.pf-link:focus-visible {
+  border-bottom-color: var(--pf-accent);
+}
+
+/* ------------------------------------------------------------ the index */
+
+.pf-list {
+  display: flex;
+  flex-direction: column;
+  margin: 56px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--pf-line);
+}
+
+/* The row IS the link, so the whole band is the target rather than four
+   words in the middle of it -- which matters most on the device these pages
+   are mostly read on. */
+.pf-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 18px;
+  align-items: baseline;
+  padding: 26px 4px;
+  border-bottom: 1px solid var(--pf-line);
+  color: inherit;
+  text-decoration: none;
+  transition: background 180ms ease, padding-inline 180ms ease;
+}
+
+.pf-row:hover,
+.pf-row:focus-visible {
+  background: var(--pf-surface);
+  padding-inline: 12px 4px;
+}
+
+.pf-row-num {
+  grid-row: span 2;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  /* Set per row from the project's own accent, so the column reads as four
+     distinct pieces of work rather than one list. */
+  color: var(--pf-accent);
+}
+
+.pf-row-title {
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.25rem, 4.2vw, 1.6rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.pf-row-blurb {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--pf-muted);
+  text-wrap: pretty;
+}
+
+/* Narrow: the number moves above the title rather than squeezing the text
+   into a column too thin to read. */
+@media (max-width: 420px) {
+  .pf-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .pf-row-num {
+    grid-row: auto;
+  }
+}
+
+/* ------------------------------------------------------------- the pitch */
+
+.pf-pitch {
+  margin-top: 64px;
+  padding: 26px;
+  border: 1px solid var(--pf-line);
+  border-radius: 14px;
+  background: var(--pf-surface);
+}
+
+.pf-pitch p {
+  margin: 0 0 16px;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.pf-note {
+  margin-top: 14px;
+  color: var(--pf-muted);
+  font-size: 0.92rem;
+}
+
+.pf-note code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.85em;
+  color: var(--pf-accent);
+  /* Long paths must break rather than push the column sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------- the chart escapes */
+
+/* THE ELECTION CHART IS NOT A COLUMN OF PROSE.
+ *
+ *  It sizes itself from `window.innerWidth * 0.95` and paints its own white
+ *  ground, and it predates this layout by a long way. Dropped into .pf-wrap it
+ *  would be squeezed into 44rem with the rest of the writing, which is the one
+ *  thing a 900px-minimum chart cannot survive. This lets it out of the column
+ *  and cancels the layout's padding, without either side knowing about the
+ *  other: the chart's own stylesheet is untouched and every rule in it stays
+ *  scoped under .election-page. */
+.pf .election-page {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  /* Only the BOTTOM padding is cancelled. The 96px above it is holding the
+     back link, and pulling the white chart up over the only way out of a
+     full-viewport chart would be a poor trade for 96 pixels. */
+  margin-bottom: -72px;
+}
+
+/* ---------------------------------------------------------- the back link */
+
+.pf-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 44px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+  text-decoration: none;
+}
+
+.pf-back:hover,
+.pf-back:focus-visible {
+  color: var(--pf-text);
+}
+
+/* --------------------------------------------------------- prev and next */
+
+.pf-nextprev {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 64px;
+  padding-top: 22px;
+  border-top: 1px solid var(--pf-line);
+  font-size: 0.95rem;
+}
+
+.pf-nextprev a {
+  color: var(--pf-text);
+  text-decoration: none;
+}
+
+.pf-nextprev a:hover,
+.pf-nextprev a:focus-visible {
+  color: var(--pf-accent);
+}
+
+.pf-nextprev span {
+  display: block;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+}
+
+/* Keyboard focus must stay visible everywhere on these pages: they are the
+   part of the site that can be read without a pointer at all. */
+.pf a:focus-visible {
+  outline: 2px solid var(--pf-accent);
+  outline-offset: 3px;
   border-radius: 3px;
 }
 
-/* Section transitions */
-.section-enter {
-  opacity: 0;
-  transform: translateY(40px);
-}
-.section-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Glow effect for active elements */
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 8px rgba(34, 211, 238, 0.3); }
-  50% { box-shadow: 0 0 16px rgba(34, 211, 238, 0.5); }
-}
-
-/* Subtle background grain */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.015;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-
+@media (prefers-reduced-motion: reduce) {
+  .pf-row {
+    transition: none;
+  }
 }

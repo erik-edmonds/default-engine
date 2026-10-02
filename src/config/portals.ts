@@ -78,14 +78,22 @@ export const CONTACT_LINKS_ARE_PLACEHOLDERS = CONTACT_LINKS.some(
   (l) => l.href.includes("example.com") || l.href.includes("your-handle"),
 )
 
-/** REPLACE THIS with the real About copy.
+/** The About portal's copy.
  *
- *  Deliberately NOT a placeholder in the way the contact links are: every line
- *  here is already true, so the portal delivers something honest today rather
- *  than apologising for itself. It used to say "This portal is still being
- *  written" on screen, which is the one thing a finished portfolio cannot do. */
+ *  THREE PARAGRAPHS, AND A CEILING. The panel is 42ch wide and sits in the
+ *  bottom third of the frame over a live point cloud
+ *  (PortalDestination.tsx), so this is a caption, not an essay -- past about
+ *  three short paragraphs it covers the interior it is captioning. More
+ *  depth belongs at /portfolio, which has a column and room to use it.
+ *
+ *  Every line here is true of what is in this repository or of what Erik has
+ *  said. Nothing about employers, dates or titles appears, because none of
+ *  that is anywhere in the repo and it is not mine to invent -- that is the
+ *  one paragraph still worth adding here, and it is yours to write. */
 export const ABOUT_PARAGRAPHS: string[] = [
-  "Data scientist, digital nomad, certified scuba diver.",
+  "Data scientist. I work where a model has to meet the world — scenes reconstructed from photographs, driving policies tested in simulation, detectors scored on the cases that actually matter.",
+  "Also a digital nomad and a certified scuba diver, which between them explain most of the choices made on this island.",
+  "Available for freelance and contract work.",
 ]
 
 export const PORTALS: PortalDefinition[] = [
@@ -101,13 +109,17 @@ export const PORTALS: PortalDefinition[] = [
     // when the dive was removed: the gear on the beach was a second entrance to
     // this same page, and the less findable of the two.
     interior: "water",
-    blurb: "Four projects — an election map in D3, object detection, autonomous driving in CARLA, and gaussian splatting.",
-    // Nothing on screen once you are inside. The blurb above still describes
-    // the portal from OUTSIDE, where it is the only thing that says what the
-    // window leads to; `kind: "none"` is about what shows after you enter.
-    // This used to be a route to /portfolio -- a page that held these same four
-    // cards and has been retired, because they are in the pool now.
-    destination: { kind: "none" },
+    blurb: "Gaussian splatting, autonomous driving in CARLA, object detection, and an interactive election map.",
+    // A ROUTE AGAIN, and this time to a page that exists.
+    //
+    // This was `kind: "none"`, justified in a comment as "you are floating in
+    // the pool with the four projects hanging in it". That premise stopped
+    // being true the day the cards came out of the water
+    // (PortalInteriors.tsx) -- the flagship destination, reached by the
+    // hardest interaction on the site, blended open on an empty pool and
+    // offered nothing. The written work is at /portfolio now, and this is the
+    // mechanism that was already built for exactly this and never used.
+    destination: { kind: "route", href: "/portfolio", label: "See the work" },
   },
   {
     id: "02",

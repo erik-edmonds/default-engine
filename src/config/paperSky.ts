@@ -71,6 +71,34 @@ export const PAPER_ORIGIN: [number, number, number] = [
  *  below is derived from the SKY value, because that is the frame the props
  *  have to fit inside. */
 export const ISLAND_FOV_Y = 50
+
+/** The island's lens on a narrow frame.
+ *
+ *  A small widening, and no more. The beach props are fixed world positions
+ *  against a fixed lens, so a portrait frame pushes them to its left edge:
+ *  at 404x986 the Poke Ball measured ndc -0.93, technically in shot and
+ *  visibly clinging to the border. 56 moves it to -0.82 and leaves the
+ *  island reading at very nearly its full size.
+ *
+ *  IT REACHES THE SIGN NOW, and that is a decision reversed on purpose.
+ *
+ *  This said 56 and explained that framing the whole "About Me" board by lens
+ *  alone needs 72 degrees, "which fits it comfortably but shows so much extra
+ *  sky and sand that the island shrinks -- a large change to every phone
+ *  visit, spent on one prop at the edge", and moved the sign instead.
+ *
+ *  Moving the sign is what turned out to be the large change. It landed on
+ *  top of the Poke Ball, and the two rounds of shuffling the ball around it
+ *  ended with the sign, the ball, the deck chair and the avatar stacked into
+ *  one corner: "it feels too squeezed in, I don't like it. Move the about
+ *  sign and pokeball back to the original position, and make the fov wider."
+ *
+ *  So the props are back where they were composed and this carries the cost.
+ *  The arithmetic is the same as it was: ndc scales with 1/tan(fov/2), and
+ *  the sign's centre sits at ndc -1.25 on the 50-degree island lens, so
+ *  -1.25 * tan(25) / tan(36) = -0.80 -- comfortably inside the frame with
+ *  room for the board's own width. */
+export const ISLAND_FOV_Y_PORTRAIT = 72
 // Two successive 15% reductions, both asked for after seeing the scene.
 // Widened from 0.64. Two successive 15% cuts plus your own edit had taken the
 // sky to a 32-degree lens, which is a long telephoto -- it flattens the depth
@@ -624,20 +652,200 @@ export const CAPTION_READ_AXIAL = 62
  *  screen is the ratio of the two. "The lines are too long, there should be
  *  some padding on the edges of the screen for text -- it's better to have
  *  more shorter lines than a few really long ones." */
-export const CAPTION_WORLD_WIDTH = 19
+/** The block's width, as a fraction of the FULL width of the live frame at
+ *  CAPTION_READ_AXIAL. 0.301 is the old fixed 19 world units expressed against
+ *  the frame it was picked in.
+ *
+ *  A fixed 19 was worse than merely off-centre on a phone: the whole frame is
+ *  17.99 units wide at reading distance there, so the block was wider than the
+ *  screen before it was moved anywhere. */
+export const CAPTION_WIDTH_NDC = 0.301
+
+/** ...and in portrait, where the block has the whole width to itself.
+ *
+ *  0.5 is not a taste number, it is the ceiling. The block sits ABOVE the
+ *  subject there, so its height has to fit between his head (about ndc 0.31)
+ *  and the top of the frame, and height follows width. Worked through at the
+ *  reading distance: 0.5 leaves a usable window for the vertical offset,
+ *  0.6 closes it, and 0.8 is impossible -- the block would be taller than the
+ *  space above him however it is positioned.
+ *
+ *  At 0.301 -- the landscape value -- the block rendered 122 pixels wide on a
+ *  404px screen from a canvas authored at 360, a threefold downscale, and the
+ *  body copy was simply a grey smear. See CAPTION_CSS_WIDTH_PORTRAIT: the
+ *  other half of legibility is not painting a wide column and shrinking it. */
+export const CAPTION_WIDTH_NDC_PORTRAIT = 0.5
 /** The CSS width the markup is authored at. Only the RATIO of these two
  *  matters -- it is what turns pixels into world units. */
 export const CAPTION_CSS_WIDTH = 360
+
+/** Whether the SUBJECT keeps his own cord in portrait. He does not.
+ *
+ *  Portrait stacks the words on his axis, and his cord then runs from the top
+ *  of the picture straight down through the headline. Shortening it does not
+ *  help, and the arithmetic says why rather than the eye: he hangs 6.3 units
+ *  from the camera, where a half-frame is only 2.23 world units tall. A cord
+ *  capped to 3.2 units was measured still spanning ndc 0.17 to 1.72 -- nearly
+ *  a frame and a half. To stop below the text it would have to be about 0.56
+ *  units, which is a stub rather than a string.
+ *
+ *  And it is drawn IN FRONT of the words, not behind: the cord is at 6.3
+ *  units and the block at 62, so depth puts the string over the type however
+ *  the two are ordered.
+ *
+ *  So in portrait he hangs without a visible cord.
+ *
+ *  BRIEFLY SWITCHED BACK ON AND SWITCHED OFF AGAIN. It was restored on the
+ *  report that "the dragonite no longer has rope above it", with the caption
+ *  given a paint order so the string ran behind the type rather than across
+ *  it. Seen in place, the original reasoning won: "it doesn't make sense to
+ *  have a rope for the Dragonite as it will affect the text, so remove it."
+ *  Behind the words is still through the words -- the block is the content on
+ *  a phone, and a cord crossing it costs more than the puppet idea gains.
+ *
+ *  What the cord is there to say -- that this is a puppet in a mobile -- is
+ *  still said by the clouds, whose cords are sixty units long and run out of
+ *  the top of the frame on every viewport. The words win the axis. */
+export const SUBJECT_ROPE_IN_PORTRAIT = false
+
+/** HOW FAR THE SUBJECT SITS LOWER IN A PORTRAIT FRAME, in world units.
+ *
+ *  Measured before choosing it. On a 404x986 frame the Dragonite spanned ndc
+ *  y -0.55..0.28, which leaves 0.47 of empty sky under him and 0.72 over --
+ *  and the block of words, stacked on the axis above him, came down to 0.065
+ *  and ran into his head by as much as 0.22. Both halves of one report:
+ *  "the text is overlapping the dragonite, and there's wasted space
+ *  underneath".
+ *
+ *  Expressed as a drop of the SUBJECT rather than a lift of the camera, and
+ *  that is the whole reason it is only one line at the end of the frame loop.
+ *  Everything else out here is placed against the VIEW AXIS (viewAxisUp in
+ *  flightFrame) -- the clouds, the corridor, the block of words -- so raising
+ *  the camera's aim moves the axis and drags all of them down with the
+ *  subject, which changes nothing about their relationship to him.
+ *  corridorOrigin reads the pose TABLE, not the live node, so moving the node
+ *  alone moves exactly one thing.
+ *
+ *  0.67 is 0.30 of ndc at the subject's own distance: he sits CAMERA_BEHIND
+ *  (6.3) ahead, the sky's half-frame is tan(39/2) = 0.3541 of that, so
+ *  0.30 * 0.3541 * 6.3 = 0.669. That leaves about 0.16 of frame under him
+ *  instead of 0.47, and hands the difference to the words above.
+ *
+ *  NOT APPLIED IN LANDSCAPE, where the words sit beside him and the vertical
+ *  budget was never contested.
+ *
+ *  One trap recorded, because it is invisible today: the cord's length is
+ *  measured from this node's position (see dragoniteRopeRef in
+ *  AvatarController), so the drop lengthens it. That cannot be seen while
+ *  SUBJECT_ROPE_IN_PORTRAIT is false, since the only frame the drop applies
+ *  to is the only frame the cord is hidden in -- but flipping that flag
+ *  without compensating here would hang him from a cord 0.67 too long. */
+export const SUBJECT_DROP_PORTRAIT = 0.67
+
+/** The portrait column, and the type that goes in it.
+ *
+ *  The ratio of this to CAPTION_WIDTH_NDC_PORTRAIT is what decides whether
+ *  the words are readable: the block lands about 202 physical pixels wide on
+ *  a 404px phone, so a canvas authored at 210 arrives very near 1:1 while the
+ *  landscape 360 arrives at 0.56 and looks soft. Type scaled to match --
+ *  54/21/15 into 360 becomes 34/15/11 into 210, which holds roughly the same
+ *  characters per line rather than the same physical size. */
+export const CAPTION_CSS_WIDTH_PORTRAIT = 210
+/** THE HEADLINE IS SMALLER THAN THAT RATIO WOULD GIVE, on purpose.
+ *
+ *  34 is what scaling 54 down by 210/360 produces, and it was too big in
+ *  practice: "Data Scientist, Mostly Remote" came out as four lines of
+ *  near-column-width type, which pushed the block down onto the subject's
+ *  head and is half of the overlap being complained about. The body copy is
+ *  left where it is -- it reads correctly at 15 and shrinking it further
+ *  would cost legibility on the one device that most needs it.
+ *
+ *  So the headline alone drops to 27/30. That is about 4.5 characters per
+ *  line more at the same measure, which takes the long headlines from four
+ *  lines to three and the short ones from two to one. */
+export const CAPTION_TYPE_PORTRAIT = { head: 27, headLead: 30, body: 15, bodyLead: 22, eyebrow: 11 }
 /** The largest it may get. Without a ceiling the last stretch of every
  *  approach is a headline several screens wide. */
 export const CAPTION_MAX_SCALE = 1.8
 /** How far off the flight axis it sits. Chosen so that at CAPTION_READ_AXIAL
  *  the block's centre lands about halfway out in its half of the frame, which
  *  is where the layout put it when it was pinned there. */
-export const CAPTION_SIDE_OFFSET = CAPTION_READ_AXIAL * Math.tan(HALF_FOV_H) * 0.5
+/** How far the block sits off the flight axis, as a fraction of the HALF-WIDTH
+ *  of the live frame at CAPTION_READ_AXIAL.
+ *
+ *  This used to be a world number baked at the design aspect:
+ *
+ *      CAPTION_SIDE_OFFSET = CAPTION_READ_AXIAL * tan(HALF_FOV_H) * 0.5
+ *
+ *  which is 17.56 at 16:10 and 17.56 on a phone, where the half-frame at that
+ *  distance is 8.99 -- so the words sat at ndc 1.95, entirely outside the
+ *  picture. The 0.5564 below is that same 17.56 expressed against the frame it
+ *  was chosen in, so a landscape window is unchanged to four decimal places
+ *  and a narrow one gets an offset that means the same thing.
+ *
+ *  RESOLVED ONCE PER FRAME AT A FIXED REFERENCE DISTANCE, not per prop. That
+ *  matters: the block keeps a constant world offset for the whole of its pass,
+ *  which is what carries it out through the side of the frame as it reaches
+ *  you. Re-deriving it at the block's own live distance would pin it to a
+ *  screen position and it would never leave. */
+export const CAPTION_SIDE_NDC = 0.5564
 /** And how far above it, so a paragraph does not close on the subject's face.
  *  Measured from the VIEW AXIS at its own depth, like the props. */
-export const CAPTION_UP_OFFSET = CAPTION_READ_AXIAL * Math.tan(HALF_FOV_V) * 0.18
+/** How far above the view axis the block sits, as a fraction of the half-frame
+ *  HEIGHT at CAPTION_READ_AXIAL. The vertical lens was always live, so this
+ *  one was never broken -- it is expressed this way to sit beside its portrait
+ *  counterpart rather than because it had to change. */
+export const CAPTION_UP_NDC = 0.18
+
+/** ...and in portrait, where the block sits ABOVE the subject rather than
+ *  beside him.
+ *
+ *  A phone frame cannot hold a paragraph and a Dragonite side by side -- at
+ *  0.41 aspect the half-frame at reading distance is 8.99 world units and the
+ *  block alone was 19 wide. So portrait stops fighting for width and uses the
+ *  axis it has plenty of: the words go overhead, on the flight line, with the
+ *  subject below them. 0.67 is the middle of the only window that works:
+ *  his head reaches about ndc 0.31 and the frame ends at 1.0, and a block of
+ *  CAPTION_WIDTH_NDC_PORTRAIT is 0.246 of a half-frame tall, so anything
+ *  below 0.63 lands on him and anything above 0.72 runs off the top. */
+/** LOWERED TWICE, AND THIS IS THE SECOND TIME.
+ *
+ *  0.67 was chosen against a Dragonite whose head reached ndc 0.31.
+ *  SUBJECT_DROP_PORTRAIT put him at about 0.00 and the block did not follow,
+ *  so it ended up pinned near the top edge; 0.53 split that difference and
+ *  was still not enough -- "there's still a bunch of space underneath it and
+ *  above the dragonite, the text still needs to come down a lot".
+ *
+ *  Measured across one journey at 0.53, the gap from the block's bottom edge
+ *  to the top of his head ran 0.09 (far, small, fading in) to 0.32 (near,
+ *  large, the moment it is actually read). The number to fix is the second
+ *  one.
+ *
+ *  Lowering this constant is self-balancing, which is why it is the right
+ *  lever: the block holds a constant WORLD offset, so its ndc height scales
+ *  as 1/distance. A given change therefore moves the near, large readings --
+ *  the ones with the gap -- much further than the far, small ones, which are
+ *  the ones at risk of touching him. 0.34 takes the near gap to about 0.12
+ *  and leaves the far one just clear. */
+export const CAPTION_UP_NDC_PORTRAIT = 0.34
+
+/** THE TOP EDGE OF THE BLOCK, WHICH IS WHAT ACTUALLY HAS TO FIT.
+ *
+ *  Both offsets above place the block's CENTRE, and the comment on the
+ *  portrait one derives 0.67 from a block "0.246 of a half-frame tall" --
+ *  which is to say from the length of the copy that happened to be in
+ *  config/skyJourney.ts at the time. The plane's height is whatever paint()
+ *  wraps the words into, with no clamp and no scroll anywhere in the path, so
+ *  rewriting a headline is enough to push the first line off the top of the
+ *  frame. Round 33 rewrote all five blocks and did exactly that: measured, the
+ *  tallest reached ndc 1.05 in portrait, with its eyebrow outside the picture.
+ *
+ *  So the offset is a CEILING on the top edge rather than a fixed centre. A
+ *  block that fits does not move at all -- the composition that was signed off
+ *  is unchanged for anything up to 0.25 of a half-frame -- and a taller one
+ *  slides down by exactly the amount it would have overflowed, instead of
+ *  being clipped. 0.92 rather than 1.0 leaves the eyebrow a little air. */
+export const CAPTION_TOP_LIMIT_NDC = 0.92
 /** Fades up over the first of these and out over the last, in world units of
  *  approach -- so it arrives out of the haze and is gone before it is close
  *  enough to be unreadable. */
@@ -825,7 +1033,15 @@ export const PAPER_FADE_OUT = 0.9
  *  It is wholly inside the frame from 132 down to 68, which covers its
  *  arrival and the stretch its block of text is readable over, and is clear
  *  of the picture altogether by 15. */
-export const PROP_SIDE_WORLD = 20
+/** The cloud's offset from the flight axis, as a fraction of the half-frame at
+ *  PROP_FAR_AXIAL -- the distance it is lowered in at.
+ *
+ *  0.2808 is the old fixed 20 world units measured against the frame it was
+ *  chosen in, so landscape is unchanged. RESOLVED ONCE, WHEN THE CLOUD IS
+ *  SEEDED, and then held as a world distance for the whole pass -- see the
+ *  note on CAPTION_SIDE_NDC for why that distinction is the difference
+ *  between a cloud that flies past you and a cloud that hovers. */
+export const PROP_SIDE_NDC = 0.2808
 
 /** How much further out the cloud goes on the CONTACT card, and why it is
  *  forced into the lower half there.
@@ -904,7 +1120,14 @@ export const PROP_DROP_UNTIL = 0.26
  *  from the axis instead, they open outward as they approach and leave
  *  through the side, which is the only way they read as being flown past. */
 export const EDGE_CLOUD_COUNT = 7
-export const EDGE_CLOUD_SIDE: readonly [number, number] = [42, 78]
+/** The small clouds' band, as fractions of the half-frame at
+ *  EDGE_CLOUD_FADE_AXIAL (170) -- the distance they have finished fading in
+ *  by, and so the first distance at which they are meant to be seen.
+ *
+ *  [0.4528, 0.8410] is the old fixed [42, 78] against that frame. At 0.41
+ *  aspect the fixed band put the innermost of them at ndc 1.77: all seven were
+ *  outside the frustum for the entire journey. */
+export const EDGE_CLOUD_SIDE_NDC: readonly [number, number] = [0.4528, 0.841]
 /** Small. The corridor's clouds run CLOUD_SCALE 0.1 .. 0.13; at a third of
  *  that these are 9 to 16 units across against the corridor's 30, which is
  *  about seven per cent of the frame's width at the distance they are read
@@ -928,35 +1151,13 @@ export const EDGE_CLOUD_OPACITY = 0.72
 
 // --- the film ---------------------------------------------------------------
 
-/** How strong the grain is over the paper world, at full altitude.
- *
- *  "Add noise to the sky scene to make it look like an old time grainy
- *  texture of homemade films."
- *
- *  Overlay blend, so it darkens and lightens around the mid-tone rather than
- *  washing the whole picture toward grey the way a plain additive noise does.
- *  The paper sky is a narrow band of light blues and an additive veil over it
- *  reads as fog, not as film.
- *
- *  0.22 WAS TOO LOW, and the reasoning behind it was wrong in a way worth
- *  keeping: "visible in motion and nearly invisible in a still frame" is how
- *  film stock behaves at 24fps on a cinema screen, and it is not what this
- *  is for. The note asked for "an old time grainy texture of homemade
- *  films" -- 8mm, pushed stock, grain you can see standing still. Measured
- *  at 0.22 the effect was confirmed wired and driving the uniform, and still
- *  read as nothing against a paper texture that already has tooth.
- *
- *  It was also being halved twice over: `premultiply` scaled the grain by
- *  the colour beneath it, and the paper sky is a narrow band of mid blues,
- *  so the effect was attenuated by the very surface it was meant to sit on.
- *  That is off now (see the <Noise> in app/page.tsx), and this carries the
- *  rest of the distance.
- *
- *  0.6 read correctly as pushed 8mm stock but started eating the type, and
- *  the contact card is the one screen here anybody has to actually read and
- *  click; 0.45 was still heavier than wanted. 0.3 keeps the tooth without
- *  the picture looking sandblasted. */
-export const SKY_GRAIN_OPACITY = 0.3
+// THE FILM GRAIN IS GONE. SKY_GRAIN_OPACITY lived here, driving an OVERLAY
+// <Noise> pass over the paper world through components/canvas/SkyGrain. It
+// was added for "an old time grainy texture of homemade films", tuned through
+// 0.22 / 0.6 / 0.45 to 0.3, and then removed outright on the plain note that
+// it is not wanted. The pass, its driver and its module state all went with
+// it rather than being held at zero -- a full-screen pass costs its fill
+// every frame whatever its opacity.
 
 // --- the velocity lines ----------------------------------------------------
 
