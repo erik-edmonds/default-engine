@@ -1,7 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import { useAtomValue } from "jotai"
+
 import { CONTACT_LINKS_ARE_PLACEHOLDERS, type PortalDefinition } from "@/config/portals"
+import { PLACES } from "@/config/places"
+import { hoveredPlace } from "@/helpers/globeMarker"
 
 /**
  * What a portal actually delivers once you are inside it.
@@ -43,18 +47,33 @@ export function PortalDestination({ portal }: { portal: PortalDefinition }) {
       }}
     >
       <div style={{ pointerEvents: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.85rem" }}>
-        <h2
-          className="scene-type"
-          style={{ margin: 0, fontSize: "clamp(1.4rem, 5vw, 2.2rem)", fontWeight: 700, color: "#ffffff", letterSpacing: "0.01em" }}
-        >
-          {portal.title}
-        </h2>
-        <p
-          className="scene-type"
-          style={{ margin: 0, maxWidth: "42ch", fontSize: "clamp(0.85rem, 2.4vw, 1rem)", lineHeight: 1.5, color: "rgba(255,255,255,0.82)" }}
-        >
-          {portal.blurb}
-        </p>
+        {/* THE GALLERY PRINTS NO HEADING AND NO CAPTION.
+            
+            Every other portal is captioned because its interior says one
+            thing; this one is a globe you turn and read pins off, so a fixed
+            paragraph under it would describe nowhere in particular -- and it
+            covered the lower third of the planet while doing it. What goes
+            here instead is whatever pin you are pointing at. */}
+        {d.kind !== "places" && (
+          <>
+            <h2
+              className="scene-type"
+              style={{ margin: 0, fontSize: "clamp(1.4rem, 5vw, 2.2rem)", fontWeight: 700, color: "#ffffff", letterSpacing: "0.01em" }}
+            >
+              {portal.title}
+            </h2>
+            {portal.blurb && (
+              <p
+                className="scene-type"
+                style={{ margin: 0, maxWidth: "42ch", fontSize: "clamp(0.85rem, 2.4vw, 1rem)", lineHeight: 1.5, color: "rgba(255,255,255,0.82)" }}
+              >
+                {portal.blurb}
+              </p>
+            )}
+          </>
+        )}
+
+        {d.kind === "places" && <HoveredPlace />}
 
         {d.kind === "route" && (
           <Link href={d.href} style={ctaStyle}>
@@ -123,4 +142,51 @@ const ctaStyle: React.CSSProperties = {
   textDecoration: "none",
   cursor: "pointer",
   backdropFilter: "blur(6px)",
+}
+
+/** What the gallery shows: the pin you are pointing at, and its link.
+ *
+ *  Occupies the same band the caption used to, so the globe's composition is
+ *  unchanged -- the space is simply empty until you hover something. It
+ *  reserves its height rather than appearing from nothing, or the planet
+ *  would jump up and down the frame as the pointer crossed a pin.
+ *
+ *  A place with no link yet still names itself. config/places.ts ships every
+ *  link empty by default, and a pin that silently did nothing would read as
+ *  broken rather than as unfinished. */
+function HoveredPlace() {
+  const country = useAtomValue(hoveredPlace)
+  const place = country ? PLACES[country] : null
+
+  return (
+    <div style={{ minHeight: "4.2rem", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+      {country && (
+        <>
+          <p className="scene-type" style={{ margin: 0, fontSize: "clamp(1.1rem, 3.4vw, 1.5rem)", fontWeight: 700, color: "#ffffff" }}>
+            {country}
+          </p>
+          {place?.link ? (
+            <a href={place.link} target="_blank" rel="noopener noreferrer" style={ctaStyle}>
+              {linkLabel(place.link)} →
+            </a>
+          ) : (
+            <p className="scene-type" style={{ margin: 0, fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+              No link yet
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** A link's host, as its label -- "instagram.com" rather than the whole URL,
+ *  which would wrap over two lines and read as noise. Falls back to the raw
+ *  string for anything that is not a URL, so a relative path still shows. */
+function linkLabel(href: string) {
+  try {
+    return new URL(href).hostname.replace(/^www\./, "")
+  } catch {
+    return href
+  }
 }

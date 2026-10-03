@@ -6,6 +6,7 @@ import { useFrame } from "@react-three/fiber"
 
 import Frame from "@/components/canvas/Card"
 import { prefersReducedMotion } from "@/helpers/motion"
+import { PortalLiveContext } from "@/helpers/portalLive"
 
 // A portfolio portal standing permanently in the island scene at a hotspot's
 // viewpoint, with a carved frame around it so it reads as something built
@@ -353,7 +354,13 @@ export function HotspotPortal({ position, rotation, id, name, author, bg, sleepB
         {/* Inside <MeshPortalMaterial>, so these belong to the portal's own
             scene rather than to the island. */}
         <PortalRoom id={id} live={live} bg={bg ?? PORTAL_DEFAULT_BG} sleepBg={sleepBg} />
-        {roomAwake && children}
+        {/* The interior is handed in as `children` from app/page.tsx, so there
+            is no prop path from this portal to its own contents. The ramp
+            goes through context instead -- an interior has to know whether it
+            is a window or the whole screen. See helpers/portalLive.ts. */}
+        <PortalLiveContext.Provider value={live}>
+          {roomAwake && children}
+        </PortalLiveContext.Provider>
       </Frame>
     </group>
   )

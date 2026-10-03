@@ -26,6 +26,7 @@ import { DeadCampfire } from "@/components/models/DeadCampfire"
 import { Aurora } from "./Aurora"
 import { tweenDuration } from "@/helpers/motion"
 import { sunState } from "@/helpers/sunTracker"
+import { TorchRing } from "@/components/canvas/TorchRing"
 
 // dirX/dirY/dirZ describe a DIRECTION, but a directionalLight takes a
 // position, and the presets' own vectors range from 31 to 49 units long. That
@@ -746,6 +747,20 @@ export function Environment({
        
       </group>
       <Aurora materialRef={auroraMaterialRef} />
+
+      {/* TWO TORCHES ON EACH FLOATING ISLAND.
+          
+          Mounted here rather than in Scene because this file owns the
+          tweened day/night blend and the campfire's lit/unlit decision, and
+          the torches want exactly that behaviour -- out during the day, lit
+          from evening through to dawn, with the same Schmitt trigger so
+          they do not flicker across the threshold.
+          
+          Their positions are world-space and live in config/torches.ts: the
+          islands are hand-placed nodes in a gltfjsx dump and two of them
+          carry a mesh-level offset, so hanging a torch off an island group
+          puts it in open air. See that file. */}
+      <TorchRing litRef={campfireLitRef} glowRef={campfireGlowRef} />
 
       <pointLight ref={campfireLightRef} position={CAMPFIRE_LIGHT_POSITION} distance={7} decay={2} />
       <group ref={litCampfireRef}>

@@ -64,3 +64,23 @@ since been swapped to `earth.glb`, so a real artist's name was being displayed,
 publicly, over work that was not his.
 
 The per-portal credit is now tied to what each portal actually contains.
+
+## The mini-game
+
+`/mini-game` is a port of **R3F-Car-Racing** by **DanieloM83** —
+<https://github.com/DanieloM83/R3F-Car-Racing>. The track, car, ramp and
+barrel models (`public/racing/models/`), the environment map and the ground
+textures (`public/racing/textures/`) are from that project, as are every
+handling constant in `src/components/racing/useWheels.ts` and the collider
+placements in `Track.tsx`.
+
+What changed in the port is recorded at each site: the input model
+(`useControls.ts`), the car's loader (`Car.tsx`), the ground texture clone
+(`Ground.tsx`) and the asset URLs (`paths.ts`).
+
+**OUTSTANDING, AND BLOCKING FOR A PUBLIC SHIP.** The upstream repository
+carries no LICENSE file and its README states no terms, so there is at
+present no permission on record to redistribute either its code or its art.
+This needs the author's explicit say-so — or the game needs replacing —
+before the site goes public. It is listed here rather than quietly shipped
+because that is the same mistake the correction below records.

@@ -491,7 +491,7 @@ export const SKY_TEXT_CUES: {
  *  half-sine because its SLOPE is zero at both ends as well as its value: the
  *  camera does not start or stop turning abruptly, it eases out of neutral and
  *  back into it. Between one block's turn and the next it is simply still. */
-const SKY_TEXT_ACTIVE = 0.62
+const SKY_TEXT_ACTIVE = 0.82
 
 /** How far into a block's turn the camera begins to look at it.
  *
@@ -509,39 +509,219 @@ function pulse(u: number) {
   return 0.5 * (1 - Math.cos(2 * Math.PI * u))
 }
 
+// --- the cards -------------------------------------------------------------
+
+/** A BLOCK IS A CARD, AND A CARD IS A SCENE WITH ITS OWN SCROLL.
+ *
+ *  "Each card that the text are in should be like a full screen scene, that
+ *  starts out as a small card, but on scroll it expands to take up the full
+ *  screen then the user scrolls through the content of this card scene, then
+ *  the card retracts back to a small card, and the 'Overscene' of the main
+ *  sky scene continues."
+ *
+ *  The five phases below are cut out of the block's OWN turn, so there is no
+ *  second scroller and no state machine. The thing that makes a nested scroll
+ *  hard -- deciding when the inner one takes the wheel and when it hands it
+ *  back -- simply does not arise: there is one axis, the reader is always on
+ *  it, and scrolling backwards retraces exactly.
+ *
+ *      turn 0 ──── .16 ──── .28 ─────────────── .80 ──── .90 ──── 1
+ *           approach  expand       INSIDE        contract  depart
+ *           flies in   grows to    its own       back to   sky
+ *           small      fullscreen  scene scrolls  a card   resumes
+ *
+ *  Why these numbers. INSIDE is 52% because the card's scene is the content
+ *  and everything else is transition. Expand gets 12% and contract 10% --
+ *  contract is deliberately the quicker of the two, because arriving somewhere
+ *  wants more ceremony than leaving it, which is what both reference clips
+ *  show. Approach is longer than depart for the same reason. */
+const CARD_EXPAND_FROM = 0.16
+const CARD_INSIDE_FROM = 0.28
+const CARD_CONTRACT_FROM = 0.8
+const CARD_DEPART_FROM = 0.9
+
+export type SkyCardPhase = "away" | "approach" | "expand" | "inside" | "contract" | "depart"
+
+/** Everything the card needs to draw itself at a point on the axis.
+ *
+ *  `open` is the one number the geometry hangs off: 0 is a small card out in
+ *  the corridor, 1 is filling the frame. `inside` is the progress THROUGH the
+ *  card's own scene, 0 until it has finished expanding and 1 from the moment
+ *  it starts to contract, so the inner parallax neither starts early nor
+ *  carries on while the card is shrinking.
+ *
+ *  Smoothstepped on both ramps rather than linear: the card's size is the most
+ *  visible thing on screen while it is changing, and a linear scale starts and
+ *  stops abruptly however well the rest is tuned. */
+export function skyCardState(offset: number) {
+  const focus = skyTextFocus(offset)
+  const base = { index: focus.index, side: focus.side, turn: focus.turn, centred: focus.centred === true }
+  const t = focus.turn
+  if (t < 0) return { ...base, phase: "away" as SkyCardPhase, u: 0, open: 0, inside: 0 }
+
+  // `u` is how far through THIS phase the reader is, 0..1. Returned rather
+  // than left to the caller to work out, so the phase boundaries above are
+  // stated exactly once -- SkyCard needs the approach's progress to fly the
+  // card in and the depart's to sweep it past, and recomputing either from
+  // the raw turn is two more copies of the same four numbers.
+  let phase: SkyCardPhase
+  let open: number
+  let u: number
+  if (t < CARD_EXPAND_FROM) {
+    phase = "approach"
+    u = t / CARD_EXPAND_FROM
+    open = 0
+  } else if (t < CARD_INSIDE_FROM) {
+    phase = "expand"
+    u = (t - CARD_EXPAND_FROM) / (CARD_INSIDE_FROM - CARD_EXPAND_FROM)
+    open = smoothstep(u)
+  } else if (t < CARD_CONTRACT_FROM) {
+    phase = "inside"
+    u = (t - CARD_INSIDE_FROM) / (CARD_CONTRACT_FROM - CARD_INSIDE_FROM)
+    open = 1
+  } else if (t < CARD_DEPART_FROM) {
+    phase = "contract"
+    u = (t - CARD_CONTRACT_FROM) / (CARD_DEPART_FROM - CARD_CONTRACT_FROM)
+    open = 1 - smoothstep(u)
+  } else {
+    phase = "depart"
+    u = (t - CARD_DEPART_FROM) / (1 - CARD_DEPART_FROM)
+    open = 0
+  }
+
+  const inside = Math.min(
+    1,
+    Math.max(0, (t - CARD_INSIDE_FROM) / (CARD_CONTRACT_FROM - CARD_INSIDE_FROM)),
+  )
+  return { ...base, phase, u, open, inside }
+}
+
+/** How open the card is at a point on the axis, and nothing else.
+ *
+ *  The whole of skyCardState allocates an object, and the two callers that
+ *  want only this number are the per-frame ones: the subject's lift, and
+ *  every corridor prop deciding whether it is behind a card that has become
+ *  the screen. Seven allocations a frame is not a crisis, but it is seven
+ *  more than a number needs. */
+export function skyCardOpen(offset: number) {
+  const focus = skyTextFocus(offset)
+  const t = focus.turn
+  if (t < CARD_EXPAND_FROM) return 0
+  if (t < CARD_INSIDE_FROM) return smoothstep((t - CARD_EXPAND_FROM) / (CARD_INSIDE_FROM - CARD_EXPAND_FROM))
+  if (t < CARD_CONTRACT_FROM) return 1
+  if (t < CARD_DEPART_FROM) return 1 - smoothstep((t - CARD_CONTRACT_FROM) / (CARD_DEPART_FROM - CARD_CONTRACT_FROM))
+  return 0
+}
+
+/** How far the SUBJECT is lifted out of frame while a card is open.
+ *
+ *  The Dragonite hangs 6.3 units from the lens and the card stands about
+ *  fifty units further out, so at full expansion he is in front of a card
+ *  that is supposed to BE the screen -- he would float over the middle of it.
+ *
+ *  He goes up on his string, which is the exit this scene has already
+ *  promised and the reader has already approved for the end of the journey
+ *  ("like a marionette pulling up a puppet"). Driven by `open`, so it is the
+ *  same gesture in both directions: the card opens and he is drawn up out of
+ *  the picture, it closes and he comes back down. Nothing is faded, no
+ *  material is touched, and scrolling backwards plays it in reverse for free.
+ *
+ *  Squared, like skyExitLift, so the slack goes out of the string before he
+ *  moves and he is still travelling when he leaves the top of the frame. */
+const CARD_SUBJECT_LIFT = 26
+
+export function skyCardSubjectLift(offset: number) {
+  const open = skyCardOpen(offset)
+  return CARD_SUBJECT_LIFT * open * open
+}
+
 const SPAN_START = SKY_TEXT_CUES.map((cue, i) => (i === 0 ? SKY_TEXT_LEAD : cue.threshold))
 const SPAN_END = SKY_TEXT_CUES.map((_, i) => SKY_TEXT_CUES[i + 1]?.threshold ?? SKY_JOURNEY_DISTANCE)
 
-/** Where the journey settles: the middle of each block's turn.
+/** A point inside block `i`, given a fraction of its TURN.
  *
- *  The scroll is helped into these and holds there for a beat before the next
- *  gesture breaks it loose -- see advanceSkyScroll. The middle of the TURN
- *  rather than of the section, because that is where the lean is at full
- *  strength and the words are at their most readable. */
-/** Where in a section the words are at their most readable.
- *
- *  The turn fraction below is not a taste number: it is the point at which the
- *  block reaches CAPTION_READ_AXIAL, the distance its type is authored to be
- *  read at. With the caption running CAPTION_FAR_AXIAL 210 to
- *  CAPTION_NEAR_AXIAL 2 across the turn, that is (210 - 62) / 208 = 0.71.
- *
- *  Stated here rather than imported from config/paperSky, and that is
- *  deliberate: paperSky already imports this module, so reaching back the
- *  other way would close an import cycle -- and in a cycle the constants at
- *  the top of paperSky's module body are read while this one is still being
- *  evaluated, which is a temporal-dead-zone ReferenceError at load rather
- *  than anything a type checker would catch. If the caption's ends are
- *  retuned, this is the line that has to follow them.
- *
- *  It matters more than it used to. The scroll magnet was doing nothing
- *  measurable before this round (see ESCAPE_SPEED in helpers/skyScroll), so
- *  where exactly a hold sat was academic; now that it actually holds, it
- *  should hold where the words are at their design size. */
-const READABLE_AT = (1 - SKY_TEXT_ACTIVE) / 2 + SKY_TEXT_ACTIVE * 0.71
+ *  One statement of the arithmetic that turns a turn into a place on the
+ *  axis, because four things below need it and they were drifting apart as
+ *  separate copies. */
+function turnOffset(i: number, turn: number) {
+  const start = SPAN_START[i]
+  const span = SPAN_END[i] - start
+  const active = span * SKY_TEXT_ACTIVE
+  return start + (span - active) / 2 + active * turn
+}
 
-export const SKY_TEXT_HOLDS: readonly number[] = SPAN_START.map(
-  (start, i) => start + (SPAN_END[i] - start) * READABLE_AT,
+/** The length of a block's turn, on the axis. Every section is the same
+ *  length, so one is all of them. */
+const ACTIVE_SPAN = (SPAN_END[0] - SPAN_START[0]) * SKY_TEXT_ACTIVE
+
+const LAST_BLOCK = SKY_TEXT_CUES.length - 1
+
+/** WHERE THE JOURNEY MAY COME TO REST, and why there are now two per card.
+ *
+ *  The old table had one hold per block, at the moment its words were at
+ *  their design size, and the magnet's job was "never leave the reader
+ *  somewhere with no text on screen". Cards change that question entirely.
+ *  The stretch of empty sky between one card and the next is no longer a gap
+ *  to be carried across -- it is the Overscene, and stopping to look at it is
+ *  the point of it being there.
+ *
+ *  What a card DOES make unstable is its two ramps. A card caught half
+ *  expanded or half retracted is a mistake on screen, and those are the only
+ *  two places on the whole axis where stopping looks broken. So each card
+ *  gets a hold at the end of each ramp:
+ *
+ *    - `settled`, just inside INSIDE, so a half-expand always completes;
+ *    - `cleared`, just past DEPART, so a half-contract always completes.
+ *
+ *  Everywhere else -- anywhere within a card's own scene, anywhere in the
+ *  sky between two cards -- is a legitimate place to stop, and the bounded
+ *  reach below means nothing drags the reader out of it.
+ *
+ *  THE LAST CARD HAS NO `cleared` HOLD. The journey ends inside it (see
+ *  SKY_SCROLL_LIMIT); there is no contract to complete because it never
+ *  closes. */
+export const SKY_TEXT_HOLDS: readonly number[] = SKY_TEXT_CUES.flatMap((_, i) => {
+  const settled = turnOffset(i, CARD_INSIDE_FROM + 0.015)
+  return i === LAST_BLOCK ? [settled] : [settled, turnOffset(i, CARD_DEPART_FROM + 0.015)]
+})
+
+/** HOW FAR A SPENT GESTURE MAY BE CARRIED, and this is the number that broke.
+ *
+ *  advanceSkyScroll used to derive its forward reach from the holds
+ *  themselves -- the largest gap between two of them -- on the reasoning that
+ *  a reader stranded between blocks should always be able to be landed on the
+ *  next one. That was sound when a block was 540 units long. Blocks are now
+ *  1476, so the same rule handed the magnet a 1476-unit reach and a single
+ *  wheel notch teleported the reader through an entire card. Measured: eight
+ *  notches covered 2779 units of an axis where a notch is worth about 39, and
+ *  the expand and contract phases were never once on screen.
+ *
+ *  So the reach says what it is for instead of being inferred. It has exactly
+ *  one job -- get out of a ramp -- so it is the longer ramp's length with a
+ *  little over. It cannot reach the next card by construction, which is also
+ *  what makes STILL_READING almost redundant. */
+export const SKY_SETTLE_REACH = Math.round(
+  (CARD_INSIDE_FROM - CARD_EXPAND_FROM) * ACTIVE_SPAN * 1.18,
 )
+
+/** How close behind a hold the reader can be and still be left alone.
+ *
+ *  SMALL NOW, AND IT USED TO DO THE HEAVY LIFTING. At 60 units against a
+ *  1476-unit reach it was the only thing stopping the magnet carrying a
+ *  reader who had nudged the wheel once straight into the next block. With
+ *  the reach bounded to a ramp that cannot happen at all, so this is back to
+ *  what it sounds like: a little dead ground just past a hold, so the settle
+ *  does not argue with someone who has only just pushed off one. */
+export const SKY_STILL_READING = 80
+
+/** The two together, in the shape advanceSkyScroll takes them. A frozen
+ *  module constant rather than an object literal at the call site: that call
+ *  is in a frame loop, and an allocation per frame to describe two numbers
+ *  that never change is pure waste. */
+export const SKY_SETTLE_SHAPE = {
+  reach: SKY_SETTLE_REACH,
+  stillReading: SKY_STILL_READING,
+} as const
 
 /** WHERE THE JOURNEY ENDS, and it is not the end of the axis.
  *
@@ -549,26 +729,28 @@ export const SKY_TEXT_HOLDS: readonly number[] = SPAN_START.map(
  *  with the text, because that's the contact part, the user needs to be able
  *  to interact with it."
  *
- *  Every other block is flown past. This one is arrived at: the scroll's wall
- *  is the last block's own hold, so the journey comes to rest with the
- *  contact card at CAPTION_READ_AXIAL -- its design size -- and simply stays
- *  there however hard the wheel is pushed. Parking it at a hold rather than
- *  at an arbitrary stop also means the magnet is already pulling the right
- *  way as you come in, so the last thing the scroll does is settle rather
- *  than hit a wall.
+ *  Every other card is flown past. This one is arrived at and never left:
+ *  the wall is the END of the last card's INSIDE, so the journey comes to
+ *  rest with the contact card still filling the screen and simply stays
+ *  there however hard the wheel is pushed. Stopping one tick before its
+ *  contract begins is what guarantees it never starts to shrink -- the one
+ *  card the reader has to be able to USE is the one card that must not close
+ *  itself while they are reaching for a link.
  *
  *  The axis itself is unchanged. The avatar's keyframes, the corridor and the
- *  captions are all still written against SKY_JOURNEY_DISTANCE; this is a
- *  limit on where the reader may take the scroll, not a shortening of the
- *  world. */
-export const SKY_SCROLL_LIMIT = SKY_TEXT_HOLDS[SKY_TEXT_HOLDS.length - 1]
+ *  cards are all still written against SKY_JOURNEY_DISTANCE; this is a limit
+ *  on where the reader may take the scroll, not a shortening of the world. */
+export const SKY_SCROLL_LIMIT = turnOffset(LAST_BLOCK, CARD_CONTRACT_FROM)
 
 /** When the contact panel's links become live.
  *
- *  Late: the block is at its design size at the hold, and the links should
- *  arrive with it rather than trailing the whole approach. Sixty units short
- *  of the wall is about the last beat of the settle. */
-export const SKY_CONTACT_REVEAL = SKY_SCROLL_LIMIT - 60
+ *  The moment the last card is fully open, rather than a fixed distance
+ *  short of the wall. The card holds open for the whole of its INSIDE and
+ *  the links belong to it, so they arrive with it and stay for as long as it
+ *  is on screen -- a reader who stops two thirds of the way through the last
+ *  card's scene should not find the one actionable thing in the sky still
+ *  switched off. */
+export const SKY_CONTACT_REVEAL = turnOffset(LAST_BLOCK, CARD_INSIDE_FROM)
 
 /** How far the subject is hauled up out of the frame as the contact card
  *  arrives, and over what stretch of the axis.

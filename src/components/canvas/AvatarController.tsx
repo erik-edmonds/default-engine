@@ -6,14 +6,18 @@ import type { Group, Mesh, Object3D } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
-import { AVATAR_BASE_POSITION, SKY_SCROLL_SMOOTH_TIME, avatarSkyPose, setSkyOrigin, skyExitLift } from "@/config/skyJourney"
+import {
+  AVATAR_BASE_POSITION,
+  SKY_SCROLL_SMOOTH_TIME,
+  avatarSkyPose,
+  setSkyOrigin,
+  skyCardSubjectLift,
+  skyExitLift,
+} from "@/config/skyJourney"
 import { skyFrame } from "@/helpers/skyFrame"
 import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
-import { MAGNETIC_SNAP_RADIUS, activateTarget, getMagneticTargets, pointerState, registerMagneticTarget, type MagneticTarget } from "@/helpers/cursor"
-import { AVATAR_HIT_PROXY, advanceSuggestion } from "@/helpers/avatarBubble"
-import { useSetAtom } from "jotai"
+import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
-import { useCursorHover } from "@/helpers/useCursorHover"
 import { Avatar } from "@/components/models/Avatar"
 import { FlyingDragonite } from "@/components/models/FlyingDragonite"
 import { Rope } from "@/components/canvas/PaperSky"
@@ -235,28 +239,6 @@ const SUBJECT_ROPE_RADIUS = ROPE_RADIUS_NEAR * (SUBJECT_SCALE / 2.5)
 const ROPE_ARRIVAL_MARGIN = 6
 const ROPE_FADE_LAMBDA = 3.5
 
-/** THE HIT PROXY, measured against the figure rather than guessed.
- *
- *  <Avatar> is drawn at scale 1.4 with its feet on the group origin, and
- *  BUBBLE_ANCHOR_UP (2.35) already records that the top of his head sits a
- *  little over two units up. A capsule is the right shape for a standing
- *  person and it costs one cheap geometry: total height is length + 2*radius,
- *  and three centres it on its own origin, hence the lift.
- *
- *  Generous on purpose. He is a few hundred pixels tall on a desktop and a
- *  thumb-width on a phone, and the thing being clicked is a conversation, not
- *  a precise control -- a near miss should still land. */
-const HIT_RADIUS = 0.52
-const HIT_LENGTH = 1.18
-const HIT_CENTRE_Y = HIT_RADIUS + HIT_LENGTH / 2
-
-/** Slightly weaker and slightly wider than the beach props' 1.05/155. He is
- *  the biggest target in the scene and stands between the camera and the
- *  guitar; a prop-strength magnet on something this large pulls the cursor off
- *  the smaller things around him. */
-const HIT_MAGNETIC_STRENGTH = 0.8
-const HIT_MAGNETIC_RADIUS = 170
-
 export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref) => {
   const group = useRef<Group>(null)
   // Constant: the cutout holds station at the corridor origin, and STRING_TOP
@@ -296,13 +278,6 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   const dragoniteInstanceRef = useRef<DragoniteHandle | null>(null)
   const materializeResolveRef = useRef<(() => void) | null>(null)
   const isCoarsePointer = useCoarsePointer()
-  /** CLICKING HIM ADVANCES THE QUEUE. The one place a click on the avatar
-   *  does anything; both the direct hit and the cursor's assisted click come
-   *  through here, so they cannot drift apart. */
-  const advance = useSetAtom(advanceSuggestion)
-  const [hovered, setHovered] = useState(false)
-  const hitProxy = useRef<Mesh>(null)
-  const magnet = useRef<MagneticTarget | null>(null)
   const headBone = useRef<Object3D | null>(null)
   const neckBone = useRef<Object3D | null>(null)
   const gaze = useRef({ yaw: 0, pitch: 0 })
@@ -607,7 +582,13 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     // ...and LOWER IN A PORTRAIT FRAME, so the words stacked above him have
     // somewhere to go. See SUBJECT_DROP_PORTRAIT for the measurement and for
     // why this moves the subject rather than the camera.
-    group.current.position.y = pose.y + idleBob + skyExitLift(offset) - subjectSkyDrop()
+    // AND UP OUT OF THE WAY WHILE A CARD IS OPEN -- see skyCardSubjectLift.
+    // He hangs 6.3 units from the lens and a card stands sixty units further
+    // out, so at full expansion he would float over the middle of a scene
+    // that is supposed to be the whole screen. Same string, same gesture,
+    // and it plays in reverse when the card closes.
+    group.current.position.y =
+      pose.y + idleBob + skyExitLift(offset) + skyCardSubjectLift(offset) - subjectSkyDrop()
     group.current.position.z = pose.z
     // THE CAMERA TURNS; THE SUBJECT DOES NOT.
     //
@@ -762,59 +743,18 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     applyGaze(head, gazeScratch.head, gazeScratch.worldDelta, gazeScratch.parentWorld, gazeScratch.localDelta)
   }, 0.5)
 
-  useCursorHover(hovered)
-
-  /** What a click on him does, in one place so the direct click and the
-   *  cursor's assisted click cannot drift apart -- the same arrangement
-   *  Guitar.tsx and Pokeball.tsx use, and for the same reason. Held in a ref
-   *  so the magnet registers once instead of re-registering whenever the
-   *  queue changes. */
-  const activateRef = useRef<() => void>(() => {})
-  activateRef.current = () => advance()
-
-  // He is a magnetic target like every other interactive thing on the island.
-  // Registered on the hit proxy rather than on `group`, because the group is
-  // also what the sky journey flies: in the air its world position is eighty
-  // units up a corridor, and a magnet aimed there would drag the cursor
-  // toward empty sky. The proxy only exists while he is standing on the beach.
-  const islandForm = modelKind !== "cardboard"
-  const islandFormRef = useRef(islandForm)
-  islandFormRef.current = islandForm
-  useEffect(() => {
-    const object = hitProxy.current
-    if (!object) return
-    const target: MagneticTarget = {
-      object,
-      type: "interactive",
-      strength: HIT_MAGNETIC_STRENGTH,
-      radius: HIT_MAGNETIC_RADIUS,
-      snapRadius: MAGNETIC_SNAP_RADIUS,
-      isEnabled: () => islandFormRef.current,
-      activate: () => activateRef.current(),
-    }
-    magnet.current = target
-    return registerMagneticTarget(target)
-    // Keyed on the form so the magnet re-registers against the proxy that is
-    // actually mounted; the cardboard branch unmounts it entirely.
-  }, [islandForm])
-
-  // THE AVATAR ANSWERS THE POINTER NOW -- but only at one known object.
+  // The avatar is the subject of the scene, not a control: nothing happens
+  // when you click it, so it shouldn't answer the pointer at all.
   //
-  // This walk used to exist because nothing happened when you clicked him, so
-  // he had no business answering the pointer at all. That is no longer true:
-  // he carries the suggestion queue, and clicking him is how you hear the next
-  // thing he has to say. The walk stays anyway, and the rule it enforces is
-  // the reason why -- picking is granted to ONE named proxy volume mounted
-  // below, not re-enabled across thirty skinned meshes. A hit on a sleeve and
-  // a hit on a shoe should not be two different events, and a click aimed at
-  // the guitar behind him should not find a strand of hair first. So every
-  // mesh in the model stays deaf and the proxy, which is exempted by name,
-  // takes the whole hit.
+  // IT WAS BRIEFLY CLICKABLE. A suggestion queue hung off him -- clicking him
+  // said the next thing -- and that was granted through one named proxy
+  // capsule exempted from this walk. The whole feature is gone, so the
+  // exemption is too and the rule below is unconditional again.
   //
-  // Done by walking the subtree rather than by props because these are gltfjsx
-  // components whose meshes aren't reachable from here -- and re-run on
-  // `modelKind` because the base/dragonite/cardboard swap mounts a whole new
-  // model that would otherwise come back raycastable.
+  // Done by walking the subtree rather than by props because these are
+  // gltfjsx components whose meshes aren't reachable from here -- and re-run
+  // on `modelKind` because the base/dragonite/cardboard swap mounts a whole
+  // new model that would otherwise come back raycastable.
   //
   // Deliberately no dependency array. The models load through useGLTF inside
   // the <Suspense> below, so on a fresh mount (and on every form swap) their
@@ -826,17 +766,12 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   // castShadow per-mesh in its own gltfjsx file (Gear, Campfire, Desk...), but
   // the avatar's three variants didn't, so the subject of the whole scene was
   // the one thing the key light passed straight through -- casting nothing and
-  // catching nothing. Flipping it here rather than in three model files keeps
-  // it true across the base/dragonite/scuba swap.
+  // catching nothing.
   useEffect(() => {
     let head: Object3D | null = null
     let neck: Object3D | null = null
 
     group.current?.traverse((child) => {
-      // The one exemption, and the only object in here that can be hit. Also
-      // skipped by the shadow pass below -- an invisible capsule that casts a
-      // shadow is a shadow with nothing making it.
-      if (child.name === AVATAR_HIT_PROXY) return
       child.raycast = () => {}
 
       // Picked up on the same walk rather than in a second effect: the bones
@@ -871,76 +806,6 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     // flat cutout with no skeleton at all. A name survives whichever model is
     // mounted inside it, which is the whole point of the swap.
     <group ref={group} name="avatar-root" position={BASE_POSITION} rotation={BASE_ROTATION}>
-      {/* THE ONE THING IN HERE THAT ANSWERS A CLICK.
-
-          Outside the <Suspense> deliberately: the models arrive in a later
-          commit and the walk above re-runs after every one of them, so a proxy
-          that mounted with them would spend the first commits unexempted. This
-          one exists from the first frame and is exempted by name.
-
-          Transparent rather than visible={false} because three's raycaster
-          does not skip invisible objects, so the two differ only in intent --
-          and saying it in the material is what makes it obvious this is a hit
-          volume and not a mesh someone forgot to show. Guitar.tsx's touch
-          sphere makes the same choice and says the same thing.
-
-          Not mounted for the cardboard cutout: in the sky he is on a string
-          eighty units up, the bubble is hidden there (AvatarAnchor), and a
-          click volume following him around the corridor would sit in front of
-          clouds the visitor is trying to reach. */}
-      {islandForm && (
-        <mesh
-          ref={hitProxy}
-          name={AVATAR_HIT_PROXY}
-          position={[0, HIT_CENTRE_Y, 0]}
-          onClick={(e) => {
-            // r3f dispatches a click to every interactive object the ray
-            // crosses, nearest first. Only act when he is what was actually
-            // hit first -- otherwise a click aimed at the guitar behind him
-            // advances the queue on its way through.
-            if (e.intersections[0]?.eventObject !== e.eventObject) return
-            // ...AND HE YIELDS TO ANY REAL CONTROL THE SAME CLICK CROSSES,
-            // even one BEHIND him.
-            //
-            // Being first is the usual test and it is wrong here, because
-            // this collider is invisible. Measured: moving the Poke Ball out
-            // from behind the About Me sign put it inside his screen
-            // footprint, and although the ball is plainly visible and
-            // unobstructed, this capsule sits nearer the lens along that ray
-            // -- so it took the hit, stopped propagation, and the only
-            // entrance to the sky stopped working. Isolated by disabling just
-            // this object's raycast, after which the ball worked again.
-            //
-            // A reader cannot see the capsule, so it must never be the reason
-            // a thing they CAN see does not respond. Checked against the
-            // magnetic registry rather than a list of names: every real
-            // control on the island is already in it, so the guitar and the
-            // clouds are covered by the same rule without this file knowing
-            // they exist.
-            const yields = e.intersections.some((hit) => {
-              if (hit.eventObject === e.eventObject) return false
-              for (const target of getMagneticTargets()) {
-                if (target === magnet.current) continue
-                for (let node: THREE.Object3D | null = hit.object; node; node = node.parent) {
-                  if (node === target.object) return true
-                }
-              }
-              return false
-            })
-            if (yields) return
-            e.stopPropagation()
-            // Through the registry so this and the cursor's assisted click
-            // share one debounce.
-            if (magnet.current) activateTarget(magnet.current)
-            else activateRef.current()
-          }}
-          onPointerOver={(e) => setHovered(e.intersections[0]?.eventObject === e.eventObject)}
-          onPointerOut={() => setHovered(false)}
-        >
-          <capsuleGeometry args={[HIT_RADIUS, HIT_LENGTH, 4, 8]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      )}
       <Suspense fallback={null}>
         {modelKind === "base" && <Avatar scale={1.4} />}
         {modelKind === "dragonite" && <Dragonite ref={setDragoniteRef} scale={1.4} />}

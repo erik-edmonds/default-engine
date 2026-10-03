@@ -26,12 +26,24 @@ interface JourneyRailProps {
   /** Lays the rail along the bottom edge instead of up the right one. */
   horizontal: boolean
   /** The destination the camera is parked in front of a portal at, or null
-   *  anywhere else -- mid-passage, and at Home, which has no portal. This is
-   *  the whole gate: it decides both whether the rail stays up and whether a
-   *  tap does anything. */
+   *  anywhere else -- mid-passage, and at Home, which has no portal.
+   *
+   *  It used to be the whole gate, deciding both whether the rail stayed up
+   *  AND whether a tap did anything. It now decides only the first, plus
+   *  which stop reads as "here". Travel is `canTravel`, because a reader
+   *  halfway between two destinations has somewhere they want to go just as
+   *  much as one standing still -- and the rail answering "no" there was the
+   *  reported fault. */
   parkedAt: JourneyStopId | null
-  /** Fly directly to a destination. Only ever called while `parkedAt` is set,
-   *  so the caller always knows where the flight is departing from. */
+  /** Whether a tap flies anywhere at all. False only while a flight is
+   *  already under way. */
+  canTravel: boolean
+  /** Fly directly to a destination.
+   *
+   *  May now be called mid-passage, when the caller does NOT know where the
+   *  flight departs from -- a route needs a stop at each end, so it finishes
+   *  arriving at the destination the passage was already heading for and
+   *  leaves from there. See handleJump. */
   onJump: (id: JourneyStopId) => void
   /** Open the portal at the stop you are already parked at.
    *
@@ -63,17 +75,23 @@ interface JourneyRailProps {
  *   to tell how far along it you are or that it ends -- but a permanent
  *   indicator over a scene this carefully lit is a poor trade, so it earns its
  *   place only while you are travelling.
- * - EXCEPT while parked at a portal, when it stays up. Jumping is offered only
- *   there, and a control that hides itself at exactly the moment it becomes
- *   usable is no control at all. That also makes the rail's own presence the
- *   cue that you have arrived somewhere you can go into.
+ * - EXCEPT while parked at a portal, when it stays up. That makes the rail's
+ *   own presence the cue that you have arrived somewhere you can go into.
+ *
+ * Travel itself is no longer limited to those moments. It was, and the rail
+ * then spent most of the journey showing four disabled buttons: a reader
+ * halfway between two destinations who had decided where they wanted to go
+ * had to first finish scrolling there by hand before the control that exists
+ * to save them that would respond. Mid-passage taps are now honoured -- see
+ * onJump, which finishes the passage already in progress and departs from
+ * wherever that lands.
  *
  * A tap flies a direct route (see routeBetween in config/journey.ts). It does
  * NOT scroll the itinerary to the destination: asked for Contact from Donate,
  * that would sweep the camera through Models on the way and announce a place
  * you did not choose.
  */
-export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump, onEnterPortal, enterableStops }: JourneyRailProps) {
+export function JourneyRail({ labels, visible, horizontal, parkedAt, canTravel, onJump, onEnterPortal, enterableStops }: JourneyRailProps) {
   const [progress, setProgress] = useState(0)
   const [awake, setAwake] = useState(false)
   // Set while a finger is down on the rail: a control that fades on its own is
@@ -139,8 +157,10 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump, onE
   // Three decimals is far below one device pixel on any rail height.
   const pct = (n: number) => `${Number(n.toFixed(3))}%`
 
-  const canJump = parkedAt !== null
-  const shown = visible && (awake || canJump)
+  // Parked keeps the rail up; travelling does not. A rail that stayed up
+  // whenever a tap would work would now be permanent chrome over the scene,
+  // which is the thing the scrollbar behaviour above exists to avoid.
+  const shown = visible && (awake || parkedAt !== null)
   // Which axis a stop's position is written to. The rest of the difference
   // between the two orientations is CSS.
   const along = horizontal ? "left" : "top"
@@ -186,9 +206,9 @@ export function JourneyRail({ labels, visible, horizontal, parkedAt, onJump, onE
       </div>
 
       {JOURNEY_STOP_SCROLL.map((stop, i) => {
-        // Not a destination while you are already standing in it, and not one
-        // at all unless you are parked somewhere you may leave from.
-        const reachable = canJump && stop.id !== parkedAt
+        // Not a destination while you are already standing in it. Everywhere
+        // else is now fair game, mid-passage included.
+        const reachable = canTravel && stop.id !== parkedAt
         // The stop you are standing at becomes "enter this portal" rather than
         // a dead marker, when a caller offers that.
         const isHere = stop.id === parkedAt

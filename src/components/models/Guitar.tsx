@@ -8,6 +8,7 @@ import { Howl } from "howler"
 import { wireAudioFailures } from "@/helpers/sfx"
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { musicEnabled, sfxEnabled, soundOffNudge } from '@/helpers/StateProvider'
+import { useUnlock } from '@/helpers/achievements'
 import { useShadows } from '@/helpers/useShadows'
 import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
 
@@ -31,6 +32,7 @@ export function Guitar(props: ThreeElements['group']) {
   const [sound, setSound] = useAtom(musicEnabled);
   const masterOn = useAtomValue(sfxEnabled);
   const nudgeSoundOff = useSetAtom(soundOffNudge);
+  const unlock = useUnlock();
   const [hovered, setHover] = useState(false)
   const coarse = useCoarsePointer()
   const { nodes, materials } = useGLTF('/models/guitarra.glb')
@@ -59,6 +61,8 @@ export function Guitar(props: ThreeElements['group']) {
   const activateRef = useRef<() => void>(() => {})
   activateRef.current = () => {
     setSound(!sound)
+    // On the way ON only: turning the music off is not a discovery.
+    if (!sound) unlock("music")
     // Everything this prop does is audible, so with the master switch off
     // clicking it looks broken -- the intent is recorded and nothing happens.
     // Point at the control that fixes it. Only on the way ON: clicking to turn

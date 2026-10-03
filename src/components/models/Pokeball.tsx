@@ -7,10 +7,26 @@ import { useFrame } from '@react-three/fiber'
 
 import { useShadows } from '@/helpers/useShadows'
 import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
+import { ISLAND_CAMERA_POSITION } from '@/config/positions'
 
 /** Same as the other props: noticed, not captured by. */
 const PROP_MAGNETIC_STRENGTH = 1.05
 const PROP_MAGNETIC_RADIUS = 155
+
+/** How near the home viewpoint the camera must be for the ball to work.
+ *
+ *  THE BALL USED TO BE CLICKABLE FROM ANYWHERE, including from inside the
+ *  Models portal, where it launched the sky sequence out from under whatever
+ *  you were looking at. It is mounted permanently -- Scene.tsx renders it
+ *  under an `islandMounted` that never flips back -- so "is it reachable" was
+ *  never asked.
+ *
+ *  Decided from the LIVE CAMERA rather than from the journey's index, which
+ *  is the authority app/page.tsx argues for in the same situation: "the index
+ *  and the camera come apart the moment you drag to orbit". CameraHotspot
+ *  settles the identical question the same way, and these are its radii. */
+const AT_HOME_RADIUS = 6
+const LEFT_HOME_RADIUS = 8
 
 /** THE BEAM AIMS AT THE AVATAR, IT IS NOT AIMED BY HAND ANY MORE.
  *
@@ -276,8 +292,23 @@ function Pokeball({ onRelease, ...props }, ref) {
   // Magnetic target on the ball group, not the root: the root also contains
   // the release beam and the sparkle cloud, which sit out by the avatar, so
   // its world origin is not where the ball appears.
+  // WHETHER THE BALL IS REACHABLE AT ALL, from where the camera is standing.
+  //
+  // Hysteresis rather than one threshold, copied from CameraHotspot: a single
+  // radius flickers while the camera drifts across it, and a prop that blinks
+  // in and out of being clickable is worse than one that is simply off.
+  const atHome = useRef(true)
+  useFrame((state) => {
+    const d = state.camera.position.distanceTo(ISLAND_CAMERA_POSITION)
+    if (atHome.current && d > LEFT_HOME_RADIUS) atHome.current = false
+    else if (!atHome.current && d < AT_HOME_RADIUS) atHome.current = true
+  })
+
   const clickRef = useRef(() => setClicked((c) => !c))
-  clickRef.current = () => setClicked((c) => !c)
+  clickRef.current = () => {
+    if (!atHome.current) return
+    setClicked((c) => !c)
+  }
   const magnet = useRef<MagneticTarget | null>(null)
   useEffect(() => {
     if (!ballGroupRef.current) return
@@ -288,7 +319,8 @@ function Pokeball({ onRelease, ...props }, ref) {
       radius: PROP_MAGNETIC_RADIUS,
       snapRadius: MAGNETIC_SNAP_RADIUS,
       // Once released, clicking it again does nothing useful -- stop pulling.
-      isEnabled: () => !click,
+      // And it does not exist at all from anywhere but home.
+      isEnabled: () => !click && atHome.current,
       activate: () => clickRef.current(),
     }
     magnet.current = target

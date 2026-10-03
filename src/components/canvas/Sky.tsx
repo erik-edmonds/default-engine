@@ -6,6 +6,7 @@ import { Instances, Instance } from '@react-three/drei'
 import { useGLTF } from '@/helpers/useGLTF'
 import { useSetAtom } from 'jotai'
 import { rainRequest, thunder } from '@/helpers/StateProvider'
+import { useUnlock } from '@/helpers/achievements'
 import { MAGNETIC_SNAP_RADIUS, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
 
 
@@ -161,8 +162,24 @@ function Cloud({ random, ...props }: CloudDatum) {
   // object in the scene with no magnet at all. Registered on the <Instance>
   // for the same reason the hint system is: the bob is written onto the
   // instance's own position, so that is where the cloud actually is on screen.
-  const rainRef = useRef({ setRainRequest, setThunder })
-  rainRef.current = { setRainRequest, setThunder }
+  // WHAT CLICKING A CLOUD DOES, IN ONE PLACE.
+  //
+  // There are two ways to activate anything in this scene -- the direct r3f
+  // onClick, and the cursor's magnetic registry -- and they must not drift.
+  // They did: the unlock was added to the onClick alone, and the magnet path
+  // went on starting rain without recording it, so the achievement never
+  // fired for a visitor using the custom cursor (which is everyone on
+  // desktop). Measured as rain falling with the counter still at zero.
+  //
+  // Guitar.tsx already solved this exact problem the same way, with a single
+  // `activateRef` both paths call.
+  const unlock = useUnlock()
+  const rainRef = useRef(() => {})
+  rainRef.current = () => {
+    setRainRequest((c) => c + 1)
+    setThunder((c) => c + 1)
+    unlock("rain")
+  }
   useEffect(() => {
     const node = ref.current as THREE.Object3D | undefined
     if (!node) return
@@ -173,10 +190,7 @@ function Cloud({ random, ...props }: CloudDatum) {
       radius: CLOUD_MAGNETIC_RADIUS,
       snapRadius: MAGNETIC_SNAP_RADIUS,
       isEnabled: () => true,
-      activate: () => {
-        rainRef.current.setRainRequest((c) => c + 1)
-        rainRef.current.setThunder((c) => c + 1)
-      },
+      activate: () => rainRef.current(),
     }
     return registerMagneticTarget(target)
   }, [])
@@ -196,8 +210,7 @@ function Cloud({ random, ...props }: CloudDatum) {
           // used to derail the hotspot flight, because the thunder it triggers
           // shakes the camera mid-transition (see Thunder.tsx).
           if (e.intersections.some((hit) => hit.object.userData?.hotspot)) return
-          setRainRequest((c) => c + 1)
-          setThunder((c) => c + 1)
+          rainRef.current()
         }}/>
     </group>
   )

@@ -17,7 +17,6 @@ const PORTAL_MAGNETIC_RADIUS = MAGNETIC_RADIUS * 1.25
 
 extend({ RoundedPlaneGeometry: geometry.RoundedPlaneGeometry })
 const regular = import('@pmndrs/assets/fonts/inter_regular.woff')
-const medium = import('@pmndrs/assets/fonts/inter_medium.woff')
 const GOLDEN_RATIO = 1.61803398875
 const WIDTH = 1
 
@@ -56,7 +55,7 @@ export type FrameProps = {
  *  site, which is how the first attempt at this went wrong. */
 type PortalMaterial = React.ComponentRef<typeof MeshPortalMaterial>
 
-export default function Frame({ id, name, author, bg = '#f0f0f0', width = WIDTH * 1.5, height = GOLDEN_RATIO * 1.5, interactive = true, onEnter, children, ...props }: FrameProps) {
+export default function Frame({ id, name: _name, author, bg = '#f0f0f0', width = WIDTH * 1.5, height = GOLDEN_RATIO * 1.5, interactive = true, onEnter, children, ...props }: FrameProps) {
   const portal = useRef<PortalMaterial>(null)
   const [, setLocation] = useLocation()
   const [, params] = useRoute('/item/:id')
@@ -139,9 +138,21 @@ export default function Frame({ id, name, author, bg = '#f0f0f0', width = WIDTH 
 
   return (
     <group ref={groupRef} {...props}>
-      <Text font={(suspend(medium) as { default: string }).default} fontSize={0.3} anchorY="top" anchorX="left" lineHeight={0.8} position={[-0.375, 0.715, 0.01]} material-toneMapped={false}>
-        {name}
-      </Text>
+      {/* THE PORTAL'S NAME IS NOT PAINTED IN THE SCENE ANY MORE.
+
+          It was a troika <Text> at fontSize 0.3, anchored left at x -0.375
+          on a frame 1.5 wide -- so it only ever fitted while the names were
+          short. "About" did; "Where I Am" and "Mini-Game!" do not, and the
+          overflow hung in the air beside the portal reading as stray words
+          floating over the island.
+
+          Scaling the type to fit was the obvious repair and the wrong one:
+          the destinations are already named in four places that stay
+          readable at any distance -- the ring markers, both rails and the
+          minimap, all now derived from config/portals.ts -- so a fifth copy
+          baked into the scene bought nothing and was the only one that could
+          overflow. `name` is still taken as a prop because the panel and the
+          rails read the same field; it simply is not drawn here. */}
       <Text font={(suspend(regular) as { default: string }).default} fontSize={0.1} anchorX="right" position={[0.4, -0.659, 0.01]} material-toneMapped={false}>
         /{id}
       </Text>

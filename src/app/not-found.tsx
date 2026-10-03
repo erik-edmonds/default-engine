@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 import { Canvas } from "@react-three/fiber";
+import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 
 import { Broken } from "@/components/models/Broken";
+import { usePortraitFrame } from "@/helpers/usePortraitFrame";
 
 /** Where the wreck sits, and how big. Its own raw bounds are about
  *  20.7 x 9.5 x 20.5, so at this scale it is roughly 15.5 wide and 7.1 tall --
@@ -128,7 +131,54 @@ function KeyLight() {
   );
 }
 
+/** How the wreck is framed, per shape of screen.
+ *
+ *  THE SAME CAMERA CANNOT DO BOTH, and the reason is that three's `fov` is
+ *  VERTICAL. A tall frame therefore loses horizontal field rather than
+ *  gaining it: measured at this camera, a 1200x800 window sees 10.5 units
+ *  either side of centre -- the model's own half-width is 10.7, so it just
+ *  fits -- while a 404x860 phone sees 3.3. Not a trim at the margins; two
+ *  thirds of the scrapyard gone.
+ *
+ *  Backing away does not rescue it either. Fitting that 10.7 half-width at
+ *  fov 45 on a 0.47 aspect puts the camera 55 units out, which leaves the
+ *  robot a few pixels tall. So the phone deliberately frames something
+ *  SMALLER -- the robot and the debris around him, with the outer rocks
+ *  running off both edges. Cropping on purpose reads as a composition;
+ *  cropping by accident reads as a mistake.
+ *
+ *  Both state a target and aim at it. The wide one aims level with its own
+ *  height, which is the orientation it already had, so the framing that was
+ *  signed off is unchanged -- only now it is written down rather than being
+ *  whatever the default happened to be. */
+const FRAMING = {
+  wide: {
+    fov: 45,
+    position: [0, 5.4, 10] as [number, number, number],
+    target: new THREE.Vector3(0, 5.4, -6),
+  },
+  portrait: {
+    fov: 50,
+    // Back a little further than the robot alone needs, and AIMED BELOW him.
+    // Aiming low tilts the camera down, which lifts the subject in the frame
+    // and leaves the bottom of a tall screen as open ground -- which is where
+    // the sentence and the way back sit. The first pass aimed level with him
+    // and the type landed across his foot and a gearwheel: legible, because
+    // it carries its own shadow, but busy.
+    position: [0, 3, 5.2] as [number, number, number],
+    target: new THREE.Vector3(0, -0.6, -6),
+  },
+} as const
+
 export default function NotFound() {
+  // THE SHAPE OF THE SCREEN, from the one hook that already answers it.
+  //
+  // helpers/usePortraitFrame is the same 0.9 threshold the sky journey lays
+  // itself out against, as a media query, so the 404 and the island cannot
+  // disagree about what "a phone" is.
+  const portrait = usePortraitFrame()
+  const framing = portrait ? FRAMING.portrait : FRAMING.wide
+
   return (
     <>
       <Canvas
@@ -140,13 +190,6 @@ export default function NotFound() {
         //
         // "percentage" is PCF soft, and is what the island canvas uses.
         shadows="percentage"
-        // The camera is declared HERE rather than as a <PerspectiveCamera> in
-        // the scene. A drei camera without `makeDefault` is just an object in
-        // the graph -- it is not the camera anything renders through -- so the
-        // previous one, and the lookAt pointed at it, had no effect on the
-        // picture at all; what you were seeing was r3f's default camera at
-        // [0, 0, 5].
-        camera={{ position: [0, 5.4, 10], fov: 45, near: 0.5, far: 200 }}
         gl={{
           // The same curve the island renders through (it applies AgX as a
           // postprocessing pass). These materials come out of Maya as blinn and
@@ -158,7 +201,28 @@ export default function NotFound() {
         }}
         style={{ width: "100%", height: "100dvh" }}
       >
-        <color attach="background" args={["#456363"]} />
+        {/* DECLARATIVE, and that is not only tidiness.
+          
+          The first version set camera.position/.fov from an effect, which
+          writes to a value that arrived from a hook -- exactly what
+          react-hooks/immutability rejects, and this project is trying to
+          bring its error count down rather than add to it. drei's camera
+          takes the same numbers as props and calls updateProjectionMatrix
+          itself; the only mutation left is inside onUpdate, on the instance
+          r3f hands in.
+          
+          `makeDefault` is what the previous <PerspectiveCamera> was missing:
+          without it a camera in the scene is just an object, and nothing
+          renders through it. */}
+      <PerspectiveCamera
+        makeDefault
+        fov={framing.fov}
+        position={framing.position}
+        near={0.5}
+        far={200}
+        onUpdate={(camera) => camera.lookAt(framing.target)}
+      />
+      <color attach="background" args={["#456363"]} />
 
         {/* FILL, NOT THE LIGHT ITSELF.
 
@@ -208,29 +272,63 @@ export default function NotFound() {
       {/* BOTTOM-LEFT, not top-left: the root layout pins the home logo at
           top-left on every route (see app/layout.tsx), and this would sit
           under it.
-          
+
           Outside the <Canvas>, as DOM. It could be drawn in the scene, but
           type on a canvas cannot be selected, read by a screen reader, or
-          scaled by the browser -- and this is the one sentence on the page
-          that has to be read.
-          
-          Safe-area insets folded in the same way the rest of the site's
-          chrome does it; they resolve to 0px on hardware without a notch. */}
-      <p
-        className="pointer-events-none fixed z-10 font-nunito font-semibold text-white"
+          scaled by the browser -- and these are the only words on the page.
+
+          Safe-area insets folded in the way the rest of the site's chrome
+          does it; they resolve to 0px on hardware without a notch, and on a
+          phone they are what keeps this clear of the home indicator. */}
+      <div
+        className="fixed z-10"
         style={{
           left: "calc(1.5rem + var(--safe-left, 0px))",
+          right: "calc(1.5rem + var(--safe-right, 0px))",
           bottom: "calc(1.5rem + var(--safe-bottom, 0px))",
-          fontSize: "clamp(1.05rem, 3.4vw, 1.6rem)",
-          letterSpacing: "0.01em",
-          // The background is a single mid teal and the wreck sits right in
-          // it, so the type brings its own separation rather than relying on
-          // whatever happens to be behind it.
-          textShadow: "0 2px 14px rgba(12, 28, 30, 0.55)",
         }}
       >
-        Uh oh, we&rsquo;ve hit a snag.
-      </p>
+        <p
+          className="pointer-events-none font-nunito font-semibold text-white"
+          style={{
+            margin: 0,
+            fontSize: "clamp(1.15rem, 5.5vw, 1.6rem)",
+            letterSpacing: "0.01em",
+            // The background is a single mid teal with the wreck sitting right
+            // in it, so the type brings its own separation rather than relying
+            // on whatever happens to be behind it.
+            textShadow: "0 2px 14px rgba(12, 28, 30, 0.55)",
+          }}
+        >
+          Uh oh, we&rsquo;ve hit a snag.
+        </p>
+        {/* A WAY BACK. inline-flex with a min-height rather than padding
+            alone: this is the only control on the page and on a phone it has
+            to be a real target, not a line of text. 44px is the usual floor,
+            and the negative inline margin keeps the enlarged box visually
+            aligned with the sentence above it. */}
+        <Link
+          href="/"
+          className="font-nunito font-bold"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            minHeight: 44,
+            marginLeft: "-0.5rem",
+            paddingInline: "0.5rem",
+            marginTop: "0.15rem",
+            color: "#ff9d4d",
+            fontSize: "clamp(0.95rem, 4vw, 1.1rem)",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            textDecoration: "underline",
+            textUnderlineOffset: "0.3em",
+            textShadow: "0 2px 12px rgba(12, 28, 30, 0.6)",
+          }}
+        >
+          Return home
+        </Link>
+      </div>
     </>
   );
 }

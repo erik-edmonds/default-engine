@@ -771,6 +771,11 @@
   resolved "https://registry.npmjs.org/@pmndrs/assets/-/assets-1.7.0.tgz"
   integrity sha512-zHmKNS+3Jvu9K3zJBQfYQKT9Pn9IQt8s0q/eJC3CXKpWpyg6IBa+ivN9NgDn+fDT2AVjUh2YRZ//GXUueuAdCg==
 
+"@pmndrs/cannon-worker-api@^2.4.0":
+  version "2.4.0"
+  resolved "https://registry.yarnpkg.com/@pmndrs/cannon-worker-api/-/cannon-worker-api-2.4.0.tgz#b71522fb246ea305fcc32e158ef29d7740df8381"
+  integrity sha512-oJA1Bboc+WObksRaGDKJG0Wna9Q75xi1MdXVAZ9qXzBOyPsadmAnrmiKOEF0R8v/4zsuJElvscNZmyo3msbZjA==
+
 "@rc-component/async-validator@^6.0.0":
   version "6.0.0"
   resolved "https://registry.npmjs.org/@rc-component/async-validator/-/async-validator-6.0.0.tgz"
@@ -1207,6 +1212,15 @@
     "@react-spring/shared" "~10.1.2"
     "@react-spring/types" "~10.1.2"
     csstype "^3.2.3"
+
+"@react-three/cannon@^6.6.0":
+  version "6.6.0"
+  resolved "https://registry.yarnpkg.com/@react-three/cannon/-/cannon-6.6.0.tgz#bef2b2224f6ea0c59e704045dc289760522dae29"
+  integrity sha512-lP9rJoVHQi0w+dYF8FJAm2xr5eLfNEckb04j72kjqndUkuOPr26N4rSBhQbHl5b5N3tEnhQaIMungAvHkcY8/A==
+  dependencies:
+    "@pmndrs/cannon-worker-api" "^2.4.0"
+    cannon-es "^0.20.0"
+    cannon-es-debugger "^1.0.0"
 
 "@react-three/drei@^10.7.7":
   version "10.7.7"
@@ -2288,6 +2302,16 @@ caniuse-lite@^1.0.30001579, caniuse-lite@^1.0.30001799:
   version "1.0.30001800"
   resolved "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001800.tgz"
   integrity sha512-MMHtuAz9Ys840zAY5F4k6fV5GaivZ9sPk+nz0mY+GYVzRBnYkN0mpqkSR92oWRQ19yQWo4HvBV/FnC16AJX8MA==
+
+cannon-es-debugger@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/cannon-es-debugger/-/cannon-es-debugger-1.0.0.tgz#28c6679b30dcf608e978225239f447a8fe55ccb4"
+  integrity sha512-sE9lDOBAYFKlh+0w+cvWKwUhJef8HYnUSVPWPL0jD15MAuVRQKno4QYZSGxgOoJkMR3mQqxL4bxys2b3RSWH8g==
+
+cannon-es@^0.20.0:
+  version "0.20.0"
+  resolved "https://registry.yarnpkg.com/cannon-es/-/cannon-es-0.20.0.tgz#bf2f62a674701f37e3d861c90668a32d4d32f082"
+  integrity sha512-eZhWTZIkFOnMAJOgfXJa9+b3kVlvG+FX4mdkpePev/w/rP5V8NRquGyEozcjPfEoXUlb+p7d9SUcmDSn14prOA==
 
 cesium@^1.131.0:
   version "1.143.0"

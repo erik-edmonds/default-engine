@@ -19,11 +19,10 @@ import { CameraController, type CameraControllerHandle } from "@/components/canv
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { SunFlare } from "@/components/canvas/SunFlare";
-import { AvatarAnchor } from "@/components/canvas/AvatarAnchor";
 import { useTimeOfDayCycle } from "@/helpers/useTimeOfDayCycle";
 import { timeOfDay } from "@/helpers/timeOfDay";
 import { PRESETS } from "@/components/canvas/environmentPresets";
-import { PORTALS, portalById, type PortalHotspotId } from "@/config/portals";
+import { PORTALS, portalById } from "@/config/portals";
 import { PortalInterior } from "@/components/canvas/PortalInteriors";
 import { PortalDestination } from "@/components/layout/PortalDestination";
 import { openPortalId } from "@/helpers/StateProvider";
@@ -36,6 +35,7 @@ import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/c
 import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import { HintAnchor } from "@/components/canvas/HintAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
+import { GlobeMarker } from "@/components/layout/GlobeMarker";
 import { CursorDriver } from "@/components/canvas/CursorDriver";
 import { CameraLook } from "@/components/canvas/CameraLook";
 import { JourneyPath } from "@/components/canvas/JourneyPath";
@@ -54,10 +54,20 @@ import {
   routeBetween,
   type JourneyStopId,
 } from "@/config/journey";
-import { SKY_SCROLL_LIMIT, SKY_TEXT_CUES, SKY_TEXT_HOLDS, SKY_TEXT_LEAD } from "@/config/skyJourney";
+import {
+  SKY_SCROLL_LIMIT,
+  SKY_SETTLE_SHAPE,
+  SKY_TEXT_CUES,
+  SKY_TEXT_HOLDS,
+  SKY_TEXT_LEAD,
+} from "@/config/skyJourney";
 import { SkyCaption } from "@/components/layout/SkyCaption";
 import { SkyContact } from "@/components/layout/SkyContact";
-import { AvatarBubble } from "@/components/layout/AvatarBubble";
+import { SiteMenu } from "@/components/layout/SiteMenu";
+import { AchievementToast } from "@/components/layout/AchievementToast";
+// Aliased: drei exports a useProgress too (the asset loader's), and it is
+// already imported here for the loading screen.
+import { useUnlock, useProgress as useAchievementProgress } from "@/helpers/achievements";
 // The island's lens. The sky narrows to SKY_FOV_Y during the climb (see
 // CameraController), and the corridor's geometry is derived from THAT.
 import { ISLAND_FOV_Y } from "@/config/paperSky";
@@ -127,14 +137,19 @@ const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.62
 const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
 
 /** One label per hotspot id, read by the 3D ring markers. */
+/** What the ring markers, both rails and the minimap call each destination.
+ *
+ *  DERIVED FROM config/portals.ts, not restated here. This used to be four
+ *  hand-written strings, and they had already drifted once -- "Donate" against
+ *  a portal whose title had said "About" all along, so the ring, the rails and
+ *  the minimap all disagreed with the panel you landed on. Renaming two
+ *  portals would have reintroduced exactly that, in exactly the same way.
+ *
+ *  `home` stays literal: it is the one destination with no portal behind it,
+ *  which is also why it is absent from PORTALS. */
 const HOTSPOT_LABELS: Record<string, string> = {
   home: "Home",
-  "left-tree": "Models",
-  // Was "Donate". config/portals.ts has said `title: "About"` for this same
-  // hotspot all along, so the ring, both rails and the minimap were disagreeing
-  // with the panel you land on.
-  "moon-island": "About",
-  upper: "Contact",
+  ...Object.fromEntries(PORTALS.map((portal) => [portal.hotspotId, portal.title])),
 };
 const HOME_VIEWPOINT_POSITION = ISLAND_CAMERA_POSITION;
 const HOME_VIEWPOINT_ROTATION = ISLAND_CAMERA_ROTATION;
@@ -699,22 +714,6 @@ export default function Page() {
   const handleMoonIslandHotspotClick = () => flyToHotspot("moon-island", MOON_ISLAND_VIEWPOINT_POSITION, MOON_ISLAND_VIEWPOINT_ROTATION);
   const handleHomeHotspotClick = () => flyToHotspot("home", HOME_VIEWPOINT_POSITION, HOME_VIEWPOINT_ROTATION);
 
-  /** "Show me" in the avatar's bubble.
-   *
-   *  The same three flights the ring markers run -- a suggestion that offers
-   *  to take you somewhere must land exactly where clicking the marker would,
-   *  or the bubble becomes a fourth way of moving the camera with its own
-   *  behaviour. Withheld while a portal is open: AvatarBubble draws no button
-   *  when the callback is absent, so the offer is never shown in a state where
-   *  flying somewhere would first have to close something. */
-  const avatarGoTo =
-    openPortal !== null
-      ? undefined
-      : (hotspot: PortalHotspotId) => {
-          if (hotspot === "upper") return handleUpperIslandHotspotClick();
-          if (hotspot === "left-tree") return handleLeftTreeHotspotClick();
-          return handleMoonIslandHotspotClick();
-        };
 
 
   // --- touch navigation: scrolling through the scene -----------------------
@@ -763,16 +762,102 @@ export default function Page() {
   // Contact" would be, and it announces a destination you did not ask for.
   // routeBetween builds a curve straight there instead, the short way round
   // the cluster.
+  const unlock = useUnlock();
+  const reportProgress = useAchievementProgress();
+  /** Which portals have been stepped through this visit.
+   *
+   *  A ref rather than state: nothing renders from it, it exists only to
+   *  notice the third one. Per visit, like the achievements themselves. */
+  const portalsSeen = useRef<Set<string>>(new Set());
+
   const isJumping = useRef(false);
   const [jumping, setJumping] = useState(false);
+  /** Set for the WHOLE gesture, where isJumping covers only the flight.
+   *
+   *  The two cannot be one flag. isJumping gates scrollNavActive(), so while
+   *  it is set the document's scroll no longer drives the camera -- which is
+   *  exactly what finishing a passage needs it to do. Raising it before the
+   *  passage would freeze the camera and leave the scroll sliding under a
+   *  still picture. So re-entry is guarded here, and isJumping goes up only
+   *  once there is a flight to protect. */
+  const travelPending = useRef(false);
+
+  /** The destination a passage already in progress is heading for.
+   *
+   *  Asked for mid-passage, where the camera is between two stops and
+   *  `routeBetween` -- which joins one named destination to another -- has
+   *  nothing to work with. Reading the document rather than hotspotNav
+   *  because hotspotNav says only IN_TRANSIT here, which is the problem. */
+  const nextStopFromScroll = (): JourneyStopId => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = max > 0 ? window.scrollY / max : 0;
+    const ahead = JOURNEY_STOP_SCROLL.find((s) => s.scroll >= progress - 0.004);
+    return (ahead ?? JOURNEY_STOP_SCROLL[JOURNEY_STOP_SCROLL.length - 1]).id;
+  };
+
+  /** Carry the document the rest of the way to a destination, and resolve
+   *  when it arrives.
+   *
+   *  Deliberately a document scroll and not a camera flight: the camera is
+   *  already following the scroll here, so letting the scroll finish its own
+   *  passage reuses the motion the reader was already watching instead of
+   *  cutting to a second, different one halfway through.
+   *
+   *  The deadline is not optional. A smooth scroll can be interrupted -- by
+   *  the reader's own finger, by a browser that declines to animate, by a
+   *  target the document cannot actually reach -- and without a bound the
+   *  await never settles and the rail is dead for the rest of the session. */
+  const finishPassageTo = (id: JourneyStopId) =>
+    new Promise<void>((resolve) => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (max <= 0) return resolve();
+      const target = scrollForStop(id) * max;
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({ top: target, behavior: reduced ? "auto" : "smooth" });
+      const deadline = performance.now() + 2500;
+      const poll = () => {
+        if (Math.abs(window.scrollY - target) < 2 || performance.now() > deadline) return resolve();
+        requestAnimationFrame(poll);
+      };
+      requestAnimationFrame(poll);
+    });
+
   const handleJump = async (to: JourneyStopId) => {
-    if (isJumping.current) return;
-    const from = asJourneyStop(hotspotNav.current);
-    const route = from && from !== to ? routeBetween(from, to) : null;
+    if (travelPending.current || isJumping.current) return;
+    travelPending.current = true;
+    setJumping(true);
+    try {
+      await travel(to);
+    } finally {
+      travelPending.current = false;
+      setJumping(false);
+    }
+  };
+
+  const travel = async (to: JourneyStopId) => {
+    let from = asJourneyStop(hotspotNav.current);
+
+    // MID-PASSAGE: ARRIVE SOMEWHERE FIRST, THEN LEAVE FROM THERE.
+    //
+    // A route runs between two named destinations, so being between them is
+    // not a departure point and this used to simply return -- the tap did
+    // nothing and the rail looked broken. Finishing the passage the reader
+    // was already making gives the route the end it needs, and reads as the
+    // journey completing a thought rather than being yanked sideways
+    // out of one.
+    if (!from) {
+      const arriving = nextStopFromScroll();
+      await finishPassageTo(arriving);
+      from = arriving;
+      // The passage WAS the ask -- they tapped the place they were already
+      // heading for, and are now standing in it.
+      if (from === to) return;
+    }
+
+    const route = from !== to ? routeBetween(from, to) : null;
     if (!route) return;
 
     isJumping.current = true;
-    setJumping(true);
     // try/finally, not a straight line: isJumping gates scrollNavActive(), so
     // anything that throws between here and the end would leave the flag set
     // and silently disable scroll navigation for the rest of the session --
@@ -806,7 +891,6 @@ export default function Page() {
       }
     } finally {
       isJumping.current = false;
-      setJumping(false);
     }
   };
 
@@ -879,7 +963,11 @@ export default function Page() {
       last = now;
       // SKY_SCROLL_LIMIT, not the length of the axis: the journey ends parked
       // on the contact card rather than flying past it. See that constant.
-      const offset = advanceSkyScroll(delta, SKY_SCROLL_LIMIT, SKY_TEXT_HOLDS);
+      const offset = advanceSkyScroll(delta, SKY_SCROLL_LIMIT, SKY_TEXT_HOLDS, SKY_SETTLE_SHAPE);
+      // Read the whole journey. Checked here rather than in an effect
+      // because this is the one place the offset is advanced, and an effect
+      // would need the value mirrored into state to see it at all.
+      if (offset >= SKY_SCROLL_LIMIT - 1) unlock("voyager");
       if (offset !== skyOffset.current) {
         skyOffset.current = offset;
         cameraControllerRef.current?.setSkyOffset(offset);
@@ -970,6 +1058,7 @@ export default function Page() {
   const handleDragoniteRelease = () => {
     setPokeballUsed(true);
     setMotion(true);
+    unlock("ascent");
     handleUpClick();
   };
 
@@ -1223,16 +1312,16 @@ export default function Page() {
             mounting it late would mean its first frame landed before it had
             a box to sit against. See SkyContact. */}
         {skySequenceValue && <SkyContact />}
-        {/* The avatar's own prompts. Mounted for the life of the page and
-            hidden with `visibility` rather than gated on a flag -- see the
-            note in AvatarBubble about why an element that mounts and then
-            waits a frame for its transform flashes in the corner. */}
-        <AvatarBubble onGoTo={avatarGoTo} />
         <div
           className={`flex flex-row items-center gap-2 absolute z-10 transition-opacity duration-300 ${sceneReady && revealStage < 2 ? "invisible opacity-0" : "visible opacity-100"}`}
           style={{ top: "calc(1.25rem + var(--safe-top))", right: "calc(1.25rem + var(--safe-right))" }}
         >
-          <SoundToggle currentPhase={currentPhase} />
+          {/* THE SOUND TOGGLE NOW LIVES INSIDE THE MENU.
+              
+              Passed in as a child rather than rebuilt in there: it owns
+              three Howl ambient beds and crossfades them, so it has to stay
+              mounted whether the menu is open or shut. See SiteMenu. */}
+          <SiteMenu soundToggle={<SoundToggle currentPhase={currentPhase} bare />} />
           {/* Wrapped rather than gating the row: this div also holds
               SoundToggle, and hiding the row would take the mute button with
               it. The cube is the time-of-day control -- there is no day cycle
@@ -1264,7 +1353,10 @@ export default function Page() {
             visible={sceneReady && started && !isInSkyJourneyValue && !openPortal}
             horizontal={isShortViewport}
             // Parked at a portal, and not already on the way somewhere else.
+            // This now says only where you ARE -- whether a tap travels is
+            // canTravel below, which is true nearly everywhere.
             parkedAt={jumping || !PORTAL_STOP_IDS.has(hotspotNav.current) ? null : asJourneyStop(hotspotNav.current)}
+            canTravel={!jumping}
             onJump={handleJump}
           />
         ) : (
@@ -1297,6 +1389,10 @@ export default function Page() {
               // Mashing Enter mid-flight is harmless -- handleJump returns
               // early while isJumping is set.
               parkedAt={asJourneyStop(hotspotNav.current)}
+              // Never gated, for the same focus reason as parkedAt above:
+              // disabling the buttons mid-flight drops keyboard focus to
+              // <body>. handleJump returns early while a flight is running.
+              canTravel
               onJump={handleJump}
               onEnterPortal={enterPortalByKeyboard}
               enterableStops={PORTAL_STOP_IDS}
@@ -1478,6 +1574,9 @@ export default function Page() {
               onEnter={(portal) => {
                 playSfx("whoosh")
                 beginHotspotTransition(portal.hotspotId)
+                portalsSeen.current.add(portal.id)
+                // A running count, so the panel can show 2/3 on the way.
+                reportProgress("wanderer", portalsSeen.current.size)
               }}
             />
             {/* Same split as NavigationProjector above: the projection needs
@@ -1488,7 +1587,6 @@ export default function Page() {
                 He has been a named node since the sky sequence needed to
                 find a subject with no skeleton; this is the first thing to
                 ask where he actually is on screen. */}
-            <AvatarAnchor />
             {/* Same split as the projectors above: the driver needs the camera
                 so it lives in here, while the thing it positions is a DOM node
                 outside the canvas (SceneCursor, below). Desktop only -- there
@@ -1563,8 +1661,17 @@ export default function Page() {
           />
         )}
         {/* No exit control of its own: the home button in the corner is the
-            single way out of a portal. */}
-        {openPortal && <PortalDestination portal={openPortal} />}
+            single way out of a portal.
+
+            GATED ON `started`, WHICH IT WAS NOT, AND THAT BROKE SHARED LINKS.
+            Opening /item/02 directly mounts the scene with that portal
+            already open, so this panel rendered at z-index 30 on top of the
+            loading screen -- directly over the Enter button, which is
+            centred. Measured with elementFromPoint: on "/" the Enter button
+            is topmost at its own centre, and on "/item/02" this panel is,
+            so the one control that starts the site could not be clicked at
+            all. Anyone following a link to a portal met a dead button. */}
+        {started && openPortal && <PortalDestination portal={openPortal} />}
         {/* A lost GPU context used to be a black canvas and nothing else. This
             says so, and clears itself if the browser hands the context back --
             which it only can because the listener calls preventDefault(). */}
@@ -1605,7 +1712,14 @@ export default function Page() {
         {/* Not gated on pointer type, unlike InteractionHint: everything these
             point at is reachable by touch too, and the copy adapts to the
             gesture that actually works there (see HINTS). */}
+        {/* "Achievement unlocked", top-right under the menu. */}
+        <AchievementToast />
         <SceneHint />
+        {/* "You are here" on the globe in the Where I Am portal. Always
+            mounted so the node VietnamMarkerAnchor projects onto is stable,
+            and hidden by that anchor until the portal is actually open --
+            see helpers/globeMarker.ts for why it is DOM and not 3D. */}
+        <GlobeMarker />
         {/* Not before entering: the loading screen is ordinary chrome with a
             button to press, so it keeps the ordinary OS pointer. The custom
             cursor is part of the scene and arrives with it. Unmounted rather

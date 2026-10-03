@@ -125,17 +125,112 @@ let heading: -1 | 1 = 1
  *  unit of wheel" it always was, and retuning the coast does not silently
  *  retune how far a gesture takes you. */
 export function impulseSkyScroll(distance: number) {
+  // The first push after a quiet spell starts a new gesture, and where the
+  // journey was standing at that moment is the fact the settle below cannot
+  // work without. See departedFrom.
+  if (sincePush >= SETTLE_DELAY) departedFrom = skyScroll.target
   skyScroll.velocity += distance * FRICTION
+  sincePush = 0
 }
+
+/** Seconds since the last wheel event.
+ *
+ *  The settle below needs to tell "the reader has finished and is reading"
+ *  from "the reader is mid-gesture", and velocity alone cannot: a reader
+ *  nudging the wheel every second is at rest for most of each second. That
+ *  ambiguity is what produced the original trap -- the spring reeling in what
+ *  each nudge had just won, so that a hundred and twenty nudges never reached
+ *  the second block. */
+let sincePush = Infinity
+
+/** How long the wheel must be quiet before the journey will settle BACKWARD
+ *  onto a block it has gone past. Long enough that a sequence of nudges is
+ *  never reeled in, short enough that letting go reads as the scroll coming
+ *  to rest on the words rather than wherever it happened to stop. */
+const SETTLE_DELAY = 0.45
+
+/** Where the journey was standing when the current gesture began, or null if
+ *  no gesture has been thrown yet.
+ *
+ *  THIS IS THE FACT THAT MAKES THE SETTLE POSSIBLE, and three rounds of tuning
+ *  failed for want of it. Coming to rest a little past a block is two entirely
+ *  different events that look identical from a position alone:
+ *
+ *    - the reader was parked ON that block, flicked, and the coast died just
+ *      past it. They asked to move on. Pulling them back is the trap.
+ *    - the reader came through from somewhere else and overshot by a few
+ *      units. They were aiming at that block. Pulling them back is the help.
+ *
+ *  Measured, the two are indistinguishable by distance: a flick thrown from a
+ *  standing start on a hold nets about 74 units (traced at 100ms: 635 ->
+ *  713.8), so the departure and the overshoot occupy the same band. Every
+ *  value tried for that band therefore did one job or the other and never
+ *  both -- 120 swallowed all four departures in a row, 25 let the reader
+ *  wander and 5 of 7 rests had no text up at all.
+ *
+ *  Remembering the START of the gesture separates them exactly, because that
+ *  is what actually differs: the departure begins on the hold, the overshoot
+ *  begins far from it. */
+let departedFrom: number | null = null
+
+/** How near a hold the journey must have been standing for the gesture to
+ *  count as LEAVING that hold rather than arriving at it. A hold the reader
+ *  has just departed is never settled back onto. */
+const LEAVING_RADIUS = 40
+
+/** The speed below which the reader's own gesture counts as spent, so the
+ *  settle may take over the landing.
+ *
+ *  THIS GATE USED TO BE REST_SPEED, 0.6, AND THAT IS WHY NOTHING EVER
+ *  SETTLED. Traced: six seconds after the last wheel event the journey was
+ *  still travelling at 48.6 units per second, a hundred times the gate, so
+ *  the settle was unreachable in exactly the situation it exists for.
+ *
+ *  The velocity was not the reader's -- it was the spring's own. A hold's
+ *  pull against the two frictions is a first-order chase with a terminal
+ *  speed of `gap * STIFFNESS * depth / (STICK_FRICTION * depth + FRICTION)`,
+ *  which at a 131-unit gap is 53 u/s and matched the trace. Its approach rate
+ *  is only 0.4-0.6 e-folds a second, so the last stretch into a block took
+ *  eight to twelve seconds of visible creeping, and because the creep never
+ *  fell under 0.6 the quicker settle was never allowed to finish the job.
+ *  Measured at the time: rests 39-57 units short of a hold, still moving.
+ *
+ *  So the gate asks the question it meant to ask. REST_SPEED answers "is
+ *  anything moving at all", which the spring's dribble always fails; this
+ *  answers "has the reader's own flick run out", which is the thing the
+ *  settle must not interrupt. A fresh flick is several hundred units a
+ *  second and a steady spin holds 163, both of which sail past untouched; a
+ *  spent one is in the tens and gets landed. */
+const SETTLE_SPEED = 150
+
+/** How far the settle reaches AGAINST the direction of travel, to catch a
+ *  genuine overshoot.
+ *
+ *  Generous now, where it could not be before: the hold a reader has just
+ *  pushed off is excluded outright by departedFrom, so a wide backward reach
+ *  no longer has any departure to swallow. It only ever catches someone who
+ *  sailed in from elsewhere and stopped a little long. */
+const SETTLE_BACK = 120
+
 
 /** Integrate one frame. Called by whoever owns the sky's frame loop, before it
  *  damps `display` -- so `target` is a position under momentum and `display`
  *  is still the smoothed follow of it that everything else reads.
  *
- *  `holds` are the scroll positions the journey should settle at: the middle
- *  of each block of text. Passed in rather than imported, because this file is
- *  the one thing in the chain that must not depend on the choreography. */
-export function advanceSkyScroll(delta: number, limit: number, holds: readonly number[]) {
+ *  `holds` are the scroll positions the journey should settle at, and `shape`
+ *  is how far the settle may move the reader to reach one. Both are passed in
+ *  rather than imported, because this file is the one thing in the chain that
+ *  must not depend on the choreography -- and the reach very much does depend
+ *  on it. Deriving the reach here, from the gaps between the holds, is exactly
+ *  what broke when the blocks got longer: see SKY_SETTLE_REACH. */
+export type SkySettleShape = { reach: number; stillReading: number }
+
+export function advanceSkyScroll(
+  delta: number,
+  limit: number,
+  holds: readonly number[],
+  shape: SkySettleShape,
+) {
   if (delta <= 0) return skyScroll.target
   // SUB-STEPPED, not clamped.
   //
@@ -151,11 +246,19 @@ export function advanceSkyScroll(delta: number, limit: number, holds: readonly n
   // steps is better than a hundred catch-up ones.
   const MAX_STEP = 1 / 30
   const steps = Math.min(8, Math.max(1, Math.ceil(delta / MAX_STEP)))
-  for (let i = 0; i < steps; i++) advanceOneStep(delta / steps, limit, holds)
+  for (let i = 0; i < steps; i++) advanceOneStep(delta / steps, limit, holds, shape)
   return skyScroll.target
 }
 
-function advanceOneStep(dt: number, limit: number, holds: readonly number[]) {
+function advanceOneStep(
+  dt: number,
+  limit: number,
+  holds: readonly number[],
+  shape: SkySettleShape,
+) {
+  // The quiet clock the settle below reads. Advanced per sub-step so it runs
+  // on the same clock the physics does.
+  sincePush += dt
 
   // The nearest hold, and only if it is close enough to have any say.
   let nearest = null as number | null
@@ -212,7 +315,23 @@ function advanceOneStep(dt: number, limit: number, holds: readonly number[]) {
     }
     const toward = Math.sign(nearest - skyScroll.target)
     const onward = toward === 0 || toward === heading
-    const grip = onward ? depth * Math.max(0, 1 - Math.abs(skyScroll.velocity) / ESCAPE_SPEED) : 0
+    // ...AND NOT WHILE THE READER IS ACTIVELY PUSHING.
+    //
+    // This is what made a hold inescapable. Sitting ON a block, `toward` is 0,
+    // which counts as onward, so a departing flick met full grip and
+    // STICK_FRICTION immediately -- the file's own note measured the cost:
+    // "a single flick thrown from a standing start ON a block now carries
+    // about 30 units instead of 69". Thirty units is inside any backward
+    // settle band worth having, so the journey was reeled straight back and
+    // four flicks in a row all ended at offset 640.
+    //
+    // Gating on the same quiet clock the settle uses separates the two
+    // moments cleanly. While the wheel is live the spring says nothing and
+    // the gesture carries its full distance; once the reader lets go, the
+    // spring and then the settle do the landing. Which is the behaviour that
+    // was asked for -- assisted as it arrives, inertial while you push on.
+    const pushing = sincePush < SETTLE_DELAY
+    const grip = onward && !pushing ? depth * Math.max(0, 1 - Math.abs(skyScroll.velocity) / ESCAPE_SPEED) : 0
     skyScroll.velocity += (nearest - skyScroll.target) * STIFFNESS * grip * dt
     skyScroll.velocity *= Math.exp(-STICK_FRICTION * grip * dt)
   }
@@ -229,14 +348,108 @@ function advanceOneStep(dt: number, limit: number, holds: readonly number[]) {
   // Inside the band, once the coast has died, the remaining gap is simply
   // damped out. The spring still does all the work you can feel; this only
   // finishes the approach.
-  if (
-    nearest !== null &&
-    Math.abs(skyScroll.velocity) < REST_SPEED &&
-    // Onward only, for the reason the grip is: this closes the last of a gap,
-    // and closing it backwards is the tow the rule above exists to forbid.
-    (Math.sign(nearest - skyScroll.target) === 0 ||
-      Math.sign(nearest - skyScroll.target) === heading)
-  ) {
+  // ...AND ONCE THE READER HAS LET GO, IT SETTLES ON THE WORDS EITHER WAY.
+  //
+  // This used to close the gap ONWARD only, sharing the grip's rule above, and
+  // that is why the journey did not stick: `nearest` is the closest hold in
+  // either direction, so stopping just PAST one left the nearest hold behind,
+  // the onward test false, and therefore no pull at all -- not forward to the
+  // next block, not back to the one just passed. The reader rested in limbo
+  // between them.
+  //
+  // Measured over nine realistic flicks before this change: three settled at
+  // all, and they came to rest with the block of words 117, 52 and 3 units
+  // from the lens against the 62 its type is authored for -- short of it,
+  // roughly on it, and already past it. Mean miss 41 units.
+  //
+  // The onward rule is kept for the SPRING, which acts while the reader is
+  // still moving and must never tow them backwards. This is a different
+  // moment: the gesture is over and the wheel has been quiet for SETTLE_DELAY,
+  // so easing onto the nearest block is the scroll coming to rest rather than
+  // a tug-of-war. Gating on the quiet rather than on velocity is what keeps
+  // the old nudge trap shut -- during a run of nudges the clock never gets
+  // that far.
+  // ...AND IT CARRIES ON TO THE NEXT BLOCK RATHER THAN SPLITTING THE
+  // DIFFERENCE.
+  //
+  // The reach onward is a whole span, derived from the holds themselves so it
+  // cannot drift when the choreography is re-spaced. That is deliberate and it
+  // is the difference between a hold and a landing: one gesture, one block.
+  //
+  // Anything less leaves the reader in limbo, and the arithmetic says so.
+  // Blocks are 540 apart; a flick off a standing start nets about 74. So a
+  // reader who pushes away from a block and lets the coast die ends up ~60
+  // units on, with the words they just left receding behind and the next ones
+  // 480 ahead -- out of reach of any forward band short of the full span.
+  // Measured with a 330 band: rests at caption axial 26.7 and 28 against the
+  // 62 the type is authored for, and 5 of 7 rests with no text up at all. The
+  // reader was being left exactly between two blocks every time.
+  //
+  // With the full span, a gesture always resolves onto words: onward to the
+  // next block when the reader has pushed off one, back onto the block they
+  // overshot when they were arriving at it.
+  const settleTarget = (() => {
+    if (Math.abs(skyScroll.velocity) >= SETTLE_SPEED) return null
+    if (sincePush < SETTLE_DELAY) return null
+    // ALREADY LOOKING AT WORDS? THEN LEAVE THE READER ALONE.
+    //
+    // Keyed on a hold BEHIND the direction of travel and on where the
+    // reader actually stopped -- not, as the first version had it, on where
+    // the gesture began. That version only recognised "still reading" for
+    // the one gesture thrown from the block itself: a second small nudge
+    // started from a point that was no longer near any hold, the check
+    // missed, and the settle carried the reader a whole block for a
+    // fraction of a block's worth of input.
+    //
+    // Behind, specifically. A hold AHEAD of the reader is one they are
+    // arriving at, and easing them the last few units onto it is the
+    // landing assistance this whole mechanism exists to provide.
+    for (const h of holds) {
+      const signed = h - skyScroll.target
+      const behind = signed * heading < 0
+      if (behind && Math.abs(signed) <= shape.stillReading) return null
+    }
+    // THE REACH IS GIVEN, NOT DERIVED FROM THE HOLDS.
+    //
+    // It used to be the largest gap between two holds, so that a reader
+    // stranded between blocks could always be landed on the next one. That
+    // reasoning died with the cards: the sky between two of them is somewhere
+    // to be rather than somewhere to be rescued from, and when blocks grew
+    // from 540 units to 1476 the same rule quietly handed the magnet a
+    // 1476-unit reach. One wheel notch then crossed a whole card. See
+    // SKY_SETTLE_REACH in config/skyJourney for the measurement.
+    const onwardReach = shape.reach
+    let pick = null as number | null
+    let bestGap = Infinity
+    for (const h of holds) {
+      // Never reel the reader back onto the block they just pushed off.
+      if (departedFrom !== null && Math.abs(h - departedFrom) <= LEAVING_RADIUS) continue
+      const signed = h - skyScroll.target
+      const onward = signed === 0 || Math.sign(signed) === heading
+      // THE BACKWARD CATCH ONLY APPLIES TO A HOLD THIS GESTURE CROSSED.
+      //
+      // Otherwise it is not catching an overshoot, it is dragging a reader
+      // back to a block they deliberately left -- and that reopened the
+      // trap by a side door. Measured: a reader nudging the wheel every
+      // 620ms drifted to 696, began the next gesture from there, and the
+      // hold at 640 was then a mere 112 behind and inside SETTLE_BACK, so
+      // the journey was reeled back. Ninety nudges travelled 35 to 697 and
+      // never left the first block.
+      //
+      // Crossing is what tells the two apart. A genuine overshoot starts
+      // one side of the hold and ends the other; a departure starts past
+      // it and keeps going. (Starting exactly ON the hold is the departure
+      // case and is already excluded above by LEAVING_RADIUS.)
+      const crossed = departedFrom === null || Math.sign(h - departedFrom) !== Math.sign(signed)
+      const reach = onward ? onwardReach : crossed ? SETTLE_BACK : 0
+      const d = Math.abs(signed)
+      if (d <= reach && d < bestGap) { bestGap = d; pick = h }
+    }
+    return pick
+  })()
+
+  if (settleTarget !== null) {
+    const nearest = settleTarget
     skyScroll.velocity = 0
     const gap = nearest - skyScroll.target
     if (Math.abs(gap) < 0.05) {
@@ -278,6 +491,8 @@ export function publishSkyDisplay(display: number, delta: number) {
 
 export function resetSkyScroll() {
   heading = 1
+  departedFrom = null
+  sincePush = Infinity
   skyScroll.target = 0
   skyScroll.display = 0
   skyScroll.speed = 0

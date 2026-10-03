@@ -53,7 +53,20 @@ const BARS = [
   { duration: 0.95, delay: 0.25 },
 ]
 
-export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay }) {
+export default function SoundToggle({
+  currentPhase,
+  bare = false,
+}: {
+  currentPhase: TimeOfDay
+  /** Drop the white disc and draw the bars alone.
+   *
+   *  Inside the settings panel the control sits in a row of values on a
+   *  dark sheet, where a white circle reads as a button that has escaped
+   *  from somewhere else. Everything else about it is unchanged -- the same
+   *  component, the same Howl beds, the same bars -- because it has to stay
+   *  mounted either way or the ambient audio is torn down. */
+  bare?: boolean
+}) {
   const [enabled, setEnabled] = useAtom(sfxEnabled)
 
   // Looping ambient beds, so retry:false -- the effect below starts them when
@@ -252,10 +265,10 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
         // Anchors the callout below, which is positioned against this button
         // so it tracks the icon rather than a guessed screen offset.
         position: "relative",
-        width: SIZE,
+        width: bare ? "auto" : SIZE,
         height: SIZE,
         borderRadius: 9999,
-        background: "#fff",
+        background: bare ? "none" : "#fff",
         cursor: "pointer",
         padding: 0,
         outlineOffset: 2,
@@ -285,7 +298,10 @@ export default function SoundToggle({ currentPhase }: { currentPhase: TimeOfDay 
             width: 4,
             height: 20,
             borderRadius: 2,
-            background: BAR_COLOR_BY_PHASE[currentPhase],
+            // On the dark settings sheet the phase colours are wrong --
+            // day and evening are black, which is invisible there. The
+            // bare variant always draws light.
+            background: bare ? "rgba(255,255,255,0.92)" : BAR_COLOR_BY_PHASE[currentPhase],
             animationDuration: `${bar.duration}s`,
             animationDelay: `${bar.delay}s`,
           }}

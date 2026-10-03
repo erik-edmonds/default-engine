@@ -1,7 +1,9 @@
 /** Where the sky's block of words landed on screen, in CSS pixels.
  *
- *  Published by SkyCaptionBillboard, read by the DOM contact panel. Module
- *  state rather than an atom for the reason cameraBase.ts and skyScroll.ts
+ *  Published by CardScene -- the box is the TYPE inside the open card, not
+ *  the card itself, because by the time the contact block is up the card is
+ *  most of the screen and the panel belongs under the words. Module state
+ *  rather than an atom for the reason cameraBase.ts and skyScroll.ts
  *  already give for the same decision: this is rewritten every frame while
  *  the journey is moving, and a React render per change would be absurd.
  *

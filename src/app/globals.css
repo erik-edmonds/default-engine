@@ -950,210 +950,377 @@ html[data-keyboard="true"] .keyboard-rail {
 }
 
 
-/* --- the avatar's speech bubble ------------------------------------------ */
-/*
- * Positioned entirely from script: AvatarAnchor projects the avatar's head
- * every frame and writes `transform` onto the two outer elements below, so
- * nothing here may set `transform`, `left` or `top`.
- *
- * Both are zero-sized anchors pinned to the top-left of the viewport and
- * moved into place. The visible panel hangs off the anchor, which is what
- * lets `data-bubble-side` flip it to whichever side has room without the
- * projector knowing anything about the markup.
- */
-.avatar-bubble,
-.avatar-unread {
+
+/* ---------------------------------------------------------------------------
+   The pins on the globe in the Gallery portal.
+
+   Positioned entirely by PlacePinsAnchor, which writes a transform onto each
+   .globe-pin every frame from inside the Canvas. Everything here is therefore
+   relative to a single point: the wrapper is zero-sized and sits exactly on
+   the country, and the pin stands above it with its label beside it. That is
+   the same arrangement SceneHint uses, and it is what lets the transform be
+   one translate3d with no centring maths.
+   --------------------------------------------------------------------------- */
+.globe-pin {
   position: fixed;
   top: 0;
   left: 0;
   width: 0;
   height: 0;
-  z-index: 7;
-}
-
-.avatar-bubble-panel {
-  position: absolute;
-  bottom: 8px;
-  left: 14px;
-  width: max-content;
-  /* --bubble-room is the distance from the avatar to the edge he is opening
-     toward, written every frame by AvatarAnchor; that file says why the
-     viewport width was the wrong thing to clamp against. The fallback is for
-     the frame before the projector has run. */
-  max-width: var(--bubble-room, 17rem);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  /* The same cut-paper chip language as the sky's contact links, not the
-     black glass the old hints used. Those were chrome; this is someone
-     talking, and it should look like it belongs to the island. */
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: rgba(24, 34, 48, 0.72);
-  backdrop-filter: blur(3px);
-  opacity: 0;
+  z-index: 6;
+  /* The wrapper must not eat clicks meant for the scene -- only the hit area
+     inside it is interactive. */
   pointer-events: none;
-  transform: translateY(4px);
-  transition: opacity 320ms ease, transform 320ms ease;
 }
 
-/* Opens leftward near the right edge, where a rightward panel would run off
-   the viewport. Set by the projector from the avatar's screen x. */
-.avatar-bubble[data-bubble-side="left"] .avatar-bubble-panel {
-  left: auto;
-  right: 14px;
-}
-
-/* NEITHER SIDE HAS ROOM: span the viewport and keep only the vertical
-   anchor. On a phone he stands near the middle of a 404px frame, so both
-   halves are about 190px -- twenty characters a line. Cancelling his own x
-   (which the outer element's transform applied) and re-adding a gutter puts
-   the panel's left edge at a fixed 16px from the viewport while it still
-   rides up and down with his head. */
-.avatar-bubble[data-bubble-fit="viewport"] .avatar-bubble-panel {
-  left: calc(16px - var(--bubble-x, 0px));
-  right: auto;
-  width: calc(100vw - 32px);
-  max-width: none;
-}
-
-.avatar-bubble[data-shown="true"] .avatar-bubble-panel {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.avatar-bubble-panel p {
-  margin: 0;
-  font-family: var(--font-nunito), system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.45;
-  color: #fff;
-  text-wrap: pretty;
-}
-
-/* The two offers sit on one line and wrap rather than stacking by default:
-   "Tell me more" is always there and "Show me" only sometimes, so a column
-   would change the panel's height every time a suggestion happens to carry a
-   destination. */
-.avatar-bubble-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 14px;
-}
-
-.avatar-bubble-next,
-.avatar-bubble-go {
-  font-family: var(--font-nunito), system-ui, sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-}
-
-/* Going somewhere is the louder of the two, so it carries the accent and
-   "tell me more" steps back to a quieter white. The old single button had the
-   accent; handing it to the action that leaves the spot is what keeps one
-   emphasis in the panel rather than two. */
-.avatar-bubble-go {
-  color: #ffcda8;
-}
-
-.avatar-bubble-next {
-  color: rgba(255, 255, 255, 0.62);
-}
-
-/* ...unless it is the only thing in the row, in which case it is the one
-   thing to click and should look like it. Most suggestions have no
-   destination. */
-.avatar-bubble-next:only-child {
-  color: #ffcda8;
-}
-
-/* The off switch. Quietest thing in the panel -- it is there for the visitor
-   who wants it gone, and it should not compete with the thing that moves the
-   experience forward. */
-.avatar-bubble-mute {
-  margin-left: auto;
-  font-family: var(--font-nunito), system-ui, sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-}
-
-.avatar-bubble-next:hover,
-.avatar-bubble-next:focus-visible,
-.avatar-bubble-go:hover,
-.avatar-bubble-go:focus-visible,
-.avatar-bubble-mute:hover,
-.avatar-bubble-mute:focus-visible {
-  color: #fff;
-}
-
-/* The unread marker: a small count that sits where the bubble would be. */
-.avatar-unread {
-  --size: 26px;
-}
-
-.avatar-unread > span {
+.globe-pin-hit {
   position: absolute;
-  bottom: 2px;
-  left: 14px;
-  display: grid;
-  place-items: center;
-  width: var(--size);
-  height: var(--size);
-  border-radius: 999px;
-  /* Solid accent, deliberately louder than the bubble itself. SoundToggle's
-     nudge makes the same distinction for the same reason: a translucent chip
-     is an invitation, a solid one is asking for attention. */
-  background: #d25a1a;
-  color: #fff;
-  font-family: var(--font-nunito), system-ui, sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(0.8);
-  transition: opacity 280ms ease, transform 280ms ease;
-}
-
-.avatar-unread[data-bubble-side="left"] > span {
-  left: auto;
-  right: 14px;
-}
-
-.avatar-unread[data-shown="true"] > span {
-  opacity: 1;
+  /* The drop's TIP is the anchor, so the hit area hangs above the point
+     rather than being centred on it -- a map pin marks the ground under its
+     point, not under its middle. */
+  left: -24px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 4px 0 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
   pointer-events: auto;
-  transform: scale(1);
+  white-space: nowrap;
 }
 
-/* A slow breath, so it reads as waiting rather than as an alert. */
-@keyframes avatar-unread-breathe {
-  0%, 100% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(210, 90, 26, 0.5) }
-  50%      { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 0 7px rgba(210, 90, 26, 0) }
+.globe-pin-drop {
+  /* Roughly double. At 22px the pins read as specks against a globe that
+     fills 62% of the frame. */
+  width: 42px;
+  height: 56px;
+  flex: none;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+  transition: scale 160ms ease;
+  /* Rotated about its TIP, which is the point actually touching the
+     planet -- about its centre the pin would swing off the country it
+     marks. --pin-tilt is written per frame by PlacePinsAnchor. */
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pin-tilt, 0deg));
 }
 
-.avatar-unread[data-shown="true"] > span {
-  animation: avatar-unread-breathe 2.6s ease-out infinite;
+.globe-pin-label {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.6);
+  transition: opacity 160ms ease;
+}
+
+/* Hover for a pointer, focus-visible for a keyboard, and :focus for a tap --
+   a phone has no hover at all, and the link behind a pin is the point. */
+/* Scale, not transform: the pin's transform carries its lean, and
+   overwriting it here would snap every hovered pin bolt upright. */
+.globe-pin-hit:hover .globe-pin-drop,
+.globe-pin-hit:focus-visible .globe-pin-drop {
+  scale: 1.14;
+}
+
+.globe-pin-hit:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .avatar-bubble-panel,
-  .avatar-unread > span { transition: none }
-  .avatar-unread[data-shown="true"] > span { animation: none }
+  .globe-pin-drop,
+  .globe-pin-label { transition: none }
+  .globe-pin-hit:hover .globe-pin-drop { scale: 1 }
+}
+
+/* ---------------------------------------------------------------------------
+   The mini-game route.
+
+   A full-bleed canvas with two pieces of chrome over it. The original was a
+   standalone page whose body could not scroll; here the stage is fixed so
+   the game owns the viewport without taking overflow away from the rest of
+   the site.
+   --------------------------------------------------------------------------- */
+.racing-stage {
+  position: fixed;
+  inset: 0;
+  background: #0b0d10;
+}
+
+.racing-keys {
+  position: absolute;
+  z-index: 2;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(8, 11, 16, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+}
+
+.racing-keys {
+  left: 16px;
+  bottom: 16px;
+  padding: 12px 14px;
+  line-height: 1.9;
+  pointer-events: none;
+}
+
+.racing-keys-title {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.racing-keys ul { margin: 0; padding: 0; list-style: none }
+
+.racing-keys kbd {
+  display: inline-block;
+  min-width: 18px;
+  margin-right: 3px;
+  padding: 1px 5px;
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+
+
+/* The key list is decoration on a phone, where none of those keys exist. */
+@media (max-width: 560px) {
+  .racing-keys { display: none }
+}
+
+/* ---------------------------------------------------------------------------
+   The menu: a 56px button in the top-right row, and a centred tabbed modal.
+
+   The button deliberately matches SoundToggle's footprint exactly, because
+   it sits in the same flex row. The panel used to be a dropdown inside that
+   row and in normal flow, so opening it grew the row and pushed the
+   day/night cube down the screen -- the modal is a sibling of the row and
+   cannot do that.
+   --------------------------------------------------------------------------- */
+.site-menu-button {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(8, 12, 20, 0.25);
+}
+
+.site-menu-bars { display: grid; gap: 4px; width: 20px }
+.site-menu-bars span { display: block; height: 2px; border-radius: 2px; background: #1a2230 }
+
+.site-menu-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #d25a1a;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(8, 12, 20, 0.4);
+}
+
+/* The sound toggle has to stay mounted whether the menu is open or not --
+   it owns three Howl ambient beds and unmounting it tears the audio down.
+   While the settings tab is not showing it, it lives here: present in the
+   document, out of the picture, and not reachable by tab. */
+.site-menu-keep {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(6, 14, 20, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.menu-panel {
+  width: min(100%, 540px);
+  max-height: min(86dvh, 660px);
+  display: flex;
+  flex-direction: column;
+  background: #0f1622;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* The tabs sit on the panel's top edge, as a strip of square buttons --
+   the reference's shape. */
+.menu-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.menu-tab {
+  width: 44px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 15px;
+  cursor: pointer;
+}
+.menu-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.07) }
+.menu-tab[data-on="true"] {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.menu-close { margin-left: auto; color: #ff9c9c }
+.menu-close:hover { background: rgba(214, 60, 60, 0.3); color: #fff }
+
+.menu-body { padding: 22px 24px 24px; overflow-y: auto }
+.menu-title { margin: 0 0 16px; font-size: clamp(1.2rem, 4vw, 1.6rem); font-weight: 700; text-align: center }
+
+/* --- settings ------------------------------------------------------------ */
+.menu-rows {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px 18px;
+}
+.menu-rows dt { font-size: 0.95rem; color: rgba(255, 255, 255, 0.82) }
+.menu-rows dd { margin: 0; justify-self: end }
+.menu-audio { display: flex; align-items: center; min-height: 44px }
+
+.menu-value {
+  min-width: 118px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: none;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.menu-value:hover, .menu-value:focus-visible { background: rgba(255, 255, 255, 0.1) }
+/* Dashed, like the reference's live values, so a setting that reports what
+   the renderer is actually doing looks different from one you choose. */
+.menu-value-live { border-style: dashed; color: #b6f3a0 }
+
+/* --- achievements -------------------------------------------------------- */
+.menu-count {
+  margin: -8px 0 18px;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffb37a;
+}
+.menu-achievements { margin: 0; padding: 0; list-style: none; display: grid; gap: 18px }
+.menu-achievement-head { display: flex; align-items: baseline; gap: 10px }
+.menu-achievement-head strong { font-size: 0.98rem; font-weight: 700 }
+.menu-achievement-count {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.6);
+}
+.menu-achievements li[data-found="false"] strong { color: rgba(255, 255, 255, 0.45) }
+.menu-achievements li[data-found="true"] .menu-achievement-count { color: #b6f3a0 }
+.menu-achievements p { margin: 4px 0 0; font-size: 0.84rem; line-height: 1.5; color: rgba(255,255,255,0.62) }
+
+.menu-bar {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.menu-bar > div { height: 100%; border-radius: 3px; background: #d25a1a }
+.menu-achievements li[data-found="true"] .menu-bar > div { background: #b6f3a0 }
+
+/* --- tips ---------------------------------------------------------------- */
+.menu-tip { margin: 0; font-size: 0.95rem; line-height: 1.65; color: rgba(255,255,255,0.84); min-height: 5.2rem }
+.menu-arrows { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 20px }
+.menu-arrow {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: none;
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.menu-arrow:hover:not(:disabled) { background: rgba(255,255,255,0.1) }
+.menu-arrow:disabled { opacity: 0.3; cursor: default }
+.menu-arrow-count { font-size: 0.82rem; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.55) }
+
+/* --- the toast ----------------------------------------------------------- */
+.achievement-toast {
+  position: fixed;
+  top: calc(1.25rem + 56px + 1rem + var(--safe-top, 0px));
+  right: calc(1.25rem + var(--safe-right, 0px));
+  z-index: 40;
+  width: min(72vw, 250px);
+  padding: 12px 14px;
+  background: rgba(8, 12, 20, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 3px solid #d25a1a;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(14px);
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+.achievement-toast[data-shown="true"] { opacity: 1; transform: none }
+.achievement-toast-eyebrow {
+  margin: 0 0 3px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #ffb37a;
+}
+.achievement-toast-title { margin: 0 0 3px; font-size: 0.95rem; font-weight: 700; color: #fff }
+.achievement-toast-detail { margin: 0; font-size: 0.76rem; line-height: 1.45; color: rgba(255,255,255,0.72) }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-menu-bars span,
+  .site-menu-panel,
+  .achievement-toast { transition: none }
 }

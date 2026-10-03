@@ -13,7 +13,7 @@ import { inSkyJourney } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
 import { useEffect } from "react"
 import { VelocityLines } from "@/components/canvas/VelocityLines"
-import { SkyCaptionBillboard } from "@/components/canvas/SkyCaptionBillboard"
+import { SkyCard } from "@/components/canvas/SkyCard"
 import {
   CLOUD_SCALE,
   CORRIDOR_BEHIND,
@@ -52,6 +52,7 @@ import {
 import {
   corridorOrigin,
   skyCorridorSide,
+  skyCardOpen,
   skySectionIndex,
   skySectionSpan,
   skyTextFocus,
@@ -663,6 +664,18 @@ function Prop({
       node.visible = false
       return
     }
+    // BEHIND AN OPEN CARD THERE IS NO SKY TO SEE.
+    //
+    // A card grows until it covers the frame, but it stands sixty units down
+    // the corridor and the props travel between it and the lens -- so a cloud
+    // at PROP_NEAR_AXIAL would sail across the middle of what is supposed to
+    // be a scene of its own. Hidden outright rather than faded: by the time
+    // the card is half open it already covers most of the picture, and a
+    // prop going out at that point is behind the card anyway.
+    if (skyCardOpen(skyScroll.display) > 0.5) {
+      node.visible = false
+      return
+    }
     node.visible = true
 
     // ONE CLOUD PER BLOCK, LOWERED IN AND LIFTED OUT.
@@ -975,6 +988,12 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
       node.visible = false
       return
     }
+    // And out of the way of an open card, for the same reason the corridor's
+    // own props are -- see the gate in Prop.
+    if (skyCardOpen(skyScroll.display) > 0.5) {
+      node.visible = false
+      return
+    }
     node.visible = true
     const basis = (basisRef.current ??= makeFlightBasis())
     const origin = (originRef.current ??= { x: 0, y: 0, z: 0 })
@@ -1160,7 +1179,7 @@ function PaperWorld() {
       {Array.from({ length: EDGE_CLOUD_COUNT }, (_, i) => (
         <EdgeCloud key={`edge-${i}`} index={i} arrived={arrived} />
       ))}
-      <SkyCaptionBillboard />
+      <SkyCard />
       <VelocityLines />
     </>
   )

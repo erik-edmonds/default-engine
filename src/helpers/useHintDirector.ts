@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useEffect, useRef } from "react"
 import * as THREE from "three"
 import { useAtomValue, useSetAtom } from "jotai"
 
@@ -18,17 +18,6 @@ import {
   type HintId,
   PORTAL_HINT_MAX_DISTANCE,
 } from "@/helpers/hints"
-import {
-  FIRST_SUGGESTION_IDLE_MS,
-  activeSuggestion,
-  advanceSuggestion,
-  remainingSuggestions,
-  suggestions,
-  suggestionsMuted,
-  suggestionsSatisfied,
-  suggestionsSeen,
-} from "@/helpers/avatarBubble"
-import { SUGGESTIONS, type SuggestionSubject } from "@/config/suggestions"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 
 /** Priority order, highest first. Only one hint is ever on screen; a
@@ -45,16 +34,6 @@ import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 const PRIORITY: HintId[] = ["portalExit", "portalEnter"]
 
 const EVALUATE_INTERVAL_MS = 400
-
-/** Which portal, once entered, retires which suggestion.
- *
- *  Keyed by the ids in config/portals.ts. He should not still be recommending
- *  the thing you are standing inside. */
-const PORTAL_SATISFIES: Record<string, SuggestionSubject> = {
-  "01": "models",
-  "02": "about",
-  "03": "contact",
-}
 
 export interface HintDirectorInput {
   /** The loading screen is done and the scene is live. */
@@ -98,14 +77,6 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
   const onScreen = useAtomValue(hintOnScreen)
   const coarse = useCoarsePointer()
 
-  const setSuggestions = useSetAtom(suggestions)
-  const setSatisfied = useSetAtom(suggestionsSatisfied)
-  const advance = useSetAtom(advanceSuggestion)
-  const remaining = useAtomValue(remainingSuggestions)
-  const seen = useAtomValue(suggestionsSeen)
-  const speaking = useAtomValue(activeSuggestion)
-  const muted = useAtomValue(suggestionsMuted)
-
   // "The onboarding beat is over." On a mouse that's InteractionHint being
   // dismissed, which happens on the first pointermove. On touch there is no
   // pointermove until something is deliberately tapped -- and page.tsx doesn't
@@ -134,59 +105,21 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
 
   // Latest inputs, read by the interval below without making it re-subscribe
   // every time one of them changes.
-  const input = useRef({
-    started, introFinished, currentHotspot, portalTargets, flying, openPortal, onScreen,
-    hasRemaining: remaining.length > 0, hasSeenAny: seen.size > 0, speaking: speaking !== null, muted,
-  })
-  input.current = {
-    started, introFinished, currentHotspot, portalTargets, flying, openPortal, onScreen,
-    hasRemaining: remaining.length > 0, hasSeenAny: seen.size > 0, speaking: speaking !== null, muted,
-  }
+  const input = useRef({ started, introFinished, currentHotspot, portalTargets, flying, openPortal, onScreen })
+  input.current = { started, introFinished, currentHotspot, portalTargets, flying, openPortal, onScreen }
 
-  // The queue, published once. Static today; an atom rather than a constant
-  // because retiring entries is a write and the bubble reads it from the far
-  // side of the canvas boundary.
-  useEffect(() => {
-    setSuggestions(SUGGESTIONS)
-  }, [setSuggestions])
-
-  /** Retire a suggestion's subject because the visitor got there first.
-   *
-   *  Additive and idempotent: this is called from four separate effects and
-   *  nothing ever un-finds something. Memoised on jotai's setter, which is
-   *  itself stable, so the four effects below do not re-run every render. */
-  const satisfy = useCallback(
-    (subject: SuggestionSubject) => {
-      setSatisfied((prev) => (prev.has(subject) ? prev : new Set(prev).add(subject)))
-    },
-    [setSatisfied],
-  )
-
-  // Discovery. Each flips once and stays flipped. These are the same four
-  // signals the discovery hints used to key off; they retire queue entries now
-  // instead of cancelling captions.
-  useEffect(() => {
-    if (musicOn) satisfy("guitar")
-  }, [musicOn, satisfy])
-  useEffect(() => {
-    if (rainCount > 0) satisfy("clouds")
-  }, [rainCount, satisfy])
-  useEffect(() => {
-    if (pokeballUsed) satisfy("pokeball")
-  }, [pokeballUsed, satisfy])
+  // Sticky "the user has done this" for the portal beats. openPortalId goes
+  // back to null the moment you leave, and without this the director would
+  // decide the portal was unentered all over again.
   useEffect(() => {
     if (openPortal === null) {
-      // Left the portal: the exit hint has served its purpose whether or not
-      // it was ever shown.
       if (enteredAt.current !== null) done.current.portalExit = true
       enteredAt.current = null
       return
     }
     done.current.portalEnter = true
     if (enteredAt.current === null) enteredAt.current = performance.now()
-    const subject = PORTAL_SATISFIES[openPortal]
-    if (subject) satisfy(subject)
-  }, [openPortal, satisfy])
+  }, [openPortal])
 
   // The idle clock. Reset by anything that counts as the user engaging with
   // the scene -- a cloud, the guitar, arriving somewhere new, opening a
@@ -239,29 +172,8 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
       setActive(null)
     }
 
-    /** HE OPENS THE FIRST ONE HIMSELF, AND ONLY THE FIRST.
-     *
-     *  A numbered badge over a character in a 3D scene is not self-evidently
-     *  something you click. One unprompted line teaches the mechanic; from
-     *  then on the badge is enough and the pace is the visitor's. Gated on the
-     *  same conditions the discovery nudges had -- at home, nothing else going
-     *  on, and a real idle stretch -- because interrupting someone who is
-     *  already busy is the thing worth not doing. */
-    const maybeOpenFirst = (now: number) => {
-      const state = input.current
-      // Muted means he has been asked to stop; the unprompted opener is
-      // exactly the thing that must not come back after that.
-      if (state.muted) return
-      if (state.hasSeenAny || state.speaking || !state.hasRemaining) return
-      if (!state.introFinished || state.currentHotspot !== "home") return
-      if (state.flying || state.openPortal !== null) return
-      if (now - idleSince.current < FIRST_SUGGESTION_IDLE_MS) return
-      advance()
-    }
-
     const evaluate = () => {
       const now = performance.now()
-      maybeOpenFirst(now)
       const current = activeId.current
 
       if (current) {
@@ -315,7 +227,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
 
     const timer = setInterval(evaluate, EVALUATE_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [started, setActive, advance])
+  }, [started, setActive])
 
   // Clear on unmount so a hint can't outlive the page it points into.
   useEffect(() => () => setActive(null), [setActive])

@@ -74,6 +74,21 @@ export function PortalRouteSync({
   // that's already underway.
   const suppressExitFlight = useRef(false)
 
+  // KNOWN GAP, MEASURED, NOT YET FIXED: a COLD load of /item/:id.
+  //
+  // Entering from inside the scene works -- double-click a portal and this
+  // flies the camera the last few units in. Landing on /item/02 from a
+  // shared link does not: this effect runs on mount, while the loading
+  // screen is still up and before the visitor has pressed Enter, so the
+  // flight it starts is overridden by the intro sequence that seats the
+  // camera at the home viewpoint. Measured on a cold /item/02: the portal
+  // blends open on schedule but the camera ends 36.1 units away, so the
+  // globe inside it projects to a 17px disc across the island, where
+  // entering normally puts it 3.2 units away at 38% of the frame height.
+  //
+  // Not fixed here because the fix belongs to the intro's ordering rather
+  // than to this effect -- the flight needs to be deferred until `started`
+  // and then replayed -- and that is a change to the opening sequence.
   useEffect(() => {
     const previous = lastEnteredId.current
     lastEnteredId.current = enteredId

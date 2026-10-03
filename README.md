@@ -5,7 +5,11 @@
 - [ ] Change page notifications to bubbles that come from the avatar
     - [ ] List of suggestions from the avatar, each click gives new suggestion
     - [ ] There's an unread bubble above the avatar while all notificatios have not been read.
-- [ ] 404 Page
+- [x] 404 Page
+- [ ] The simulation for Racing is usable for web, but not for mobile. 
+    - [ ] For mobile, this should maybe be switched from "Racing" to "Simulation"
+        - [ ] Self driving component where on mobile the car just drives itself. 
+        - [ ] Also make it drivable by touch. The car follows where the finger is held down, similar to Bruno Simon.
 
 # Small Tweaks needed
 - [x] Current dot at location appears as soon as camera transition starts, it should wait until a few seconds after transition start

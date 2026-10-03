@@ -14,7 +14,7 @@
 export type PortalHotspotId = "left-tree" | "moon-island" | "upper"
 
 /** Which interior renders inside the portal's own scene. */
-export type PortalInteriorKind = "points" | "water" | "avatar"
+export type PortalInteriorKind = "points" | "water" | "avatar" | "globe" | "minigame"
 
 export type PortalDestination =
   /** Entering offers a link out to another page. */
@@ -26,6 +26,13 @@ export type PortalDestination =
   | { kind: "prose"; paragraphs: string[] }
   /** Entering offers nothing yet, and says so rather than pretending. */
   | { kind: "pending"; note: string }
+  /** Entering shows a gallery of places, and the panel is driven by what you
+   *  hover rather than by this table.
+   *
+   *  The globe portal has no fixed caption: the whole point is that each pin
+   *  carries its own link, so a paragraph printed under it would be saying
+   *  something about nowhere in particular. config/places.ts is the content. */
+  | { kind: "places" }
   /** Entering shows nothing at all, because the interior IS the destination.
    *
    *  Models is the case: you are floating in the pool with the four projects
@@ -124,30 +131,49 @@ export const PORTALS: PortalDefinition[] = [
   {
     id: "02",
     hotspotId: "moon-island",
-    title: "About",
-    credit: "point cloud · live",
+    title: "Gallery",
+    credit: "the places · a turning globe",
     // Dark, where the globe wanted light. The point cloud is unlit
     // meshBasicMaterial with toneMapped off, tuned against this exact value in
     // its old home -- on the old #f0f0f0 it washed out to nothing.
     bg: "#0d1b2a",
-    // Moved here from Models. Generated rather than downloaded, so it is the
-    // one interior that owes nobody a credit.
-    interior: "points",
-    blurb: "A bit about me.",
-    destination: { kind: "prose", paragraphs: ABOUT_PARAGRAPHS },
+    // The globe, turning, with a pin on where Erik currently is -- which is
+    // the question the portal's name asks. It replaced a generated point
+    // cloud chosen back when this portal was called "About" and the brief was
+    // "something abstract".
+    interior: "globe",
+    // Empty on purpose. The panel under this portal shows a hovered pin's
+    // link and nothing otherwise -- see PortalDestination's "places" branch.
+    blurb: "",
+    destination: { kind: "places" },
   },
   {
     id: "03",
     hotspotId: "upper",
-    title: "Contact",
-    credit: "the avatar · this scene",
+    title: "Mini-Game!",
+    credit: "drive it · R3F + cannon",
     bg: "#101820",
-    // The avatar from the island itself. Costs nothing -- base.glb is already
-    // loaded and cached for the scene -- and it is the only interior that is
-    // unambiguously the author's own.
-    interior: "avatar",
-    blurb: "Let's connect.",
-    destination: { kind: "links", links: CONTACT_LINKS },
+    // THE GAME ITSELF, not the avatar that used to stand here.
+    //
+    // A portal should show what is behind it, and this one showed a figure
+    // with no connection to a racing game. The track and the car are the
+    // same models /mini-game loads, turning slowly -- no physics world, see
+    // MiniGameInterior.
+    interior: "minigame",
+    // A ROUTE, LIKE MODELS, AND FOR THE SAME REASON.
+    //
+    // This portal was "Contact" and offered CONTACT_LINKS. It is now the
+    // mini-game, and the three things a portal says -- its title, its blurb
+    // and where entering it goes -- have to agree or the panel contradicts
+    // the face you pressed. The game is a full page with its own canvas and
+    // physics world; it could not be the interior of a window in the island
+    // scene without running a second simulation behind the first.
+    //
+    // The contact links did not vanish with it: CONTACT_LINKS is still the
+    // one table of them, and the sky journey's own contact card renders from
+    // it.
+    blurb: "A little car racing game. Drive it with WASD.",
+    destination: { kind: "route", href: "/mini-game", label: "Play it" },
   },
 ]
 
