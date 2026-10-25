@@ -5,6 +5,7 @@ import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
 
 import { skyScroll } from "@/helpers/skyScroll"
+import { skyCardOpen, skyCorridorActive } from "@/config/skyJourney"
 import {
   CAMERA_BEHIND,
   flightBasis,
@@ -125,6 +126,24 @@ export function VelocityLines() {
 
     const speed = Math.abs(skyScroll.speed)
     const intensity = THREE.MathUtils.clamp(speed / STREAK_FULL_SPEED, 0, 1)
+
+    // NOT OVER AN OPEN CARD. These streaks say "you are flying through the
+    // sky at speed", and inside a card you are not -- the card is a scene of
+    // its own that happens to be reached by scrolling, and raking it with
+    // speed lines from the world outside reads as a rendering fault. They
+    // were plainly visible across the middle of a full-screen card.
+    //
+    // Gated on the card having STARTED to open rather than on it covering
+    // the frame: the streaks are drawn close to the lens, so they are in
+    // front of the card for the whole of the expansion, not just at the end.
+    // ONLY WHERE THERE IS FLYING TO CONVEY. These streaks say "you are
+    // rushing through the sky", which is true of sections 1 and 4 and false
+    // of the drift and the painted scenes -- those are a page being
+    // scrolled. Same gate the corridor's own props carry.
+    if (!skyCorridorActive(skyScroll.display) || skyCardOpen(skyScroll.display) > 0) {
+      mesh.visible = false
+      return
+    }
 
     // Below a tenth of full speed there is nothing to convey; drawing faint
     // streaks over a still sky just dirties it.

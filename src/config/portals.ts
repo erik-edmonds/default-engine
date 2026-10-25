@@ -14,7 +14,7 @@
 export type PortalHotspotId = "left-tree" | "moon-island" | "upper"
 
 /** Which interior renders inside the portal's own scene. */
-export type PortalInteriorKind = "points" | "water" | "avatar" | "globe" | "minigame"
+export type PortalInteriorKind = "points" | "water" | "avatar" | "globe" | "minigame" | "vr"
 
 export type PortalDestination =
   /** Entering offers a link out to another page. */
@@ -26,6 +26,9 @@ export type PortalDestination =
   | { kind: "prose"; paragraphs: string[] }
   /** Entering offers nothing yet, and says so rather than pretending. */
   | { kind: "pending"; note: string }
+  /** Entering opens a point cloud, in a headset or on screen. The viewer is
+   *  its own route with its own canvas -- see components/scan. */
+  | { kind: "scan"; scanId: string; label: string; note: string }
   /** Entering shows a gallery of places, and the panel is driven by what you
    *  hover rather than by this table.
    *
@@ -108,25 +111,29 @@ export const PORTALS: PortalDefinition[] = [
     id: "01",
     hotspotId: "left-tree",
     title: "Models",
-    credit: "the water · live simulation",
+    credit: "lidar · annotated in VR",
     bg: "#06222b",
-    // The real underwater scene, running. Entering this portal goes to
-    // /portfolio, which IS that scene -- so the window shows its own
-    // destination rather than standing in for it. It replaced the point cloud
-    // when the dive was removed: the gear on the beach was a second entrance to
-    // this same page, and the less findable of the two.
-    interior: "water",
-    blurb: "Gaussian splatting, autonomous driving in CARLA, object detection, and an interactive election map.",
-    // A ROUTE AGAIN, and this time to a page that exists.
+    // THE WATER IS SHELVED, NOT DELETED.
     //
-    // This was `kind: "none"`, justified in a comment as "you are floating in
-    // the pool with the four projects hanging in it". That premise stopped
-    // being true the day the cards came out of the water
-    // (PortalInteriors.tsx) -- the flagship destination, reached by the
-    // hardest interaction on the site, blended open on an empty pool and
-    // offered nothing. The written work is at /portfolio now, and this is the
-    // mechanism that was already built for exactly this and never used.
-    destination: { kind: "route", href: "/portfolio", label: "See the work" },
+    // `WaterInterior` and its whole subsystem (components/canvas/water/,
+    // FishSchool, config/pool.ts) stay in the tree and stay compiling; they
+    // are simply unreferenced now, exactly as `PointCloudInterior` has been.
+    // Changing this one line is the entire detachment, and putting it back is
+    // the entire restoration.
+    //
+    // What replaces it is the thing this site is now for: a VR headset you
+    // can walk up to, which opens a real lidar scan.
+    interior: "vr",
+    blurb: "Ten million lidar points, streamed straight out of a cloud-optimized point cloud and drawn in your browser.",
+    destination: {
+      kind: "scan",
+      scanId: "autzen",
+      label: "Explore a scan",
+      // Said plainly, because it is true and it is the point: a headset makes
+      // this better but is not required, and Phase 0 is desktop-first. The
+      // earlier draft said "headset required", which would have been a lie.
+      note: "Opens in your browser. A VR headset is optional.",
+    },
   },
   {
     id: "02",

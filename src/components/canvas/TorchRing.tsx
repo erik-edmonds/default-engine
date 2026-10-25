@@ -5,7 +5,7 @@ import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
 
 import { Torch } from "@/components/models/Torch"
-import { TORCH_SITES } from "@/config/torches"
+import { TORCH_FLAME_HEIGHT, TORCH_SCALE, TORCH_SITES } from "@/config/torches"
 
 /** How bright each torch's own light gets, against the campfire's.
  *
@@ -76,7 +76,7 @@ export function TorchRing({
           <pointLight
             key={`torch-light-${i}`}
             // Just above the head of the torch, where the flame is.
-            position={[site.position[0], site.position[1] + 0.9, site.position[2]]}
+            position={[site.position[0], site.position[1] + TORCH_FLAME_HEIGHT, site.position[2]]}
             distance={TORCH_LIGHT_DISTANCE}
             decay={2}
             intensity={0}
@@ -87,6 +87,10 @@ export function TorchRing({
       {TORCH_SITES.map((site, i) => (
         <Torch
           key={`torch-${i}`}
+          // Named so a probe can say where a torch actually landed. "Beside
+          // the portal, on the island" is a claim about two screen positions
+          // and a surface, and none of it is checkable on an anonymous node.
+          name={`torch-site-${site.island}`}
           lit={lit}
           position={site.position}
           rotation={[0, site.rotationY, 0]}
@@ -95,7 +99,7 @@ export function TorchRing({
           // is why eight lit torches were invisible in the night
           // screenshot. 0.6 puts it near 1.4 units, a third the height of
           // the trees already standing on the same islands.
-          scale={0.6}
+          scale={TORCH_SCALE}
         />
       ))}
     </>

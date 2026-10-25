@@ -134,6 +134,22 @@ export function MinimapFace({
         frameloop="demand"
         orthographic
         gl={{ alpha: true, antialias: true }}
+        // MEASURED BY LAYOUT, NOT BY WHAT IS ON SCREEN.
+        //
+        // r3f sizes the drawing buffer from react-use-measure, which reads
+        // getBoundingClientRect -- and that reports the box AFTER ancestor
+        // transforms. MinimapStage lays this out at its expanded size and
+        // scales it down into the corner, so the default measurement sees
+        // 222px and allocates a 443px buffer; the map would then be a 443px
+        // render stretched across 702px as soon as it opened, which is softer
+        // than the map it replaced.
+        //
+        // `offsetSize` swaps in offsetWidth/offsetHeight, which transforms do
+        // not affect (react-use-measure's index.js). The buffer is then sized
+        // once, for the expanded view, and the corner shows that same render
+        // supersampled about 3x -- sharper there than a 222px canvas, and
+        // nothing is reallocated by the animation.
+        resize={{ offsetSize: true }}
         style={{ width: "100%", height: "100%", pointerEvents: "none" }}
       >
         <MiniMapCamera />
@@ -162,30 +178,5 @@ export function MinimapFace({
         </div>
       )}
     </div>
-  )
-}
-
-/**
- * The corner widget.
- *
- * Desktop only, like the ring markers: touch navigates by scrolling an
- * itinerary and already has the rail, so a map there would be a third answer to
- * a question already answered twice.
- */
-export function Minimap({ visible, onOpen, phase }: { visible: boolean; onOpen: () => void; phase: TimeOfDay }) {
-  return (
-    <button
-      type="button"
-      className="minimap"
-      // Always ready now. It used to wait for the photograph to be published,
-      // which could not happen until the island had settled; the live canvas
-      // has nothing to wait for beyond its own Suspense.
-      data-ready="true"
-      aria-label="Open the island map"
-      onClick={onOpen}
-      style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? "auto" : "none" }}
-    >
-      <MinimapFace phase={phase} />
-    </button>
   )
 }

@@ -1,23 +1,20 @@
 "use client"
 
-import { useEffect, useMemo, useRef } from "react"
+import { Suspense, lazy, useLayoutEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import { useFrame } from "@react-three/fiber"
 import { easing } from "maath"
 import { SkeletonUtils } from "three-stdlib"
 import { useGLTF } from "@/helpers/useGLTF"
 
-import { WaterScene } from "@/components/canvas/water/WaterScene"
-import { useScrollOffset } from "@/helpers/useScrollOffset"
-import { POOL_DEPTH, POOL_HALF_LENGTH, POOL_HALF_WIDTH, SCROLL_RANGE } from "@/config/pool"
 import type { PortalInteriorKind } from "@/config/portals"
 import { Earth } from "@/components/models/Earth"
 import { globeMarkerNodes } from "@/helpers/globeMarker"
 import { GLOBE_LON_OFFSET, PLACE_LIST } from "@/config/places"
 import { usePortalLive } from "@/helpers/portalLive"
 import { useGlobeDrag } from "@/helpers/useGlobeDrag"
-import { FishSchool } from "@/components/canvas/FishSchool"
 import { MiniGameInterior } from "@/components/canvas/MiniGameInterior"
+import { Glasses } from "@/components/models/Glasses"
 
 // What you see through the glass.
 //
@@ -103,84 +100,11 @@ function PointCloudInterior({ count = 1400, accent = '#8fd4ff' }: { count?: numb
 // The pool's dimensions now live in config/pool.ts, so FishSchool can read
 // them without importing this file back (see that file's header).
 
-/** The work, underwater. The whole of it -- there is nowhere else to go.
- *
- *  The real WaterScene, the same simulation that used to fill /portfolio, as an
- *  empty pool you scroll down through. The project cards that hung in it have
- *  been taken out: each was a portal inside this portal, and the items are
- *  going into the water directly instead. This is still why the portal prints
- *  no title, no blurb and no "View the work" button -- you are inside the work,
- *  and the page that button pointed at was a second copy of it and is retired.
- *
- *  Sized for the aperture, which is the only reason WaterScene takes dimensions
- *  at all -- its own defaults build a pool as wide as the viewport around a
- *  five-stop card column, and through a 1.5 x 2.43 window you would see one
- *  arbitrary band of that.
- *
- *  `quality="portal"` drops the caustics from 1024 square to 256 and caps the
- *  reflection targets. Those passes run every frame the room is awake, and the
- *  full-screen sizes bought nothing at this scale. */
-function WaterInterior({ open = false }: { open?: boolean }) {
-  const column = useRef<THREE.Group>(null)
-  const displayY = useRef(0)
-
-  // Scroll descends the pool. The camera CANNOT descend -- it is parked 0.3 in
-  // front of the portal plane, and the interior is a separate scene rendered
-  // with that same camera -- so the pool rises past the window instead. The
-  // effect through the glass is identical and it needs no camera authority,
-  // which the island page would fight for anyway.
-  //
-  // The range is NEGATIVE and the sign flips on the way out, which keeps the
-  // hook's convention identical to Rig's: there, scrolling down drives the
-  // offset negative and the camera descends with it. Here the same negative
-  // offset has to raise the column, so it is negated at the one place it is
-  // applied. Getting this backwards clamps instantly at the top and the pool
-  // simply refuses to move, which is how the first version behaved.
-  const { target, reset } = useScrollOffset({ min: -SCROLL_RANGE, max: 0, speed: 0.004, enabled: open })
-  useEffect(() => { if (!open) reset() }, [open, reset])
-
-  useFrame((_state, delta) => {
-    if (!column.current) return
-    easing.damp(displayY, "current", target.current, 0.25, delta)
-    column.current.position.y = -displayY.current
-  })
-
-  return (
-    // Further back than the first version's -2.4, so the window looks into the
-    // volume rather than pressing against the near wall -- but not so far that
-    // the camera leaves the box. See POOL_HALF_LENGTH.
-    <group position={[0, 1.15, -3]}>
-      <group ref={column}>
-        <WaterScene
-          poolWidth={POOL_HALF_WIDTH}
-          poolLength={POOL_HALF_LENGTH}
-          poolFloorDepth={POOL_DEPTH}
-          waterYOffset={0.9}
-          quality="portal"
-          // Still water until you are actually in it. The room wakes as soon as
-          // you park at the viewpoint, and simulating from there cost 38% of the
-          // frame for a window you have not stepped through -- see `active`.
-          active={open}
-        />
-        {/* The four project cards hung here, each one a MeshPortalMaterial with
-            a point cloud inside it -- a portal inside a portal, four extra
-            render targets drawn every frame inside another portal's own render.
-            They are gone; the items go straight into the water instead.
-
-            The column, its depth and its scroll all stay. CARD_TOP, CARD_GAP
-            and CARD_SCALE in config/projects.ts are the geometry whatever goes
-            in next will hang on, which is why that file is still here. */}
-
-        {/* Inside the scrolling column, so the school stays with the water
-            as the pool rises past the window rather than hanging in front
-            of it. Only while the room is awake: fourteen animation mixers
-            stepping behind a window nobody has looked through is the same
-            waste `active` above exists to avoid. */}
-        {open && <FishSchool />}
-      </group>
-    </group>
-  )
-}
+/** The pool. Lifted into its own module and lazily loaded -- keeping it in
+ *  this file was not actually "shelved", because the import alone dragged the
+ *  entire water subsystem and a 0.19MB preload into every island load. See
+ *  WaterInterior.tsx. */
+const WaterInterior = lazy(() => import("@/components/canvas/WaterInterior"))
 
 /** The avatar that is stood on the island outside.
  *
@@ -411,6 +335,14 @@ function GlobeInterior({ open }: { open?: boolean }) {
  *  The shut value is not a guess either: the portal aperture is 1.5 wide
  *  against a screen ~11 wide at that distance, so the globe has to come down
  *  by roughly that ratio to sit inside the frame with margin. */
+/** How tall the VR headset stands in its portal, in world units.
+ *
+ *  The frame is 0.933 x distance tall at the island's 50-degree lens, so at
+ *  z -3.4 that is ~3.2 units; 1.25 fills about 40% of frame height. The one
+ *  number to change if the headset should read bigger or smaller -- the
+ *  model's own size and pivot are measured, not assumed. */
+const VR_TARGET_HEIGHT = 1.25
+
 const GLOBE_SCALE_OPEN = 0.26
 const GLOBE_SCALE_SHUT = 0.085
 
@@ -419,14 +351,30 @@ const GLOBE_SCALE_SHUT = 0.085
  *  A pin rides a rotating sphere, so for half of every turn it is on the FAR
  *  side -- and a projection does not know that, because `project()` is happy
  *  to return a perfectly reasonable screen position for a point behind an
- *  opaque planet. Without this a label sits over the Pacific announcing a
- *  country on the other side of the world. Slightly past the limb (0 would
- *  be exactly the horizon) so a pin fades at the edge rather than popping
- *  the moment it rounds into view. */
+ *  opaque planet. Nor is there a depth test to fall back on: `.globe-pin` is
+ *  a `position: fixed` DOM overlay (globals.css), so it is composited over
+ *  the whole canvas and this dot product is the entire occlusion mechanism.
+ *  Without it a label sits over the Pacific announcing a country on the
+ *  other side of the world.
+ *
+ *  THESE TWO REPORTS CONFLICT, AND THIS ONE WON. The test was here, was
+ *  removed to answer "the markers for the Earth disappear, when they should
+ *  be permanent" -- IDLE_SPIN (helpers/useGlobeDrag.ts) carries a pin round
+ *  the back inside about eight seconds -- and is now back to answer "the
+ *  pins can be seen on the other side of the world, when it's behind the
+ *  model." Drawing a marker through an opaque planet is the worse of the
+ *  two, so occlusion is the rule and the idle spin stays as it is. If you
+ *  are about to delete this again, lower IDLE_SPIN instead: the spin is the
+ *  thing that makes a pin leave, and a slower globe answers both complaints
+ *  at once. The globe is also draggable, so a pin is always one flick away.
+ *
+ *  Slightly past the limb (0 would be exactly the horizon) so a pin fades at
+ *  the edge rather than popping the moment it rounds into view. */
 const PIN_FACING_LIMIT = 0.12
 
 /** How much further round a pin travels before it is at full strength. */
 const PIN_FADE_BAND = 0.16
+
 
 /** Puts each place's pin where its country is.
  *
@@ -521,10 +469,98 @@ function PlacePinsAnchor({
   return null
 }
 
+/** A VR headset on a slow turntable, and a word about what it opens.
+ *
+ *  This replaced the water simulation. The portal is the way into the thing
+ *  this site is actually selling -- a lidar scan you can walk around -- and a
+ *  headset is the one object that says so without a caption.
+ *
+ *  THE CLICK IS NOT HERE. It is the DOM pill in PortalDestination, because a
+ *  destination is a link and a link should be focusable, right-clickable and
+ *  readable by a screen reader. drei <Text> is none of those. What this says
+ *  is only what the thing IS; where it goes is said in HTML.
+ */
+function VrInterior() {
+  const spin = useRef<THREE.Group>(null)
+  const fit = useRef<THREE.Group>(null)
+
+  /** AUTO-FIT, BECAUSE HAND-TUNED CONSTANTS KEPT GOING STALE.
+   *
+   *  This model has been swapped three times, and each one arrived with a
+   *  different natural size and a different pivot. The current one is a
+   *  Sketchfab export whose geometry sits **3.95 units off its own origin**
+   *  in X -- so a hand-set `scale`/`position` pair put it off the right edge
+   *  of the frame while every "is it in the scene?" check passed.
+   *
+   *  So measure instead. Box3.setFromObject after the glTF has resolved,
+   *  then scale to a target height and translate the measured centre to the
+   *  origin. The next model needs no numbers changed.
+   *
+   *  A LAYOUT effect: the transform must be right before the first paint, or
+   *  the headset is visibly wrong for a frame. `Glasses` suspends on its own
+   *  load, so by the time this runs the geometry is real -- the `isEmpty`
+   *  guard covers the case where it is not. */
+  useLayoutEffect(() => {
+    const group = fit.current
+    if (!group) return
+    group.position.set(0, 0, 0)
+    group.scale.setScalar(1)
+    const box = new THREE.Box3().setFromObject(group)
+    if (box.isEmpty()) return
+    const size = box.getSize(new THREE.Vector3())
+    const centre = box.getCenter(new THREE.Vector3())
+    // At 50 degrees vertical the frame is 0.933 x distance tall, so ~3.2
+    // units at the z below. Filling ~40% of it leaves the lower third to the
+    // DOM caption and the upper edge clear.
+    const scale = VR_TARGET_HEIGHT / Math.max(size.y, 1e-6)
+    group.scale.setScalar(scale)
+    group.position.copy(centre).multiplyScalar(-scale)
+  }, [])
+
+  useFrame((_state, delta) => {
+    // Slow, and only a turntable. The object has no "front" worth hunting
+    // for and a faster spin reads as a product render.
+    if (spin.current) spin.current.rotation.y += delta * 0.35
+  })
+
+  return (
+    <group position={[0, 0.1, -3.4]}>
+      {/* Its own rig, for the reason the globe states below: the portal
+          room's light is a mood, not a key. This model is UNTEXTURED --
+          material colours only (Blanco / Cristal / Negro) -- so the lights
+          are the whole of how it reads. */}
+      <ambientLight intensity={1.15} />
+      <directionalLight position={[2.5, 3, 4]} intensity={2.2} />
+      <directionalLight position={[-3, 1, -2]} intensity={0.9} color="#9fd0ff" />
+
+      <group ref={spin}>
+        <group ref={fit}>
+          <Glasses />
+        </group>
+      </group>
+
+      {/* NO IN-SCENE LABEL. There was one -- drei <Text> under the headset --
+          and it was wrong twice over: gated on `open`, so it appeared only
+          when the DOM caption behind it already said the same thing, and at
+          this framing the two landed on top of each other. A destination
+          belongs in HTML anyway, where it is focusable and screen-readable;
+          the copy that varies with headset support lives in
+          PortalDestination's `scan` branch. */}
+    </group>
+  )
+}
+
 export function PortalInterior({ kind, accent, count, open }: { kind: PortalInteriorKind; accent?: string; count?: number; open?: boolean }) {
   if (kind === "globe") return <GlobeInterior open={open} />
   if (kind === "minigame") return <MiniGameInterior />
   if (kind === "points") return <PointCloudInterior accent={accent} count={count} />
-  if (kind === "water") return <WaterInterior open={open} />
+  if (kind === "water") {
+    return (
+      <Suspense fallback={null}>
+        <WaterInterior open={open} />
+      </Suspense>
+    )
+  }
+  if (kind === "vr") return <VrInterior />
   return <AvatarInterior />
 }

@@ -36,7 +36,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:dir(models|sound|scripts|water|cubemap|images)/:path*",
+        // `wasm` added for the point-cloud decoder. laz-perf's 209KB binary is
+        // fetched before a single point can be drawn, and without a dir named
+        // here it is served max-age=0 and refetched on every visit --
+        // public/racing/ is the standing proof of that, since it is missing
+        // from this list and pays for it. The file is versioned by the pinned
+        // laz-perf dependency, so the year-with-revalidation rule above is the
+        // right one: a dependency bump changes the bytes and a 304 is cheap.
+        source: "/:dir(models|sound|scripts|water|cubemap|images|wasm)/:path*",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, must-revalidate" }],
       },
     ];

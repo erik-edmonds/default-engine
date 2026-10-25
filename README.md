@@ -74,8 +74,8 @@
 # About 
 - [x] Add lens flare in morning or evening
 - [ ] Paper scene
-    - [ ] Paper clouds on a string
-    - [ ] Cardboard background
+    - [x] Paper clouds on a string
+    - [x] Cardboard background
         - [ ] Cardboard cutouts that drop down for my about me parts
 
 # Portfolio

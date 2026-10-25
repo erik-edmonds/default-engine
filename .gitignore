@@ -33,6 +33,13 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# AND .config, WHICH IS NOT COVERED BY .env* AND HOLDS LIVE CREDENTIALS.
+# It carries AWS_ACCESS_KEY, AWS_SECRET_KEY and DB_CONNECTION. It was
+# untracked but unignored, which is one `git add -A` away from putting a
+# secret key in this repository's history permanently -- and history is not
+# something a later commit can take back.
+.config
+
 # vercel
 .vercel
 
@@ -56,3 +63,4 @@ next-env.d.ts
 /public/water/tiles_full.png
 /public/water/tiles_gray_white.png
 /public/water/worn.png
+.neon

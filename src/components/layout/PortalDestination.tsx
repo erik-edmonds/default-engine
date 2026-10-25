@@ -3,9 +3,10 @@
 import Link from "next/link"
 import { useAtomValue } from "jotai"
 
-import { CONTACT_LINKS_ARE_PLACEHOLDERS, type PortalDefinition } from "@/config/portals"
+import { CONTACT_LINKS_ARE_PLACEHOLDERS, type PortalDefinition, type PortalDestination as PortalDestinationKind } from "@/config/portals"
 import { PLACES } from "@/config/places"
 import { hoveredPlace } from "@/helpers/globeMarker"
+import { useXrSupport } from "@/helpers/useXrSupport"
 
 /**
  * What a portal actually delivers once you are inside it.
@@ -21,6 +22,33 @@ import { hoveredPlace } from "@/helpers/globeMarker"
  * -- focusable, hoverable, right-clickable, readable by a screen reader, and
  * openable in a new tab. Troika text in the canvas is none of those.
  */
+/** The point-cloud destination, and the one line that changes with the
+ *  visitor's hardware.
+ *
+ *  IN THE DOM, NOT THE SCENE. There was briefly a drei <Text> under the
+ *  headset saying the same thing; it collided with this caption and could
+ *  not be focused, right-clicked or read by a screen reader. A destination
+ *  is a link, and this is where links live.
+ *
+ *  `useXrSupport()` is three-state -- null until the async support query
+ *  comes back. The neutral line is shown meanwhile, so the copy never
+ *  flickers from "optional" to "ready" in front of someone. */
+function ScanDestination({ destination }: { destination: Extract<PortalDestinationKind, { kind: "scan" }> }) {
+  const supported = useXrSupport()
+  return (
+    <>
+      <Link href={`/scan/${destination.scanId}`} style={ctaStyle}>
+        {destination.label} →
+      </Link>
+      <p className="scene-type" style={{ margin: 0, fontSize: "0.82rem", color: "rgba(255,255,255,0.6)" }}>
+        {supported === true
+          ? "Your headset is ready — put it on once the scan has opened."
+          : destination.note}
+      </p>
+    </>
+  )
+}
+
 export function PortalDestination({ portal }: { portal: PortalDefinition }) {
   // Nothing to say when the interior is the destination -- the whole caption
   // bar goes, not just its button, or a bare title floats over the water.
@@ -74,6 +102,8 @@ export function PortalDestination({ portal }: { portal: PortalDefinition }) {
         )}
 
         {d.kind === "places" && <HoveredPlace />}
+
+        {d.kind === "scan" && <ScanDestination destination={d} />}
 
         {d.kind === "route" && (
           <Link href={d.href} style={ctaStyle}>

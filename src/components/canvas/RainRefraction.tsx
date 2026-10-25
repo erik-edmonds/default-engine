@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber"
 import { useAtomValue } from "jotai"
 
 import { raining } from "@/helpers/StateProvider"
+import { xrActive, xrArmed, xrPriority } from "@/helpers/xr"
 
 /** How often the droplets' refraction source is refreshed. A few times a
  *  second reads as live for a mostly-static island, and the copy is the one
@@ -30,10 +31,17 @@ const AFTER_COMPOSER = 2
 // flag is gone.
 export function RainRefraction() {
   const isRaining = useAtomValue(raining)
+  const armed = useAtomValue(xrArmed)
   const lastCopy = useRef(0)
 
   useFrame(({ gl }) => {
     if (!isRaining) return
+    // The copy below reads the drawing buffer straight after the composer's
+    // render -- and in a session the composer does not run, three renders
+    // into the headset's own framebuffer, and the rain overlay is a DOM
+    // canvas that is not on screen anyway. The priority also has to come off
+    // fiber's count or nothing renders at all; see xrPriority.
+    if (xrActive.current) return
     const now = performance.now()
     if (now - lastCopy.current < REFRESH_MS) return
 
@@ -46,7 +54,7 @@ export function RainRefraction() {
     lastCopy.current = now
     fgCtx.drawImage(gl.domElement, 0, 0, fgCtx.canvas.width, fgCtx.canvas.height)
     renderer.updateTextures()
-  }, AFTER_COMPOSER)
+  }, xrPriority(armed, AFTER_COMPOSER))
 
   return null
 }

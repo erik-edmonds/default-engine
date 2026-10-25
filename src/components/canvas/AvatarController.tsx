@@ -5,16 +5,19 @@ import * as THREE from "three"
 import type { Group, Mesh, Object3D } from "three"
 import gsap from "gsap"
 import { useFrame } from "@react-three/fiber"
+import { useAtomValue } from "jotai"
 import { easing } from "maath"
 import {
   AVATAR_BASE_POSITION,
-  SKY_SCROLL_SMOOTH_TIME,
   avatarSkyPose,
   setSkyOrigin,
   skyCardSubjectLift,
+  skyDriftSide,
   skyExitLift,
+  skySubjectAway,
 } from "@/config/skyJourney"
-import { skyFrame } from "@/helpers/skyFrame"
+import { frameHalfWidth, skyFrame } from "@/helpers/skyFrame"
+import { skyScroll } from "@/helpers/skyScroll"
 import { tweenDuration, prefersReducedMotion } from "@/helpers/motion"
 import { pointerState } from "@/helpers/cursor"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
@@ -22,8 +25,16 @@ import { Avatar } from "@/components/models/Avatar"
 import { FlyingDragonite } from "@/components/models/FlyingDragonite"
 import { Rope } from "@/components/canvas/PaperSky"
 import { ROPE_RADIUS_NEAR, STRING_TOP, SUBJECT_DROP_PORTRAIT, SUBJECT_ROPE_IN_PORTRAIT } from "@/config/paperSky"
-import { flightHeading } from "@/config/flightFrame"
+import {
+  CAMERA_BEHIND,
+  flightBasis,
+  flightHeading,
+  makeFlightBasis,
+  placeInFlightFrame,
+  type FlightBasis,
+} from "@/config/flightFrame"
 import { Dragonite, type DragoniteHandle } from "@/components/models/Dragonite"
+import { xrActive, xrArmed, xrPriority } from "@/helpers/xr"
 
 /** The choreography lives in config/skyJourney.ts now, shared with the camera.
  *  It used to be defined here and nowhere else, which meant CameraController
@@ -46,7 +57,6 @@ export interface AvatarControllerHandle {
    *  before anything climbs, because the camera's target derives from it. */
   captureSkyOrigin: () => void
   beginSkyJourney: () => void
-  setSkyOffset: (offsetZ: number) => void
   returnHome: () => Promise<void>
 }
 
@@ -241,6 +251,9 @@ const ROPE_FADE_LAMBDA = 3.5
 
 export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref) => {
   const group = useRef<Group>(null)
+  // Re-rendered on purpose: the gaze pass's frame priority is derived from
+  // this, and fiber re-subscribes on the priority VALUE. See xrPriority.
+  const armed = useAtomValue(xrArmed)
   // Constant: the cutout holds station at the corridor origin, and STRING_TOP
   // is measured from there, so its rope never changes length.
   const dragoniteRopeRef = useRef(STRING_TOP - ROPE_ANCHOR_Y)
@@ -269,9 +282,9 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   /** Work that must happen on the commit that swaps the model, not before it.
    *  See returnHome. */
   const reseatOnSwap = useRef<(() => void) | null>(null)
-  const targetSkyOffset = useRef(0)
-  const displaySkyOffset = useRef(0)
   const isSkyJourneyActive = useRef(false)
+  /** Reused every frame; flightBasis writes into it rather than allocating. */
+  const skyBasis = useRef<FlightBasis | null>(null)
   /** Seconds since the journey began, which is what the idle bob's phase is
    *  measured from -- see the note where it is used. */
   const skyBobTime = useRef(0)
@@ -432,9 +445,6 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
       skyBobTime.current = 0
       isSkyJourneyActive.current = true
     },
-    setSkyOffset: (offset: number) => {
-      targetSkyOffset.current = offset
-    },
     // Reverses beginSkyJourney: stops the per-frame sky-journey latch first
     // so it can't fight this tween, then glides position and rotation back
     // to the resting pose together (safe to run concurrently -- unlike
@@ -447,8 +457,6 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     returnHome: () =>
       new Promise<void>((resolve) => {
         isSkyJourneyActive.current = false
-        targetSkyOffset.current = 0
-        displaySkyOffset.current = 0
         if (!group.current) {
           resolve()
           return
@@ -531,24 +539,19 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     if (!isSkyJourneyActive.current || !group.current) return
 
     const reduced = prefersReducedMotion()
-    if (reduced) {
-      displaySkyOffset.current = targetSkyOffset.current
-    } else {
-      // THE RAW DELTA, and the camera passes the raw delta too.
-      //
-      // Two damps of the same offset with different deltas diverge on any
-      // frame longer than the clamp -- and the camera then frames a COMPUTED
-      // avatar position that is not where the avatar actually is. Both were
-      // clamped for that reason; both are unclamped now, for the reason given
-      // where the camera does it: an exponential damp cannot go unstable over
-      // a long step, and clamping only makes it follow the frame rate instead
-      // of the clock. What matters here is that they still MATCH. Unclamping
-      // one alone put the subject 0.54 off the midline on a slow renderer,
-      // where the pair of them holds it at 0.15.
-      easing.damp(displaySkyOffset, "current", targetSkyOffset.current, SKY_SCROLL_SMOOTH_TIME, delta)
-    }
-
-    const offset = displaySkyOffset.current
+    // READ WHERE EVERYTHING ELSE READS IT.
+    //
+    // This used to be a value pushed in from page.tsx's own rAF while
+    // CameraController read `skyScroll.display` straight. Two loops, no
+    // ordering between them: on any frame where r3f ticked first, the camera
+    // framed an avatar that was still on the previous frame's offset. The
+    // gap is small at a crawl and tens of units at a flick, and it is
+    // exactly the drift the long note that used to live here was written
+    // about -- arriving from a direction nobody was watching.
+    //
+    // Lenis owns the easing; see the contract in skyScroll.ts. There is no
+    // damp here and must not be one.
+    const offset = skyScroll.display
     const pose = avatarSkyPose(offset)
 
     // The bob starts AT ZERO and grows in, rather than cutting in at whatever
@@ -572,7 +575,33 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     // used to be written straight from the table while only y was relative,
     // and that asymmetry teleported the avatar away from the camera on the
     // first sky frame.
-    group.current.position.x = pose.x
+
+    // ACROSS THE FRAME IN SECTION 2 -- see skyDriftSide.
+    //
+    // The drift is the section's whole composition: the subject crosses one
+    // half while the words answer from the other, swapping at every beat.
+    // Added to the pose rather than replacing it, so the authored hover is
+    // still underneath and he is never perfectly still.
+    //
+    // ALONG THE FRAME'S OWN RIGHT, NOT ALONG WORLD X.
+    //
+    // This used to write `position.x` directly. The flight frame's right
+    // vector is derived from the island camera's yaw, captured at hand-over
+    // -- so world x only happens to be sideways at the heading the camera
+    // usually sits at. Orbit the island before entering and it comes apart:
+    // at heading 0 the sign inverts and he drifts to the SAME side as the
+    // words; at a quarter turn the drift becomes pure depth and he grows and
+    // shrinks instead of moving. placeInFlightFrame is the one implementation
+    // everything else in the corridor already goes through, and the comment
+    // on it says why: so nothing can end up in a different space from the
+    // rest.
+    //
+    // Scaled by the frame's half-width AT THE CAMERA'S OWN STANDOFF, which
+    // is what makes the number mean something: the camera is CAMERA_BEHIND
+    // back along the axis, so a drift of 0.52 puts him at ndc x 0.52 on any
+    // monitor.
+    const side = skyDriftSide(offset) * frameHalfWidth(CAMERA_BEHIND)
+    const basis = flightBasis(offset, (skyBasis.current ??= makeFlightBasis()))
     // HAULED UP AND OUT AS THE CONTACT CARD ARRIVES -- see skyExitLift. Added
     // here and not in avatarSkyPose on purpose: the camera's height is
     // derived from that pose, so a lift inside it would carry the camera up
@@ -587,21 +616,55 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     // out, so at full expansion he would float over the middle of a scene
     // that is supposed to be the whole screen. Same string, same gesture,
     // and it plays in reverse when the card closes.
-    group.current.position.y =
-      pose.y + idleBob + skyExitLift(offset) + skyCardSubjectLift(offset) - subjectSkyDrop()
-    group.current.position.z = pose.z
+    placeInFlightFrame(
+      basis,
+      pose,
+      0,
+      side,
+      idleBob + skyExitLift(offset) + skyCardSubjectLift(offset) - subjectSkyDrop(),
+      group.current.position,
+    )
     // THE CAMERA TURNS; THE SUBJECT DOES NOT.
     //
     // "On the scroll, the camera should turn to look at the text, but the
     // dragonite shouldn't." avatarSkyPose's rotY carries an authored lean of
     // up to seventeen degrees, and the sky's subject is a flat cutout -- so
     // that lean is the difference between looking at him and looking at his
-    // edge. Squared to the corridor he stays face-on however far the camera
-    // leans off it, which is what the corridor's own props do (see the note
-    // on hang.rotation.y in PaperSky). The 3D model on the island keeps the
-    // authored lean: it has sides worth seeing.
+    // edge. The 3D model on the island keeps the authored lean: it has sides
+    // worth seeing.
+    //
+    // AND HE FACES THE CAMERA, CONTINUALLY.
+    //
+    // Two things used to be wrong here. A `skyDriftFacing * PI` term wound
+    // him round to show his back over the last fifth of the last fact and
+    // then -- in that beat's quiet tail, on the same misread sentinel the
+    // drift suffered from -- snapped him straight back to front: "when the
+    // dragonite turns around, it gets turned back around for some reason."
+    // That term is gone.
+    //
+    // And squaring him to the flight axis is not the same as facing the
+    // camera. Once he has drifted, the camera sees him from
+    // atan(side / CAMERA_BEHIND) off his normal -- sixteen degrees at full
+    // reach, which on a flat cutout is a visible narrowing. Subtracting that
+    // angle is the closed form for looking straight down the lens, it is
+    // continuous in `side` so it adds no new seam, and it needs no camera
+    // read, so it cannot go stale against the frame it is drawn in.
     group.current.rotation.y =
-      modelKindRef.current === "cardboard" ? flightHeading(offset) + Math.PI : pose.rotY
+      modelKindRef.current === "cardboard"
+        ? flightHeading(offset) + Math.PI - Math.atan2(side, CAMERA_BEHIND)
+        : pose.rotY
+
+    // PUBLISHED, because none of this is visible to a check that reads
+    // positions. `ndcX` is where he actually is across the frame -- the
+    // claim DRIFT_REACH makes -- and `facingDeg` is how far off square to
+    // the camera he is, which is the claim that replaces the half-turn.
+    group.current.userData.skyOffsetUsed = offset
+    group.current.userData.driftSide = skyDriftSide(offset)
+    group.current.userData.ndcX = side / Math.max(0.001, frameHalfWidth(CAMERA_BEHIND))
+    group.current.userData.facingDeg =
+      modelKindRef.current === "cardboard"
+        ? 0
+        : (Math.atan2(side, CAMERA_BEHIND) * 180) / Math.PI
   })
 
   // The rope's top stays on the STRING_TOP line while the cutout moves.
@@ -656,7 +719,7 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
       }
     }
     if (!group.current) return
-    const originY = avatarSkyPose(displaySkyOffset.current).y
+    const originY = avatarSkyPose(skyScroll.display).y
     dragoniteRopeRef.current = Math.max(0, STRING_TOP - ROPE_ANCHOR_Y - (group.current.position.y - originY))
     // Arrived, for the cord's purposes, means the camera is at the height the
     // sky pose is framed from -- not the altitude that dresses the backdrop,
@@ -671,7 +734,15 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     // The words are stacked on his axis there and his cord crosses them at
     // any length worth drawing. Faded rather than switched, on the same damp
     // the arrival already uses, so rotating a device is a dissolve.
-    const wantRope = arrived && (SUBJECT_ROPE_IN_PORTRAIT || !skyFrame.portrait)
+    // AND NOT WHILE THE FLAT PAGE IS UP. The lift above already carries the
+    // subject out of frame there, but the cord is 64 units long and anchored
+    // off-screen above him, so a good deal of it is still crossing the frame
+    // when he has gone -- and being transparent at renderOrder 0 it draws
+    // over a page that is transparent at -50. See skySubjectAway.
+    const wantRope =
+      arrived &&
+      (SUBJECT_ROPE_IN_PORTRAIT || !skyFrame.portrait) &&
+      skySubjectAway(skyScroll.display) < 0.5
     ropeOpacity.current = THREE.MathUtils.damp(ropeOpacity.current, wantRope ? 1 : 0, ROPE_FADE_LAMBDA, delta)
   })
 
@@ -693,6 +764,11 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
   useFrame((state, delta) => {
     const head = headBone.current
     if (!head || isCoarsePointer || prefersReducedMotion()) return
+    // In a session there is no cursor to follow and the camera is the
+    // headset's -- the gaze target below is derived from it, so left running
+    // the avatar would track the wearer's own head. The priority also drops
+    // to 0 so the render gate can open; see xrPriority.
+    if (xrActive.current) return
     // Not in the sky. Up there the avatar is choreographed by the journey and
     // the visitor's pointer is for scrolling -- a head that keeps turning to
     // follow it reads as the model being distracted mid-flight.
@@ -741,7 +817,7 @@ export const AvatarController = forwardRef<AvatarControllerHandle>((_props, ref)
     gazeScratch.pitchQuat.setFromAxisAngle(gazeScratch.right, gaze.current.pitch * headShare)
     gazeScratch.worldDelta.copy(gazeScratch.yawQuat).multiply(gazeScratch.pitchQuat)
     applyGaze(head, gazeScratch.head, gazeScratch.worldDelta, gazeScratch.parentWorld, gazeScratch.localDelta)
-  }, 0.5)
+  }, xrPriority(armed, 0.5))
 
   // The avatar is the subject of the scene, not a control: nothing happens
   // when you click it, so it shouldn't answer the pointer at all.

@@ -1,6 +1,7 @@
 "use client"
 
 import * as THREE from "three"
+import { xrActive } from "@/helpers/xr"
 
 // The vocabulary shared by the in-canvas driver (CursorDriver.tsx), the DOM
 // overlay that draws the thing (SceneCursor.tsx) and every object that wants to
@@ -55,6 +56,29 @@ export interface MagneticTarget {
   /** What a click on this target does. Called through activateTarget() so the
    *  assisted click and the object's own r3f click share one debounce. */
   activate?: () => void
+  /** The cursor has grabbed this target, or let it go.
+   *
+   *  WHY A TARGET NEEDS TELLING, when it already has r3f's own
+   *  onPointerOver: because on this island those two disagree, and the
+   *  measurement is stark. A hotspot ring's hit circle is about 15px across
+   *  on a 1280px screen. CameraLook swings the camera up to 4 degrees of yaw
+   *  toward the cursor, which moves that ring about 65px -- four times its
+   *  own radius. Reaching for a hotspot pushes it away from you, and r3f
+   *  only re-raycasts on pointermove, so once your hand stops the hover
+   *  state is whatever it happened to be when the ring last crossed under
+   *  the pointer. Reported as "hovering doesn't register, no click sound,
+   *  the name doesn't show up".
+   *
+   *  The magnet does not have that problem: it runs every frame, it reads
+   *  the target's live world position, and it locks from snapRadius (62px),
+   *  which comfortably exceeds the drift. It is already the thing that lands
+   *  the CLICK -- activateTarget, from the cursor's assisted click -- so
+   *  driving the hover from it makes the two consistent rather than adding a
+   *  second mechanism.
+   *
+   *  Fires only on a CHANGE, from CursorDriver, and once more with `false`
+   *  if the target unregisters while held. */
+  onLockChange?: (locked: boolean) => void
 }
 
 // ---------------------------------------------------------------- tuning
@@ -262,7 +286,12 @@ export function registerMagneticTarget(target: MagneticTarget) {
   magneticTargets.add(target)
   return () => {
     magneticTargets.delete(target)
-    if (cursorLock.current === target) cursorLock.current = null
+    if (cursorLock.current === target) {
+      cursorLock.current = null
+      // Or anything driven by the lock stays stuck in its held state for
+      // good -- the driver will never mention this target again.
+      target.onLockChange?.(false)
+    }
   }
 }
 
@@ -295,7 +324,14 @@ export function setSceneInputSuppressed(value: boolean) {
 }
 
 export function isSceneInputSuppressed() {
-  return sceneInputSuppressed
+  // OR'd rather than written through setSceneInputSuppressed, because that
+  // flag has one owner already -- the site menu, which sets it on open and
+  // CLEARS it on close. A session that set it would have it cleared out from
+  // under itself by any unrelated close, and would then have to be careful
+  // not to clear the menu's on the way out. Derived, there is nothing to
+  // restore and nothing to clobber: the suppression is simply true while a
+  // headset is being presented to.
+  return sceneInputSuppressed || xrActive.current
 }
 
 /** True while the pointer is over a piece of DOM chrome -- a button, a link,
@@ -334,7 +370,7 @@ export function getMagneticTargets(): ReadonlySet<MagneticTarget> {
   // The same goes for a pointer sitting on a control: a magnet that pulled the
   // cursor off a button the reader is trying to press is the fault, not a
   // feature.
-  return sceneInputSuppressed || pointerOverChrome ? EMPTY_TARGETS : magneticTargets
+  return isSceneInputSuppressed() || pointerOverChrome ? EMPTY_TARGETS : magneticTargets
 }
 
 const EMPTY_TARGETS: ReadonlySet<MagneticTarget> = new Set()
@@ -379,7 +415,7 @@ export function setCursorHover(token: object, type: CursorTargetType | null, sco
 export function getCursorHover(): CursorTargetType | null {
   let best: CursorTargetType | null = null
   for (const { type, scope } of hoverSources.values()) {
-    if (sceneInputSuppressed && scope === "scene") continue
+    if (isSceneInputSuppressed() && scope === "scene") continue
     if (best === null || TYPE_PRIORITY[type] > TYPE_PRIORITY[best]) best = type
   }
   return best
@@ -401,7 +437,7 @@ export function activateTarget(target: MagneticTarget): boolean {
   // from a window listener that never sees the canvas) and the object's own r3f
   // onClick (already dead inside a portal, but live behind the map overlay,
   // which is DOM and leaves root-scene events switched on).
-  if (sceneInputSuppressed) return false
+  if (isSceneInputSuppressed()) return false
   const now = performance.now()
   const previous = lastActivated.get(target)
   if (previous !== undefined && now - previous < ACTIVATE_DEBOUNCE_MS) return false

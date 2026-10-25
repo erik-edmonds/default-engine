@@ -101,7 +101,25 @@ export function CameraHotspot({
   const ringMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
   const dotMaterialRef = useRef<THREE.MeshBasicMaterial>(null)
   const labelRef = useRef<THREE.Mesh>(null)
-  const [hovered, setHovered] = useState(false)
+  // TWO WAYS TO BE HOVERED, and the second is the one that usually fires.
+  //
+  //   pointerOver   r3f's own raycast said the pointer is on the hit circle.
+  //                 Exact, and on this island rarely true: the circle is
+  //                 ~15px across and CameraLook's parallax carries it ~65px
+  //                 as you reach for it, so you are aiming at where it WAS.
+  //   magnetHeld    the cursor has locked onto this marker. Runs every
+  //                 frame off the marker's live world position, and locks
+  //                 from 62px -- wide enough to survive the drift.
+  //
+  // Unioned rather than replaced: the exact path still works when it works,
+  // and the magnet is what makes hovering reliable. The magnet is also
+  // already what lands the CLICK (see the activate() below, reached through
+  // activateTarget from the cursor's assisted click) -- so this makes hover
+  // and click agree about what you are pointing at, which they did not
+  // before: the click worked and the hover did not.
+  const [pointerOver, setPointerOver] = useState(false)
+  const [magnetHeld, setMagnetHeld] = useState(false)
+  const hovered = pointerOver || magnetHeld
   // Whether the camera has left this marker's own viewpoint. Flipped from the
   // frame loop, not from render, and only on a threshold crossing -- so it
   // re-renders on the two frames it actually changes rather than every frame.
@@ -137,6 +155,26 @@ export function CameraHotspot({
   const hoverToken = useMemo(() => ({}), [])
   useEffect(() => () => setCursorHover(hoverToken, null), [hoverToken])
 
+  /** Everything hovering LOOKS and SOUNDS like, driven off the union.
+   *
+   *  These used to sit inline in onPointerOver/onPointerOut. They cannot
+   *  stay there now that the magnet is the usual way this becomes hovered --
+   *  they would fire for one of the two paths and not the other, which is
+   *  precisely the bug: the ring stayed white and silent while the cursor
+   *  was visibly stuck to it.
+   *
+   *  The sound is edge-triggered off a ref rather than fired in the effect
+   *  body unconditionally, so a re-render that leaves `hovered` true does
+   *  not click again. */
+  const wasHovered = useRef(false)
+  useEffect(() => {
+    ringMaterialRef.current?.color.copy(hovered ? HOVER_COLOR : IDLE_COLOR)
+    dotMaterialRef.current?.color.copy(hovered ? HOVER_COLOR : IDLE_COLOR)
+    setCursorHover(hoverToken, hovered ? "cameraHotspot" : null)
+    if (hovered && !wasHovered.current) latest.current.play("click")
+    wasHovered.current = hovered
+  }, [hovered, hoverToken])
+
   // Register as a magnetic target. The object handed over is the bobbing
   // group, not the prop position -- CursorDriver reads getWorldPosition() every
   // frame, so the cursor tracks the marker's actual bob rather than drifting
@@ -163,6 +201,9 @@ export function CameraHotspot({
         latest.current.play("click")
         latest.current.onClick()
       },
+      // The hover, from the thing that already decides the click. See
+      // MagneticTarget.onLockChange.
+      onLockChange: setMagnetHeld,
     }
     magnet.current = target
     return registerMagneticTarget(target)
@@ -246,7 +287,8 @@ export function CameraHotspot({
       // ever getting a pointerout -- clear the stale hover so it doesn't
       // reappear later already orange/pulsing/grown for a cursor that isn't
       // there.
-      if (hovered) setHovered(false)
+      if (pointerOver) setPointerOver(false)
+      if (magnetHeld) setMagnetHeld(false)
       ringMaterialRef.current?.color.copy(IDLE_COLOR)
       dotMaterialRef.current?.color.copy(IDLE_COLOR)
       setCursorHover(hoverToken, null)
@@ -320,18 +362,9 @@ export function CameraHotspot({
           }}
           onPointerOver={(e) => {
             e.stopPropagation()
-            setHovered(true)
-            ringMaterialRef.current?.color.copy(HOVER_COLOR)
-            dotMaterialRef.current?.color.copy(HOVER_COLOR)
-            play("click")
-            setCursorHover(hoverToken, "cameraHotspot")
+            setPointerOver(true)
           }}
-          onPointerOut={() => {
-            setHovered(false)
-            ringMaterialRef.current?.color.copy(IDLE_COLOR)
-            dotMaterialRef.current?.color.copy(IDLE_COLOR)
-            setCursorHover(hoverToken, null)
-          }}
+          onPointerOut={() => setPointerOver(false)}
         >
           <circleGeometry args={[0.5, 40]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />

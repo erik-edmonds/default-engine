@@ -2,31 +2,11 @@ import * as THREE from 'three'
 import React, { forwardRef, useRef, useEffect, useImperativeHandle, useState, useMemo } from 'react'
 import { useAnimations } from '@react-three/drei'
 import { useGLTF } from '@/helpers/useGLTF'
-import { useCursorHover } from '@/helpers/useCursorHover'
 import { useFrame } from '@react-three/fiber'
 
 import { useShadows } from '@/helpers/useShadows'
-import { MAGNETIC_SNAP_RADIUS, activateTarget, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
-import { ISLAND_CAMERA_POSITION } from '@/config/positions'
 
-/** Same as the other props: noticed, not captured by. */
-const PROP_MAGNETIC_STRENGTH = 1.05
-const PROP_MAGNETIC_RADIUS = 155
 
-/** How near the home viewpoint the camera must be for the ball to work.
- *
- *  THE BALL USED TO BE CLICKABLE FROM ANYWHERE, including from inside the
- *  Models portal, where it launched the sky sequence out from under whatever
- *  you were looking at. It is mounted permanently -- Scene.tsx renders it
- *  under an `islandMounted` that never flips back -- so "is it reachable" was
- *  never asked.
- *
- *  Decided from the LIVE CAMERA rather than from the journey's index, which
- *  is the authority app/page.tsx argues for in the same situation: "the index
- *  and the camera come apart the moment you drag to orbit". CameraHotspot
- *  settles the identical question the same way, and these are its radii. */
-const AT_HOME_RADIUS = 6
-const LEFT_HOME_RADIUS = 8
 
 /** THE BEAM AIMS AT THE AVATAR, IT IS NOT AIMED BY HAND ANY MORE.
  *
@@ -82,7 +62,6 @@ function Pokeball({ onRelease, ...props }, ref) {
   const particlesRef = useRef<THREE.Points>(null)
 
   const [click, setClicked] = useState(false)
-  const [hovered, set] = useState(false)
   const [showEnergy, setShowEnergy] = useState(false)
   const uProgress = useRef(0)
   const beamElapsed = useRef(0)
@@ -286,47 +265,20 @@ function Pokeball({ onRelease, ...props }, ref) {
     }
   })
 
-  useCursorHover(hovered)
   useShadows(rootRef)
 
-  // Magnetic target on the ball group, not the root: the root also contains
-  // the release beam and the sparkle cloud, which sit out by the avatar, so
-  // its world origin is not where the ball appears.
-  // WHETHER THE BALL IS REACHABLE AT ALL, from where the camera is standing.
+  // THE BALL IS SCENERY. It does not open, and nothing on it says it might.
   //
-  // Hysteresis rather than one threshold, copied from CameraHotspot: a single
-  // radius flickers while the camera drifts across it, and a prop that blinks
-  // in and out of being clickable is worse than one that is simply off.
-  const atHome = useRef(true)
-  useFrame((state) => {
-    const d = state.camera.position.distanceTo(ISLAND_CAMERA_POSITION)
-    if (atHome.current && d > LEFT_HOME_RADIUS) atHome.current = false
-    else if (!atHome.current && d < AT_HOME_RADIUS) atHome.current = true
-  })
-
-  const clickRef = useRef(() => setClicked((c) => !c))
-  clickRef.current = () => {
-    if (!atHome.current) return
-    setClicked((c) => !c)
-  }
-  const magnet = useRef<MagneticTarget | null>(null)
-  useEffect(() => {
-    if (!ballGroupRef.current) return
-    const target: MagneticTarget = {
-      object: ballGroupRef.current,
-      type: 'interactive',
-      strength: PROP_MAGNETIC_STRENGTH,
-      radius: PROP_MAGNETIC_RADIUS,
-      snapRadius: MAGNETIC_SNAP_RADIUS,
-      // Once released, clicking it again does nothing useful -- stop pulling.
-      // And it does not exist at all from anywhere but home.
-      isEnabled: () => !click && atHome.current,
-      activate: () => clickRef.current(),
-    }
-    magnet.current = target
-    return registerMagneticTarget(target)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [click])
+  // Clicking it used to launch the sky journey -- materialise the dragonite,
+  // dolly in, climb, and hand over to a twenty-four-screen scroll. That
+  // journey is parked (see the note at the top of config/skyJourney.ts), so
+  // the doorbell comes out with it: no onClick, no magnetic target, no
+  // cursor hover, and no reachability test to decide between them.
+  //
+  // What is left below is the lid animation, the release beam and the
+  // sparkle cloud, reachable only through the imperative `close()`. They are
+  // kept deliberately: re-enabling the ball is a click handler that flips
+  // `click`, not a rebuild of three hundred lines of choreography.
 
   const initialPointsArray = useMemo(() => new Float32Array(particleCount * 3), [])
 
@@ -345,7 +297,7 @@ function Pokeball({ onRelease, ...props }, ref) {
     // useShadows skips transparent materials, so the ball itself casts but the
     // release beam and its glow cone -- both additive, both meshes -- don't
     // throw solid silhouettes across the sand.
-    <group ref={rootRef} onPointerOver={() => set(true)} onPointerOut={() => set(false)} {...props}>
+    <group ref={rootRef} {...props}>
       {/* raycast disabled on all three release visuals below. They're
           additive VFX, but they still sit in the scene graph inside this
           group's onPointerOver -- and the sparkle <points> in particular
@@ -415,11 +367,6 @@ function Pokeball({ onRelease, ...props }, ref) {
         // portal-frame-bar in HotspotPortal.tsx. The Sketchfab export names
         // every node Object_N, so there is nothing else to match on.
         name="pokeball"
-        onClick={() => {
-          // Registry-routed so the direct and assisted clicks share a debounce.
-          if (magnet.current) activateTarget(magnet.current)
-          else clickRef.current()
-        }}
         position={[0, 0, 0]}
       >
         <group name="Sketchfab_Scene">

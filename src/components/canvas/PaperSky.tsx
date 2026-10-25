@@ -14,6 +14,8 @@ import { useAtomValue } from "jotai"
 import { useEffect } from "react"
 import { VelocityLines } from "@/components/canvas/VelocityLines"
 import { SkyCard } from "@/components/canvas/SkyCard"
+import { SkyPage } from "@/components/canvas/SkyPage"
+import { SkyText } from "@/components/canvas/SkyText"
 import {
   CLOUD_SCALE,
   CORRIDOR_BEHIND,
@@ -24,7 +26,9 @@ import {
   EDGE_CLOUD_OPACITY,
   EDGE_CLOUD_RISE,
   EDGE_CLOUD_SCALE,
-  EDGE_CLOUD_SIDE_NDC,
+  EDGE_CLOUD_CLEAR_RATIO,
+  EDGE_CLOUD_RISE_MIN,
+  CLOUD_NATIVE_WIDTH,
   CORRIDOR_POOL,
   CORRIDOR_TRAVEL_PER_OFFSET,
   PROP_DROP_NDC,
@@ -53,6 +57,8 @@ import {
   corridorOrigin,
   skyCorridorSide,
   skyCardOpen,
+  skyCorridorActive,
+  skyEdgeCloudGain,
   skySectionIndex,
   skySectionSpan,
   skyTextFocus,
@@ -664,6 +670,17 @@ function Prop({
       node.visible = false
       return
     }
+    // ONLY IN SECTIONS 1 AND 4 -- see skyCorridorActive.
+    //
+    // "Instead of it looking like it is moving forward in the clouds, I want
+    // it to just look like it is moving through a regular scroll." The
+    // flying IS the arrival and the farewell; through the drift and the
+    // painted scenes a cloud rushing at the lens is the loudest possible
+    // contradiction of a page being scrolled, so the corridor stops.
+    if (!skyCorridorActive(skyScroll.display)) {
+      node.visible = false
+      return
+    }
     // BEHIND AN OPEN CARD THERE IS NO SKY TO SEE.
     //
     // A card grows until it covers the frame, but it stands sixty units down
@@ -957,16 +974,28 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
   const seed = useMemo(() => {
     const { u, v } = r2(index * 3 + 4409)
     const { u: u2, v: v2 } = r2(index * 3 + 7717)
+    const scale = EDGE_CLOUD_SCALE[0] + u2 * (EDGE_CLOUD_SCALE[1] - EDGE_CLOUD_SCALE[0])
+    // How far off the axis, DERIVED FROM ITS OWN WIDTH -- see
+    // EDGE_CLOUD_CLEAR_RATIO. `u` used to pick this independently of `u2`
+    // picking the size, so a small cloud could draw a large offset and leave
+    // the frame while still a speck. Tied to the width, every cloud appears
+    // at the same place on screen, grows by the same factor, and is the same
+    // share of the frame when it passes -- on any aspect, because both sides
+    // of the ratio carry skyPropScale.
+    const halfWidth = (CLOUD_NATIVE_WIDTH * scale) / 2
+    // Kept off the centre line, where the subject is -- see
+    // EDGE_CLOUD_RISE_MIN. `u` is spent here now that it no longer picks the
+    // offset, which keeps the two draws independent of each other.
+    const reach = EDGE_CLOUD_RISE_MIN + u * (EDGE_CLOUD_RISE - EDGE_CLOUD_RISE_MIN)
     return {
-      // A fraction of the half-frame at the distance these are first meant to
-      // be seen, resolved to world units here -- see EDGE_CLOUD_SIDE_NDC.
-      sideNdc: EDGE_CLOUD_SIDE_NDC[0] + u * (EDGE_CLOUD_SIDE_NDC[1] - EDGE_CLOUD_SIDE_NDC[0]),
+      sideOffset: EDGE_CLOUD_CLEAR_RATIO * halfWidth,
+      halfWidth,
       // Alternating rather than sampled: with seven of them a random sign
       // leaves one side bare about a quarter of the time, and a bare side is
       // the one thing "clouds on the outsides" cannot have.
       sideSign: index % 2 === 0 ? -1 : 1,
-      rise: (v * 2 - 1) * EDGE_CLOUD_RISE,
-      scale: EDGE_CLOUD_SCALE[0] + u2 * (EDGE_CLOUD_SCALE[1] - EDGE_CLOUD_SCALE[0]),
+      rise: (v < 0.5 ? -1 : 1) * reach,
+      scale,
       // Evenly spaced along the run, then jittered, so they arrive in a
       // stream rather than in a rank.
       phase:
@@ -988,12 +1017,14 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
       node.visible = false
       return
     }
-    // And out of the way of an open card, for the same reason the corridor's
-    // own props are -- see the gate in Prop.
-    if (skyCardOpen(skyScroll.display) > 0.5) {
-      node.visible = false
-      return
-    }
+    // BOTH GATES ARE NOW FADES -- see skyEdgeCloudGain.
+    //
+    // These used to be two hard `visible = false` returns: sections 1 and 4
+    // only, and nothing while a card is open. The first left section 2 with
+    // no scroll-linked motion in the frame at all; the second was a step
+    // from full opacity to nothing on whichever frame the card crossed half
+    // open. Multiplied in below instead, so the field thins and thickens
+    // rather than switching.
     node.visible = true
     const basis = (basisRef.current ??= makeFlightBasis())
     const origin = (originRef.current ??= { x: 0, y: 0, z: 0 })
@@ -1009,10 +1040,14 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
       basis,
       origin,
       ahead,
-      seed.sideSign * seed.sideNdc * frameHalfWidth(EDGE_CLOUD_FADE_AXIAL - CAMERA_BEHIND),
+      seed.sideSign * seed.sideOffset * skyPropScale(),
       // The vertical band is a fraction of the frame at this distance, so it
       // opens out with the frame instead of closing to a line at the far end.
-      viewAxisUp(ahead) + seed.rise * axial * skyFrame.tanV,
+      //
+      // CLAMPED AT ONE, because the band now runs past the lens and `axial`
+      // goes negative there -- without this a cloud flips to the other side
+      // of the axis as it crosses the lens plane. The same guard Prop has.
+      viewAxisUp(ahead) + seed.rise * Math.max(1, axial) * skyFrame.tanV,
       node.position,
     )
     node.rotation.y = Math.atan2(basis.fx, basis.fz) + Math.PI
@@ -1023,7 +1058,19 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
       0,
       1,
     )
-    opacity.current = EDGE_CLOUD_OPACITY * shown * shown * (3 - 2 * shown)
+    // AND NOTHING WHILE A CARD HAS BECOME THE SCREEN. Same 0.5 threshold the
+    // hard hide used, as a ramp: a card past half open is about to be the
+    // whole frame and these belong behind it.
+    const cardFade = 1 - THREE.MathUtils.clamp(skyCardOpen(skyScroll.display) / 0.5, 0, 1)
+    opacity.current =
+      EDGE_CLOUD_OPACITY *
+      skyEdgeCloudGain(skyScroll.display) *
+      cardFade *
+      shown *
+      shown *
+      (3 - 2 * shown)
+    // Below this nothing is on screen worth a draw call.
+    if (opacity.current <= 0.002) node.visible = false
     // Written here rather than left to the cutout's own callback, for the
     // reason Prop gives at length: a child's callback runs after this one, so
     // a cutout that set its own opacity would be a frame behind the position
@@ -1031,9 +1078,22 @@ function EdgeCloud({ index, arrived }: { index: number; arrived: React.RefObject
     // strength on the frame it jumps back to the far end.
     if (material.current) material.current.opacity = opacity.current
 
+    // PUBLISHED AS WHAT IS ON SCREEN, not as the authored constant.
+    //
+    // This used to publish `sideNdc`, which never changed -- so every check
+    // written against it was reading a number that could not report the bug
+    // it was there to catch. These are the live ones: where the cloud
+    // actually is across the frame, how wide it actually is, and the ratio
+    // that decides whether it leaves through the side or swells across the
+    // middle.
+    const halfFrame = Math.max(0.001, axial * skyFrame.tanH)
+    const worldSide = seed.sideOffset * skyPropScale()
     node.userData.axial = axial
     node.userData.sideSign = seed.sideSign
-    node.userData.side = seed.sideNdc
+    node.userData.ndcX = (seed.sideSign * worldSide) / halfFrame
+    node.userData.widthNdc = (CLOUD_NATIVE_WIDTH * node.scale.x) / halfFrame
+    node.userData.clearRatio = EDGE_CLOUD_CLEAR_RATIO
+    node.userData.opacity = opacity.current
   })
 
   return (
@@ -1148,12 +1208,14 @@ function PaperWorld() {
     if (state.scene.getObjectByName("paper-sky")) {
       const root = state.scene.getObjectByName("paper-sky")!
       root.userData.skyOffset = skyScroll.display
-      // The integrator's own two numbers, for the same reason as the offset.
-      // `display` alone cannot tell a journey that is being held from one
-      // that simply has no momentum left, and the difference between those
-      // is the entire question about the scroll magnet.
+      // Where the scroll has been taken, against where it has eased to.
+      // `display` alone cannot tell a journey that is still coasting from one
+      // that has come to rest, and a probe needs to know which it is looking
+      // at. (`skyVelocity` was the third of these; the integrator that owned
+      // it is gone -- Lenis coasts now. `speed` is the derivative and lives
+      // on skyScroll for anything that needs it.)
       root.userData.skyTarget = skyScroll.target
-      root.userData.skyVelocity = skyScroll.velocity
+      root.userData.skySpeed = skyScroll.speed
       root.userData.lean = skyTextFocus(skyScroll.display).lean
       root.userData.textSide = skyTextFocus(skyScroll.display).side
     }
@@ -1179,7 +1241,9 @@ function PaperWorld() {
       {Array.from({ length: EDGE_CLOUD_COUNT }, (_, i) => (
         <EdgeCloud key={`edge-${i}`} index={i} arrived={arrived} />
       ))}
+      <SkyPage />
       <SkyCard />
+      <SkyText />
       <VelocityLines />
     </>
   )
@@ -1204,5 +1268,13 @@ export function PaperSky({ active }: { active: boolean }) {
   )
 }
 
-useGLTF.preload("/models/cardboard_cloud.glb")
-useGLTF.preload("/models/cardboard_star.glb")
+// NOT PRELOADED WHILE THE JOURNEY IS PARKED.
+//
+// These two are twenty-one megabytes between them, and this module is
+// imported by Scene.tsx unconditionally (and by AvatarController, for Rope),
+// so a module-scope preload fetches them on every island visit -- for a
+// world that `active` keeps from ever rendering. The useGLTF calls inside
+// the components below are unaffected and still fetch on first render, so
+// uncommenting these two lines is all that re-enabling needs.
+// useGLTF.preload("/models/cardboard_cloud.glb")
+// useGLTF.preload("/models/cardboard_star.glb")

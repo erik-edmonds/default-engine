@@ -6,6 +6,7 @@ import { CameraShake, type ShakeController } from "@react-three/drei"
 import gsap from "gsap"
 import * as THREE from "three"
 import { cameraFlying, thunder } from "@/helpers/StateProvider"
+import { xrArmed } from "@/helpers/xr"
 import { cameraShakeActive } from "@/helpers/cameraBase"
 
 // A strike is two flashes, not one: the leader stroke, then a return stroke
@@ -42,7 +43,17 @@ export function Thunder() {
   // camera.rotation -- see helpers/cameraBase.ts. Not derived from the
   // `thunder` atom outside, because the rig's lifetime is SHAKE_MS, not the
   // atom's value.
-  const shaking = striking && !flying
+  // NO CAMERA SHAKE IN A HEADSET, at any amplitude.
+  //
+  // Rolling someone's horizon for them is the single most reliable way to
+  // make them ill, and it is worse than ordinary vection because the inner
+  // ear reports nothing at all while the eyes report a lurch. It is also
+  // mechanically impossible to honour: drei's CameraShake writes
+  // camera.rotation, and three overwrites both eye matrices from the headset
+  // pose every XR frame -- so the shake would either do nothing or fight the
+  // tracking. The flash and the thunderclap stay; only the shake goes.
+  const armed = useAtomValue(xrArmed)
+  const shaking = striking && !flying && !armed
   useEffect(() => {
     cameraShakeActive.current = shaking
     return () => {

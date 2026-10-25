@@ -276,7 +276,7 @@ export const CORRIDOR_WIDTH_RATIO = 1.5
 
 /** The cloud model's native size, in its own file's units. The scales below are
  *  hundredths because of the first number. */
-const CLOUD_NATIVE_WIDTH = 232
+export const CLOUD_NATIVE_WIDTH = 232
 const CLOUD_NATIVE_HEIGHT = 128
 /** The star's own box, for hanging its string off the top of it. */
 export const STAR_NATIVE_HEIGHT = 1.787
@@ -1113,40 +1113,97 @@ export const PROP_DROP_UNTIL = 0.26
  *  So they cannot collide with the words and cannot be confused with the
  *  cloud that belongs to them.
  *
- *  A CONSTANT WORLD OFFSET, not a constant screen position. Placing them at a
- *  fixed fraction of the frame width would pin them to the edge forever --
- *  the frame widens with distance at exactly the rate the offset would, so
- *  they would grow in place and never pass anything. Held at a fixed distance
- *  from the axis instead, they open outward as they approach and leave
- *  through the side, which is the only way they read as being flown past. */
+ *  DERIVED FROM THE CLOUD'S OWN SIZE, not authored as a screen fraction.
+ *  See EDGE_CLOUD_CLEAR_RATIO: that one number sets where a cloud appears,
+ *  how much it grows, and how wide it is when it passes, and it does so
+ *  identically on every aspect because the offset and the width carry the
+ *  same skyPropScale. The band these used to have was authored as a share of
+ *  the frame at a FIXED far distance, which is the fault below. */
 export const EDGE_CLOUD_COUNT = 7
-/** The small clouds' band, as fractions of the half-frame at
- *  EDGE_CLOUD_FADE_AXIAL (170) -- the distance they have finished fading in
- *  by, and so the first distance at which they are meant to be seen.
+
+/** How far off the axis a cloud sits, AS A MULTIPLE OF ITS OWN HALF-WIDTH.
  *
- *  [0.4528, 0.8410] is the old fixed [42, 78] against that frame. At 0.41
- *  aspect the fixed band put the innermost of them at ndc 1.77: all seven were
- *  outside the frustum for the entire journey. */
-export const EDGE_CLOUD_SIDE_NDC: readonly [number, number] = [0.4528, 0.841]
-/** Small. The corridor's clouds run CLOUD_SCALE 0.1 .. 0.13; at a third of
- *  that these are 9 to 16 units across against the corridor's 30, which is
- *  about seven per cent of the frame's width at the distance they are read
- *  at -- present, and clearly further away than the cloud that matters. */
-export const EDGE_CLOUD_SCALE: readonly [number, number] = [0.04, 0.07]
-/** Deeper than the corridor at both ends: the far end so the widest of them
- *  still get a stretch on screen before their offset carries them out (at 78
- *  units off the axis a cloud has already left the frame by 133), the near
- *  end because they exit sideways long before they reach it. */
-export const EDGE_CLOUD_DEPTH: readonly [number, number] = [20, 260]
+ *  THIS IS THE WHOLE FIX, and it is one number because three things that
+ *  look separate are the same number. Both a prop's angular offset and its
+ *  angular size go as 1/distance, so for a cloud at offset `s` with
+ *  half-width `w`, anchored so that `s` is `sideNdc` of the half-frame at
+ *  EDGE_CLOUD_FADE_AXIAL:
+ *
+ *      where it is on screen when it finishes fading in   sideNdc
+ *      how much it grows before it leaves                 1 / sideNdc
+ *      how wide it is at the moment it exits              1 / ratio
+ *
+ *  These are identities, not tunings. The band this replaces failed on the
+ *  first line only: `s` was a fixed 43 to 72 world units against a half-width
+ *  of 4.7 to 8, a ratio of about NINE -- so a cloud reached full opacity at
+ *  ndc x 0.44 to 0.81, which is to say it became visible exactly as it
+ *  arrived at the frame's edge, slid out sideways while still a tenth of the
+ *  frame wide, and grew by a factor of 1.2 doing it. "The clouds look very
+ *  awkward, they should be moving towards the camera."
+ *
+ *  At 2.2: it appears at ndc 0.11 to 0.19 -- far off, near the middle --
+ *  grows five to nine fold on the way in, and is 45% of the frame wide as it
+ *  passes. The corridor's own cloud, which has always flown past correctly,
+ *  runs 1.33; these sit deliberately wider because they are scenery being
+ *  passed rather than the furniture that frames a paragraph.
+ *
+ *  DERIVING `s` FROM `w` rather than authoring both is what makes this hold
+ *  on a phone: the two carry the same skyPropScale, so the ratio, the
+ *  sideNdc and the exit distance are all aspect-invariant by construction.
+ *  Authored separately they were two uncorrelated random draws and the
+ *  no-engulf guarantee was a coincidence. */
+export const EDGE_CLOUD_CLEAR_RATIO = 2.2
+
+/** How big one is, against CLOUD_NATIVE_WIDTH. Small. The corridor's clouds
+ *  run CLOUD_SCALE 0.1 .. 0.13; at a third of that these are 9 to 16 units
+ *  across against the corridor's 30. Unchanged by the fix above, which is
+ *  the pleasant part of deriving the offset from the size: the authored
+ *  sizes already landed where the ratio wants them. The defect was never
+ *  how big they were. */
+export const EDGE_CLOUD_SCALE = [0.04, 0.07]
+
+/** The depth they cycle through, as distance from the camera.
+ *
+ *  THE NEAR END IS NEGATIVE, which is to say the band runs PAST the lens --
+ *  the same thing CORRIDOR_NEAR_AXIAL does at -4, and for the same reason:
+ *  with the offset now a couple of cloud-widths rather than fifty units, a
+ *  cloud recycling at +20 would still be on screen and fully opaque when it
+ *  jumped back to the far end. Running it past means it leaves through the
+ *  side, which needs no near fade at all -- by the time it reaches the lens
+ *  plane it is ninety degrees off axis and outside the frustum.
+ *
+ *  The far end is 300 so the fade has 130 units to happen over -- about 540
+ *  units of scroll -- and so that one cloud passes every
+ *  span / (COUNT * CORRIDOR_TRAVEL_PER_OFFSET) = 183 offset units, roughly
+ *  four per beat. That interval is the lever if the sky ever reads busy:
+ *  raise the span rather than lowering the count, which would thin the far
+ *  field too. */
+export const EDGE_CLOUD_DEPTH = [-8, 300]
+
 /** Vertical spread, as a fraction of the frame's half-height at the cloud's
  *  own distance -- so the band tracks the frame instead of pinching shut at
  *  the far end the way a fixed world height would. */
 export const EDGE_CLOUD_RISE = 0.78
+
+/** And a FLOOR on that spread.
+ *
+ *  Now that the lateral band has collapsed from fifty-odd units to a couple
+ *  of cloud-widths, the vertical band is the only thing keeping a far cloud
+ *  off the subject's silhouette -- and the subject stands on the axis, which
+ *  is exactly where a cloud with rise near zero fades in. It would come up
+ *  hidden behind him and appear to burst out from under his feet. Keeping
+ *  every cloud at least this far off the centre line is cheaper than
+ *  sorting, and it costs nothing visually: the band is still 0.52 .. 0.78. */
+export const EDGE_CLOUD_RISE_MIN = 0.52
+
 /** Distance over which one comes up out of the haze. The same idea as
  *  PROP_FADE_IN_AXIAL and, like it, a function of distance alone -- never of
- *  a clock or of the recycle, or a cloud would be seen to pop. */
+ *  a clock or of the recycle, or a cloud would be seen to pop.
+ *
+ *  It is also the distance EDGE_CLOUD_CLEAR_RATIO's sideNdc is quoted at,
+ *  which is the only reason the two numbers can be read together. */
 export const EDGE_CLOUD_FADE_AXIAL = 170
-/** Held under the corridor's clouds so they sit back in the picture. */
+
 export const EDGE_CLOUD_OPACITY = 0.72
 
 // --- the film ---------------------------------------------------------------

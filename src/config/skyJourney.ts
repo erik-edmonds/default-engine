@@ -1,3 +1,34 @@
+/** ====================================================================
+ *  PARKED. Nothing on the live site can reach the sky journey.
+ *
+ *  It was a bonus rather than part of the site's job, so its entry point was
+ *  removed: the Poke Ball that launched it is scenery now (no click handler,
+ *  no magnetic target, no hover), and `handleUpClick` in app/page.tsx -- the
+ *  launch sequence -- is kept but has no caller. With no launch,
+ *  `inSkyJourney` never turns true, so PaperSky never renders, useSkyLenis
+ *  never builds a Lenis, the twenty-four-screen spacer never mounts and
+ *  SkyContact never appears.
+ *
+ *  NOTHING HERE WAS DELETED. This file, skyCards.ts, PaperSky, SkyCard,
+ *  SkyPage, SkyText, CardScene, useSkyLenis and skyScroll are all intact and
+ *  still type-check, because the work in them is real and the journey is
+ *  meant to come back.
+ *
+ *  TO RE-ENABLE, in order:
+ *    1. app/page.tsx -- have something call `handleUpClick()` again (it was
+ *       `handleDragoniteRelease`, fired by the Poke Ball's `onRelease`).
+ *    2. models/Pokeball.tsx -- restore the onClick, the magnetic target and
+ *       the hover; `close()` on the imperative handle still works.
+ *    3. canvas/Scene.tsx -- pass `onRelease` back to <Pokeball>.
+ *    4. models/FlyingDragonite.tsx -- uncomment the module-scope preload, or
+ *       accept a lazy fetch on first render.
+ *    5. config/achievements.ts -- restore "ascent" and "voyager", and the
+ *       `unlock("voyager")` call in page.tsx's journey rAF.
+ *
+ *  Known outstanding work on it, from the last round: the parallax section
+ *  after the three facts, and the contact beat that follows it.
+ *  ==================================================================== */
+
 /** The sky journey: one scroll axis, 0 to 600, that both the avatar and the
  *  camera read.
  *
@@ -391,44 +422,146 @@ export function corridorOrigin(offset: number, out: { x: number; y: number; z: n
  *  portrait paints the same words into a 210px column (see paint() in
  *  SkyCaptionBillboard) where a longer block grows downward with nothing
  *  clamping it. Nothing below exceeds it. */
-const CUE_CONTENT = [
+/** THE JOURNEY IS FOUR SECTIONS NOW, NOT ONE LONG CORRIDOR.
+ *
+ *  "I want to change the movement of the sky scene completely... Instead of
+ *  it looking like it is moving forward in the clouds, I want it to just
+ *  look like it is moving through a regular scroll. But this scene will be
+ *  separated into 4 distinct sections."
+ *
+ *    1  ARRIVAL   the corridor as it is -- the subject on its string and the
+ *                 cardboard clouds flying past. Short: one line, and then it
+ *                 stops.
+ *    2  DRIFT     the flying stops. The subject crosses the frame left to
+ *                 right while the words alternate sides opposite it, each
+ *                 appearing in place rather than flying in.
+ *    3  SCENES    a clean cut. Text with a small card under it; the card
+ *                 opens into a full-screen painted parallax that is scrolled
+ *                 through for two screens or more, then shuts again.
+ *    4  FAREWELL  a clean cut back to the corridor, briefly, and then the
+ *                 subject is drawn up out of frame and the contact card
+ *                 arrives.
+ *
+ *  Each beat declares the section it belongs to, how it is staged, and how
+ *  much of the axis it is worth. WEIGHT IS THE IMPORTANT ONE: the spans used
+ *  to be even fifths, which is fine when every block is a paragraph flying
+ *  past and wrong the moment one of them is a parallax scene that has to
+ *  last "at least two screens". A parallax beat is worth three of a line of
+ *  text, and the axis is divided in those proportions. */
+export type SkyBeatMode = "intro" | "side" | "parallax" | "outro"
+
+const CUE_CONTENT: {
+  section: 1 | 2 | 3 | 4
+  mode: SkyBeatMode
+  text: string
+  body: string
+  eyebrow: string
+  /** How much of the axis this beat is worth, relative to the others. */
+  weight: number
+  /** parallax beats only: which folder under public/images/cards. */
+  folder?: string
+}[] = [
+  // -- 1. ARRIVAL ----------------------------------------------------------
   {
+    section: 1,
+    mode: "intro",
+    eyebrow: "",
+    text: "Get to know me",
+    body: "",
+    weight: 1,
+  },
+
+  // -- 2. DRIFT ------------------------------------------------------------
+  {
+    section: 2,
+    mode: "side",
+    eyebrow: "Fact #01",
     text: "Data Scientist, Mostly Remote",
     body: "Models, computer vision, and the visualisation that makes them legible. Work happens wherever the wifi holds -- five countries in two years, most good ideas arriving between a departure lounge and a borrowed kitchen table.",
+    weight: 1.15,
   },
   {
+    section: 2,
+    mode: "side",
+    eyebrow: "Fact #02",
     text: "Photographs In, Scenes Out",
     body: "Gaussian splatting is the work I would lead with: a few million fitted gaussians turning ordinary photographs into a scene you can fly a camera through, in real time, in a browser.",
+    weight: 1.15,
   },
   {
+    section: 2,
+    mode: "side",
+    eyebrow: "Fact #03",
     text: "Pokémon Trainer at Heart",
     body: "The first thing I ever built was a type-matchup calculator, written badly, for a schoolyard argument I was losing. Turning an argument into a model is still the job -- lately on driving policies, in CARLA.",
+    weight: 1.15,
   },
+
+  // -- 3. SCENES -----------------------------------------------------------
+  //
+  // THREE WINDOWS, ON IMAGE FOLDERS 1, 2 AND 3.
+  //
+  // Each is one turn of the kprverse cycle: a flat page, a window that rises
+  // from the bottom of the screen and grows as it rises, a full-screen
+  // parallax scrolled down about a screen, and then the window shrinking
+  // away again.
+  //
+  // THE COPY ON TWO OF THEM IS A PLACEHOLDER and is marked as one. Which
+  // text pairs with which folder is still to be decided; the headings below
+  // are there so the beat has something to draw while that is settled.
   {
+    section: 3,
+    mode: "parallax",
+    folder: "1",
+    eyebrow: "Fact #04",
     text: "Certified Scuba Diver",
     body: "Open water since 2019. Thirty metres down there is no signal, no backlog and nothing to optimise -- which turns out to be the only reliable way I have found to think about a hard problem.",
+    weight: 3.4,
   },
   {
+    section: 3,
+    mode: "parallax",
+    folder: "2",
+    eyebrow: "Placeholder",
+    text: "Second Scene",
+    body: "Placeholder copy for the second parallax window. Replace this heading and body with the text that belongs on the plates in public/images/cards/2.",
+    weight: 3.4,
+  },
+  {
+    section: 3,
+    mode: "parallax",
+    folder: "3",
+    eyebrow: "Placeholder",
+    text: "Third Scene",
+    body: "Placeholder copy for the third parallax window. Replace this heading and body with the text that belongs on the plates in public/images/cards/3.",
+    weight: 3.4,
+  },
+
+  // -- 4. FAREWELL ---------------------------------------------------------
+  {
+    section: 4,
+    mode: "outro",
+    eyebrow: "Get in touch",
     text: "Let's Connect",
     body: "Available for freelance and contract work: modelling, computer vision, simulation, and making the results legible to whoever is paying for them. Glad to talk about any of it.",
+    weight: 1.5,
   },
 ]
 
-/** Where each caption becomes current, as a FRACTION of the scroll axis.
+/** Where each beat starts, as a fraction of the axis after the lead.
  *
- *  Fractions rather than four magic numbers, so lengthening the axis spreads
- *  the captions with it instead of crowding them all into the first third. The
- *  thresholds used to be 75/225/375/525 against a 600-unit axis.
- *
- *  EVEN QUARTERS now, where they used to be 0.125/0.375/0.625/0.875. That set
- *  gave the last block half the room of the others, and the corridor is timed
- *  against these spans -- one cloud crosses per block (see SKY_SECTION_START)
- *  -- so an odd-length span meant one cloud crossing at twice the speed of
- *  the rest. The first block simply starts at the lead instead of a fraction
- *  past it. */
-/** Five blocks now, evenly spaced. Four facts and the contact card, which is
- *  the one the journey ends parked on -- see SKY_SCROLL_LIMIT. */
-const CUE_FRACTIONS = [0, 0.2, 0.4, 0.6, 0.8]
+ *  Cumulative WEIGHT rather than even steps. A parallax beat needs three
+ *  times the room of a line of text and would otherwise get the same fifth
+ *  of the axis as everything else. */
+const CUE_FRACTIONS = (() => {
+  const total = CUE_CONTENT.reduce((n, c) => n + c.weight, 0)
+  let run = 0
+  return CUE_CONTENT.map((c) => {
+    const at = run / total
+    run += c.weight
+    return at
+  })
+})()
 
 /** A PAGE OF SCROLL BEFORE ANYTHING IS SAID.
  *
@@ -445,32 +578,120 @@ export const SKY_TEXT_LEAD = Math.round(SKY_JOURNEY_DISTANCE * 0.1)
 export const SKY_TEXT_CUES: {
   threshold: number
   text: string
-  /** Set on the contact card alone: it is read head-on rather than passed,
-   *  so it sits on the flight axis instead of in one half of the frame. */
+  /** Read head-on rather than passed, so it sits on the flight axis instead
+   *  of in one half of the frame. True for the intro and the contact card. */
   centred?: boolean
   /** The numbered label above the headline, in the reference's own idiom. */
   eyebrow: string
   body: string
   /** Which half of the frame the block is set in: -1 left, +1 right. */
   side: -1 | 1
+  /** Which of the four sections this beat belongs to, and how it is staged. */
+  section: 1 | 2 | 3 | 4
+  mode: SkyBeatMode
+  /** parallax beats only: which folder of plates it opens into. */
+  folder?: string
 }[] = CUE_CONTENT.map((cue, i) => ({
   threshold: SKY_TEXT_LEAD + Math.round(CUE_FRACTIONS[i] * (SKY_JOURNEY_DISTANCE - SKY_TEXT_LEAD)),
   text: cue.text,
   body: cue.body,
-  // The last block is not a fact about anyone; it is the thing you are meant
-  // to act on, and numbering it as one buries that.
-  eyebrow: i === CUE_CONTENT.length - 1 ? "Get in touch" : `Fact #${String(i + 1).padStart(2, "0")}`,
-  side: i % 2 === 0 ? -1 : 1,
-  // CENTRED, for the last block only.
-  //
-  // Every other block is set in one half of the frame because the subject is
-  // in the other one -- that is the whole composition. By the time the
-  // contact card is up the subject has been hauled out of shot (skyExitLift)
-  // and the camera has stopped, so there is no other half: "since there's no
-  // dragonite and the text is the main focus, it should be directly in
-  // front."
-  centred: i === CUE_CONTENT.length - 1,
+  eyebrow: cue.eyebrow,
+  section: cue.section,
+  mode: cue.mode,
+  folder: cue.folder,
+  // ALTERNATING, AND COUNTED WITHIN THE SECTION. The drift's whole
+  // composition is the subject crossing one way while the words answer from
+  // the other side, so what matters is the beat's place in ITS OWN run, not
+  // its index in a table that also holds the intro and the contact card.
+  side: (CUE_CONTENT.slice(0, i).filter((c) => c.section === cue.section).length % 2 === 0
+    ? -1
+    : 1) as -1 | 1,
+  // Centred where there is no other half of the frame to balance against:
+  // the intro arrives before the subject has moved off the axis, and by the
+  // contact card he has been hauled out of shot entirely.
+  centred: cue.mode === "intro" || cue.mode === "outro",
 }))
+
+/** The beat at a point on the axis, for anything that needs to know which
+ *  section it is in without recomputing the focus. */
+/** Which of the parallax beats a cue index is -- first, second or third.
+ *
+ *  Counted across the run rather than taken from the index itself, so a
+ *  beat inserted earlier in the journey does not reshuffle the windows.
+ *  SkyCard uses it to pick the window's style; SkyPage uses it to work out
+ *  where that window will rest, so the page's copy can sit clear of it. */
+export function skyParallaxOrdinal(index: number) {
+  let n = 0
+  for (let i = 0; i < index; i++) if (SKY_TEXT_CUES[i].mode === "parallax") n++
+  return n
+}
+
+/** The current beat's index, or -1. */
+export function skyBeatIndex(offset: number) {
+  return skyTextFocus(offset).index
+}
+
+export function skyBeatAt(offset: number) {
+  const i = skyTextFocus(offset).index
+  return i < 0 ? null : SKY_TEXT_CUES[i]
+}
+
+/** Which of the four sections the journey is in. Section 1 before the first
+ *  beat opens, since that is the arrival. */
+export function skySection(offset: number): 1 | 2 | 3 | 4 {
+  return skyBeatAt(offset)?.section ?? 1
+}
+
+/** Whether the corridor -- the cardboard clouds flying at the lens -- should
+ *  be running.
+ *
+ *  Sections 1 and 4 only. The flying IS the arrival and the farewell; the
+ *  two middle sections are "just moving through a regular scroll", and a
+ *  cloud rushing past the camera is the single loudest contradiction of
+ *  that. */
+export function skyCorridorActive(offset: number) {
+  const s = skySection(offset)
+  return s === 1 || s === 4
+}
+
+/** HOW STRONGLY THE OUTER CLOUDS RUN, 0..1.
+ *
+ *  The corridor proper is a boolean: sections 1 and 4 only, because "the
+ *  flying IS the arrival and the farewell" and a cloud rushing the lens
+ *  contradicts the middle sections. That is right for the corridor's own
+ *  cloud, which crosses the whole frame.
+ *
+ *  It is too blunt for the small outer ones. With the corridor gated off AND
+ *  the velocity lines carrying the same gate, nothing in section 2's frame
+ *  moves with the scroll at all -- the camera's heading is flat, the
+ *  subject's authored excursion is a few units, and the sky dome is eight
+ *  hundred units out. Four and a half screens of scrolling with no response
+ *  to the scrolling is its own part of "laggy, floaty", and it is not
+ *  something a scroll fix can reach.
+ *
+ *  So they keep running through the middle at a fraction of their strength:
+ *  far enough back to be weather rather than traffic, present enough that
+ *  the picture answers the wheel. Ramped across the two boundaries rather
+ *  than stepped, because a field of seven clouds changing opacity on one
+ *  frame is exactly the pop the fade distances exist to prevent. */
+const EDGE_GAIN_QUIET = 0.3
+/** How far either side of a section boundary the gain takes to change. */
+const EDGE_GAIN_RAMP = 150
+
+export function skyEdgeCloudGain(offset: number) {
+  const s = skySection(offset)
+  const loud = s === 1 || s === 4
+  // Distance to the nearest boundary between a loud section and a quiet one.
+  // Sections 2 and 3 are contiguous, so only the two outer seams matter.
+  const opensAt = SKY_TEXT_CUES[1]?.threshold ?? 0
+  const closesAt = SKY_TEXT_CUES[SKY_TEXT_CUES.length - 1]?.threshold ?? SKY_JOURNEY_DISTANCE
+  const edge = Math.min(Math.abs(offset - opensAt), Math.abs(offset - closesAt))
+  const t = smoothstep(Math.min(1, Math.max(0, edge / EDGE_GAIN_RAMP)))
+  // At the seam itself both sides agree on the midpoint, which is what makes
+  // this continuous across it.
+  const near = (1 + EDGE_GAIN_QUIET) / 2
+  return loud ? near + (1 - near) * t : near + (EDGE_GAIN_QUIET - near) * t
+}
 
 /** Which block owns this point on the axis, which side it is set on, how far
  *  through its turn it is, and how far the camera is leaning toward it.
@@ -493,17 +714,6 @@ export const SKY_TEXT_CUES: {
  *  back into it. Between one block's turn and the next it is simply still. */
 const SKY_TEXT_ACTIVE = 0.82
 
-/** How far into a block's turn the camera begins to look at it.
- *
- *  LATE, and deliberately. The turn starts while the words are still two
- *  hundred units off and barely visible, and leaning toward them then is
- *  leaning at nothing: "the camera still looks to the text too early... it
- *  should stay looking straight until the text is close, then it should
- *  slightly look to the text." The pulse is fitted to the LAST part of the
- *  turn instead, so the camera holds square through the whole approach and
- *  only gives way as the words arrive -- peaking around three quarters of the
- *  way through, where they are about seventy units out and at full size. */
-const LEAN_FROM = 0.5
 
 function pulse(u: number) {
   return 0.5 * (1 - Math.cos(2 * Math.PI * u))
@@ -525,92 +735,332 @@ function pulse(u: number) {
  *  back -- simply does not arise: there is one axis, the reader is always on
  *  it, and scrolling backwards retraces exactly.
  *
- *      turn 0 ──── .16 ──── .28 ─────────────── .80 ──── .90 ──── 1
+ *      turn 0 ──── .12 ──── .22 ─────────────── .84 ──── .93 ──── 1
  *           approach  expand       INSIDE        contract  depart
  *           flies in   grows to    its own       back to   sky
  *           small      fullscreen  scene scrolls  a card   resumes
  *
- *  Why these numbers. INSIDE is 52% because the card's scene is the content
- *  and everything else is transition. Expand gets 12% and contract 10% --
- *  contract is deliberately the quicker of the two, because arriving somewhere
- *  wants more ceremony than leaving it, which is what both reference clips
- *  show. Approach is longer than depart for the same reason. */
-const CARD_EXPAND_FROM = 0.16
-const CARD_INSIDE_FROM = 0.28
-const CARD_CONTRACT_FROM = 0.8
-const CARD_DEPART_FROM = 0.9
-
-export type SkyCardPhase = "away" | "approach" | "expand" | "inside" | "contract" | "depart"
-
-/** Everything the card needs to draw itself at a point on the axis.
+ *  Why these numbers. INSIDE is 62% because the card's scene is the content
+ *  and everything else is transition -- "it should scroll for longer inside
+ *  the card, right now it barely stays inside there". It was 52% of a shorter
+ *  turn, which came to about sixteen wheel notches; it is now 62% of a longer
+ *  one, nearer twenty-seven, and the axis grew to pay for it rather than the
+ *  transitions being squeezed (see SKY_JOURNEY_DISTANCE).
  *
- *  `open` is the one number the geometry hangs off: 0 is a small card out in
- *  the corridor, 1 is filling the frame. `inside` is the progress THROUGH the
- *  card's own scene, 0 until it has finished expanding and 1 from the moment
- *  it starts to contract, so the inner parallax neither starts early nor
- *  carries on while the card is shrinking.
+ *  Contract stays quicker than expand, and depart quicker than approach:
+ *  arriving somewhere wants more ceremony than leaving it, which is what both
+ *  reference clips show. */
+/** RISING AND GROWING ARE TWO MOVES, NOT ONE.
  *
- *  Smoothstepped on both ramps rather than linear: the card's size is the most
- *  visible thing on screen while it is changing, and a linear scale starts and
- *  stops abruptly however well the rest is tuned. */
+ *  They used to be the same number. `open` drove both the card's size and
+ *  its height on the screen, and SkyCard refused to draw the node at all
+ *  while `open` was 0 -- so the card did not exist for the whole of its
+ *  approach and then appeared already growing, half off the bottom edge.
+ *  "The card doesn't appear on the screen then expands, it starts expanding
+ *  immediately from the bottom. It doesn't look like it was a hole that was
+ *  passing through."
+ *
+ *  On the reference the card is simply part of the page: it sits there,
+ *  whole and still, as one more element in a layout, and only then does it
+ *  open. So there are two numbers and a dwell between them, and another
+ *  dwell on the way out:
+ *
+ *      0 ── .07 ── .14 ──── .26 ─────────── .80 ── .90 ─ .94 ─ 1
+ *        rise  REST  grow      INSIDE         close  REST  sink
+ *        0→1        0→1      scene scrolls    1→0         1→0
+ *
+ *  The rest is 7% of the turn at each end, which at this axis is a couple
+ *  of wheel notches -- enough to read as a card on a page rather than a
+ *  pause. */
+/** THE PARALLAX RUN: ONE PAGE, AND A PLATE THAT TURNS OVER.
+ *
+ *  Three scenes, one portal. The question the whole of this section
+ *  answers is how you get from one scene to the next with a single hole to
+ *  draw them through, and it has now been wrong twice:
+ *
+ *    Per-beat windows that appeared and vanished inside each beat's active
+ *    middle. Measured: 1552 units -- 24% of the run -- with a page up and
+ *    no hole on it. "The page is missing the hole."
+ *
+ *    Holes as positions on a scrolling page, travelling up and handing
+ *    over at the seam. With one portal that hand-over is a teleport from
+ *    the top of the frame to the bottom, and measured, 9-14% of the hole
+ *    was still on screen when it happened: "it does a weird jump." Drawing
+ *    the mask a second time at the other edge hid the jump and introduced
+ *    a phantom card above the page on the way in.
+ *
+ *  THE PLATE TURNS OVER INSTEAD. It stays dead centre and rotates about a
+ *  vertical axis: one face is the scene you were in, the other the scene
+ *  you are going to. Halfway through it is edge-on -- no width at all --
+ *  and that is where the dressed scene changes. There is nothing to see at
+ *  the moment of the swap, so there is nothing to jump, nothing to
+ *  duplicate, and no stretch of page without a hole.
+ *
+ *  It also pays for something that was being worked around: switching the
+ *  scene costs a React render and lands a frame late, which used to be
+ *  covered by deliberately drawing one frame of the previous art. Edge-on,
+ *  that frame is invisible for free. */
+
+/** How far the page travels, in journey units, coming in and going out.
+ *
+ *  INSIDE SECTION 3'S OWN SPAN, not either side of it. The slide used to
+ *  start 420 units BEFORE the run, which is 420 units of the previous
+ *  beat -- and that beat is only 737 long with its words up for 605 of
+ *  them, so the page began covering Fact #03 less than a fifth of the way
+ *  through it: "fact #3 is on the screen for only a split second then it
+ *  turns immediately into fact #4". The same at the far end, where the
+ *  slide-out sat on top of the contact beat's opening. */
+const PAGE_SLIDE = 420
+
+/** One scene's turn on the page, 0..1.
+ *
+ *      0 ──── .10 ──── .22 ──── .34 ─────────────── .80 ────── 1
+ *       arrive   REST    grow        INSIDE          flip away
+ *      (first   small                              shrink AND turn
+ *       scene   card,                              right over, both
+ *       only)   tilting                            finishing together
+ *
+ *  THE SHRINK AND THE HALF-TURN ARE ONE MOVE and they end on the same
+ *  frame: "the parallax first screen shrinking and flipping at the same
+ *  time to a small square which is the other parallax scene." So the whole
+ *  180 degrees lives in the last fifth of a slot, and the next slot opens
+ *  already resting as a small card of its own scene -- rather than the flip
+ *  straddling the seam, which would have the plate still turning while it
+ *  is meant to be sitting still being tilted by the cursor.
+ *
+ *  Edge-on falls in the middle of that fifth, which is where the dressed
+ *  scene changes. There is no width at all at that moment, so the swap --
+ *  which costs a React render and lands a frame late -- cannot be seen. */
+const SLOT_ARRIVE_TO = 0.1
+const SLOT_REST_TO = 0.22
+const SLOT_INSIDE_FROM = 0.34
+const SLOT_FLIP_FROM = 0.8
+
+export type SkyCardPhase = "away" | "arrive" | "rest" | "expand" | "inside" | "flip"
+
+/** The parallax beats, and the offsets section 3 spans. Derived from the cue
+ *  table so that re-weighting a beat moves the page with it. */
+const PARALLAX_INDICES = SKY_TEXT_CUES.map((c, i) => (c.mode === "parallax" ? i : -1)).filter((i) => i >= 0)
+/** The same rule SPAN_START/SPAN_END use further down, restated here only
+ *  because those are declared after this and a const cannot be hoisted. */
+const spanStart = (i: number) => (i === 0 ? SKY_TEXT_LEAD : SKY_TEXT_CUES[i].threshold)
+const spanEnd = (i: number) => SKY_TEXT_CUES[i + 1]?.threshold ?? SKY_JOURNEY_DISTANCE
+const PARALLAX_FROM = spanStart(PARALLAX_INDICES[0])
+const PARALLAX_TO = spanEnd(PARALLAX_INDICES[PARALLAX_INDICES.length - 1])
+const PARALLAX_SPAN = Math.max(1, PARALLAX_TO - PARALLAX_FROM)
+const SCENES = PARALLAX_INDICES.length
+
+/** The first parallax beat's cue index.
+ *
+ *  SkyCard is born dressed as this rather than as beat zero, and that one
+ *  line is what lets the hand-over stop hiding anything. The portal's scene
+ *  is React, so re-dressing it lands a frame late; the old code covered that
+ *  by hiding the card for a frame, and a sweep found the resulting blanks as
+ *  samples with no hole on screen. Starting it correct means the only swap
+ *  left is scene-to-scene, and that one happens edge-on, where a frame of
+ *  the previous art has no width to be seen through. */
+export const SKY_PARALLAX_FIRST = PARALLAX_INDICES[0]
+
+/** Where the page has finished arriving and begins to leave. The slide
+ *  owns these two stretches; the scenes run THROUGH them rather than
+ *  waiting for them, so the page arrives already carrying its first plate
+ *  mid-flip rather than arriving empty. */
+const HOLES_FROM = PARALLAX_FROM + PAGE_SLIDE
+const HOLES_TO = PARALLAX_TO - PAGE_SLIDE
+
+/** How far through the run, in scenes: 0 at the first scene's start, 3 at
+ *  the end of the last. */
+function slotAt(offset: number) {
+  return ((offset - PARALLAX_FROM) / PARALLAX_SPAN) * SCENES
+}
+
+/** The plate's rotation, counted in HALF-TURNS, and how far through its
+ *  own slot the scroll is.
+ *
+ *  Half-turns rather than radians because the count is also the answer to
+ *  "which face is showing": round it and you have the scene index. Tying
+ *  the two together is deliberate -- they were separate numbers in the
+ *  travelling version and the hand-over was exactly where they disagreed.
+ *
+ *  Scene k rests at k half-turns and the flip runs k -> k + 1 over the last
+ *  fifth of its slot, so scene k+1 opens already resting. Halfway through
+ *  that, at k + 0.5, the plate is edge-on and `Math.round` tips to the new
+ *  scene -- the rotation and the swap are one number, not two that can
+ *  disagree, which is exactly where the travelling version went wrong. */
+function plateAt(offset: number) {
+  const s = Math.max(0, Math.min(SCENES - 0.0001, slotAt(offset)))
+  const k = Math.floor(s)
+  const u = s - k
+  let half: number
+  // THE FIRST SCENE FLIPS IN, from edge-on, as the page arrives carrying it.
+  // Nothing precedes it, so it owns only the second half of a turn.
+  if (k === 0 && u < SLOT_ARRIVE_TO) half = -0.5 + (u / SLOT_ARRIVE_TO) * 0.5
+  else if (u < SLOT_FLIP_FROM) half = k
+  // THE LAST SCENE DOES NOT FLIP OUT. There is nothing to turn over to --
+  // it shrinks back to a card and the page slides away carrying it.
+  else if (k >= SCENES - 1) half = k
+  else half = k + (u - SLOT_FLIP_FROM) / (1 - SLOT_FLIP_FROM)
+  return { k, u, half }
+}
+
+/** How far through the turn the plate has to get before it starts losing
+ *  height, as a share of the turn.
+ *
+ *  PAST HALFWAY, BY DESIGN. The shrink and the half-turn finish together --
+ *  "shrinking and flipping at the same time to a small square which is the
+ *  other parallax scene" -- but they are not evenly paced, and the
+ *  reference is unambiguous about which way: pulled apart at 8fps, the
+ *  plate is still the full height of the frame when it reaches the edge-on
+ *  sliver, and does nearly all of its shrinking afterwards, as the NEW
+ *  scene widens back out. A symmetric ramp has it half-sized at the
+ *  turn-over, which reads as the scene receding rather than a plate being
+ *  turned over. */
+const SHRINK_FROM = 0.35
+
+/** How open the plate is at a point in its slot: 0 a resting card, 1 the
+ *  whole screen. Shared by skyCardState and skyCardOpen so the two cannot
+ *  drift. */
+function openAt(u: number) {
+  if (u < SLOT_REST_TO) return 0
+  if (u < SLOT_INSIDE_FROM) return smoothstep((u - SLOT_REST_TO) / (SLOT_INSIDE_FROM - SLOT_REST_TO))
+  if (u < SLOT_FLIP_FROM) return 1
+  const turned = (u - SLOT_FLIP_FROM) / (1 - SLOT_FLIP_FROM)
+  // CLAMPED, because this smoothstep is the raw cubic and does not do it
+  // itself: t*t*(3-2t) at t = -0.54 is 1.18, which would hand back an
+  // `open` of -0.18 and scale the plate through zero and inside out for
+  // the first third of every turn.
+  const shrink = Math.min(1, Math.max(0, (turned - SHRINK_FROM) / (1 - SHRINK_FROM)))
+  return 1 - smoothstep(shrink)
+}
+
+/** Everything the plate needs to draw itself at a point on the axis.
+ *
+ *  `open` is the size: 0 a card resting on the page, 1 filling the frame.
+ *  `spin` is its rotation in half-turns, continuous across the whole run.
+ *  `inside` is the progress THROUGH the scene it is showing, 0 until it has
+ *  finished opening and 1 from the moment it starts to close, so the inner
+ *  parallax neither starts early nor carries on while the plate is turning.
+ *
+ *  Smoothstepped on the size ramps rather than linear: the plate's size is
+ *  the most visible thing on screen while it is changing, and a linear
+ *  scale starts and stops abruptly however well the rest is tuned. */
 export function skyCardState(offset: number) {
   const focus = skyTextFocus(offset)
-  const base = { index: focus.index, side: focus.side, turn: focus.turn, centred: focus.centred === true }
-  const t = focus.turn
-  if (t < 0) return { ...base, phase: "away" as SkyCardPhase, u: 0, open: 0, inside: 0 }
-
-  // `u` is how far through THIS phase the reader is, 0..1. Returned rather
-  // than left to the caller to work out, so the phase boundaries above are
-  // stated exactly once -- SkyCard needs the approach's progress to fly the
-  // card in and the depart's to sweep it past, and recomputing either from
-  // the raw turn is two more copies of the same four numbers.
-  let phase: SkyCardPhase
-  let open: number
-  let u: number
-  if (t < CARD_EXPAND_FROM) {
-    phase = "approach"
-    u = t / CARD_EXPAND_FROM
-    open = 0
-  } else if (t < CARD_INSIDE_FROM) {
-    phase = "expand"
-    u = (t - CARD_EXPAND_FROM) / (CARD_INSIDE_FROM - CARD_EXPAND_FROM)
-    open = smoothstep(u)
-  } else if (t < CARD_CONTRACT_FROM) {
-    phase = "inside"
-    u = (t - CARD_INSIDE_FROM) / (CARD_CONTRACT_FROM - CARD_INSIDE_FROM)
-    open = 1
-  } else if (t < CARD_DEPART_FROM) {
-    phase = "contract"
-    u = (t - CARD_CONTRACT_FROM) / (CARD_DEPART_FROM - CARD_CONTRACT_FROM)
-    open = 1 - smoothstep(u)
-  } else {
-    phase = "depart"
-    u = (t - CARD_DEPART_FROM) / (1 - CARD_DEPART_FROM)
-    open = 0
+  if (offset < PARALLAX_FROM || offset > PARALLAX_TO) {
+    return {
+      index: -1,
+      side: focus.side,
+      turn: focus.turn,
+      centred: focus.centred === true,
+      phase: "away" as SkyCardPhase,
+      u: 0,
+      spin: 0,
+      open: 0,
+      inside: 0,
+    }
   }
+
+  const { u, half } = plateAt(offset)
+  // WHICH FACE IS TOWARD THE CAMERA, which is the same question as how far
+  // it has turned. At a half-turn exactly, this tips to the next scene --
+  // and a half-turn is edge-on.
+  const nth = Math.min(SCENES - 1, Math.max(0, Math.round(half)))
+  const index = PARALLAX_INDICES[nth]
+  const cue = SKY_TEXT_CUES[index]
+
+  const open = openAt(u)
+  let phase: SkyCardPhase
+  if (u < SLOT_ARRIVE_TO) phase = "arrive"
+  else if (u < SLOT_REST_TO) phase = "rest"
+  else if (u < SLOT_INSIDE_FROM) phase = "expand"
+  else if (u < SLOT_FLIP_FROM) phase = "inside"
+  else phase = "flip"
 
   const inside = Math.min(
     1,
-    Math.max(0, (t - CARD_INSIDE_FROM) / (CARD_CONTRACT_FROM - CARD_INSIDE_FROM)),
+    Math.max(0, (u - SLOT_INSIDE_FROM) / (SLOT_FLIP_FROM - SLOT_INSIDE_FROM)),
   )
-  return { ...base, phase, u, open, inside }
+  return { index, side: cue.side ?? -1, turn: u, centred: false, phase, u, spin: half, open, inside }
 }
 
-/** How open the card is at a point on the axis, and nothing else.
+/** How far through the turn the page's words are faded out: 1 fully there,
+ *  0 gone.
  *
- *  The whole of skyCardState allocates an object, and the two callers that
- *  want only this number are the per-frame ones: the subject's lift, and
- *  every corridor prop deciding whether it is behind a card that has become
- *  the screen. Seven allocations a frame is not a crisis, but it is seven
- *  more than a number needs. */
+ *  "The transitions between the slides are abrupt, the text just appears,
+ *  instead of transitioning in smoothly."
+ *
+ *  The words belong to the scene the window is showing, so they have to
+ *  change when it does -- and it changes at a half-turn, in one frame,
+ *  because that is where `Math.round` tips. The plate gets away with that
+ *  because it is edge-on there and has nothing on screen to cut; the type
+ *  is on the page beside it, at full size, and a hard cut from one string
+ *  to another is exactly what the recording shows.
+ *
+ *  So the type dips to nothing across the turn and comes back on the other
+ *  side, with the swap buried at the bottom of the dip. It is the same
+ *  gesture as the plate's own -- both vanish and return around the
+ *  half-turn -- which is why it reads as one move rather than a caption
+ *  animating on its own schedule.
+ *
+ *  THE DIP IS THE SECOND HALF OF THE TURN, not the whole of it. Fading from
+ *  the moment the plate starts to rotate would have the words gone for the
+ *  entire flip, which is most of the time the page is readable at all. */
+export function skyPageTypeFade(offset: number) {
+  if (offset < PARALLAX_FROM || offset > PARALLAX_TO) return 1
+  const { half } = plateAt(offset)
+  // 0 at rest, 0.5 edge-on.
+  const off = Math.abs(half - Math.round(half))
+  return smoothstep(Math.min(1, Math.max(0, (0.5 - off) / 0.25)))
+}
+
+/** How open the plate is at a point on the axis, and nothing else.
+ *
+ *  The whole of skyCardState allocates an object, and the callers that want
+ *  only this number are the per-frame ones: the subject's lift, and every
+ *  corridor prop deciding whether it is behind a plate that has become the
+ *  screen. */
 export function skyCardOpen(offset: number) {
-  const focus = skyTextFocus(offset)
-  const t = focus.turn
-  if (t < CARD_EXPAND_FROM) return 0
-  if (t < CARD_INSIDE_FROM) return smoothstep((t - CARD_EXPAND_FROM) / (CARD_INSIDE_FROM - CARD_EXPAND_FROM))
-  if (t < CARD_CONTRACT_FROM) return 1
-  if (t < CARD_DEPART_FROM) return 1 - smoothstep((t - CARD_CONTRACT_FROM) / (CARD_DEPART_FROM - CARD_CONTRACT_FROM))
-  return 0
+  if (offset < PARALLAX_FROM || offset > PARALLAX_TO) return 0
+  return openAt(plateAt(offset).u)
+}
+
+/** HOW FAR THE PARALLAX PAGE HAS SLID, in frame heights.
+ *
+ *  SIGNED LIKE EVERY OTHER `up` IN THIS STACK: positive is UP the screen.
+ *  So -1 is wholly below the frame, 0 is covering it, +1 is gone over the
+ *  top. The first draft of this read "+1 is below" because that is the
+ *  order the reader meets them in, and then handed the number straight to
+ *  placeScreenPlane, whose `up` argument means the opposite -- the page
+ *  slid the wrong way at both ends.
+ *  "Consider the dragonite and parallax as two separate pages... put the
+ *  parallax on a layer in front of it, so when the parallax appears on the
+ *  screen it should come in front of it, sliding up like a separate page."
+ *
+ *  A SHARE OF THE FRAME, not world units, and that is load-bearing. The page
+ *  hangs at CARD_PAGE_DISTANCE 46 and the hole at CARD_MASK_DISTANCE 12, so
+ *  the same world lift subtends nearly four times the screen angle on the
+ *  hole that it does on the page -- slide them by a common world Δy and the
+ *  hole races the page off the top. A share is distance-invariant, and it is
+ *  the currency everything in this stack already speaks.
+ *
+ *  This replaces `skyFlatPage`, which was an OPACITY: the page faded in as
+ *  the beat index crossed, which is why the arrival read as a hard cut. It
+ *  also returned 1 for every stretch where `turn < 0`, including before its
+ *  own fade-in had run -- a 1 -> 0 -> 1 flash on entry and a pop back to
+ *  full on the way out, both of which its comments claimed could not
+ *  happen. */
+export function skyPageLift(offset: number) {
+  if (offset <= PARALLAX_FROM) return -1
+  if (offset < HOLES_FROM) return smoothstep((offset - PARALLAX_FROM) / PAGE_SLIDE) - 1
+  if (offset <= HOLES_TO) return 0
+  if (offset < PARALLAX_TO) return smoothstep((offset - HOLES_TO) / PAGE_SLIDE)
+  return 1
+}
+
+/** How much of the frame the parallax page covers, 0..1. Derived from the
+ *  slide so the two cannot disagree: a page half off the top covers half. */
+export function skyPageCover(offset: number) {
+  return 1 - Math.min(1, Math.abs(skyPageLift(offset)))
 }
 
 /** How far the SUBJECT is lifted out of frame while a card is open.
@@ -630,9 +1080,45 @@ export function skyCardOpen(offset: number) {
  *  moves and he is still travelling when he leaves the top of the frame. */
 const CARD_SUBJECT_LIFT = 26
 
+/** HOW FULLY THE FLAT PAGE IS UP, 0..1.
+ *
+ *  Section 3 is not the paper sky with windows over it -- on the reference
+ *  the windows rise over a FLAT COLOUR PAGE with no scene behind them at
+ *  all. This is that page's opacity: up for the whole of the parallax run,
+ *  ramped at each end so the cut into and out of it is clean rather than a
+ *  pop.
+ *
+ *  Driven by the beat rather than by a raw offset so it cannot drift out of
+ *  step with the windows it stands behind: it is up from the moment the
+ *  first parallax beat begins to the moment the last one ends. */
+/** How far into a beat the camera's lean toward the words is fully spent. */
+const LEAN_SPENT_BY = 0.26
+
+/** HOW FAR OUT OF THE PICTURE THE SUBJECT IS, 0..1.
+ *
+ *  The page, not the card. This used to be `skyCardOpen` alone, and the
+ *  difference between the two is exactly where the bug lived: the page is
+ *  up for the WHOLE parallax run -- across every approach, every depart and
+ *  every gap between the three windows -- while `open` is 0 in all of those.
+ *  So in the gaps the subject was lowered back into his pose in front of a
+ *  page that is meant to have nothing behind it.
+ *
+ *  He himself did not show, because his material is opaque and the page is
+ *  transparent at renderOrder -50, which puts the page's whole pass after
+ *  his. His twine cord IS transparent, at renderOrder 0, so it drew over the
+ *  page -- a bare beige string hanging down the middle of an empty screen,
+ *  with nothing attached to it. That is the "I don't even know what's going
+ *  on there" in the round-40 screenshot. */
+export function skySubjectAway(offset: number) {
+  // Coverage, not an opacity. The page slides now, so "is he hidden" is
+  // "how much of the frame does it cover" -- a page half off the top hides
+  // half of him, and he comes back down as it leaves.
+  return Math.max(skyCardOpen(offset), skyPageCover(offset))
+}
+
 export function skyCardSubjectLift(offset: number) {
-  const open = skyCardOpen(offset)
-  return CARD_SUBJECT_LIFT * open * open
+  const away = skySubjectAway(offset)
+  return CARD_SUBJECT_LIFT * away * away
 }
 
 const SPAN_START = SKY_TEXT_CUES.map((cue, i) => (i === 0 ? SKY_TEXT_LEAD : cue.threshold))
@@ -650,78 +1136,93 @@ function turnOffset(i: number, turn: number) {
   return start + (span - active) / 2 + active * turn
 }
 
-/** The length of a block's turn, on the axis. Every section is the same
- *  length, so one is all of them. */
-const ACTIVE_SPAN = (SPAN_END[0] - SPAN_START[0]) * SKY_TEXT_ACTIVE
+
+/** SECTION 2: WHERE THE SUBJECT IS, ACROSS THE FRAME.
+ *
+ *  "I want the avatar to continue to move from left to right, around the
+ *  text which alternates from left to right, opposite the avatar."
+ *
+ *  So his lateral place is the NEGATIVE of the beat's own side: words left,
+ *  subject right, and the pair swap at every beat. Returned as a share of
+ *  the frame's half-width AT HIS OWN DISTANCE -- and because the camera sits
+ *  CAMERA_BEHIND back along the flight axis, that share IS his ndc x. 0.52
+ *  means 0.52 of the way to the edge of the frame, on any monitor, and can
+ *  be asserted as such.
+ *
+ *  AUTHORED AGAINST THE AXIS, NOT AGAINST A BEAT'S `turn`.
+ *
+ *  The version this replaces asked skyTextFocus where it was and got back a
+ *  `turn` of -1 for TWO different situations: the quiet lead-in before a
+ *  beat's words, and the quiet tail after them. It tested `t < 0` meaning
+ *  only the first. So the sequence across a boundary ran: hold right, cross
+ *  to the left over the last fifth of the beat, then -- in the tail, with
+ *  the crossing already finished -- fall into the same branch as the lead-in
+ *  and TELEPORT back to the right; then the cue index flipped and it
+ *  teleported left again. Two one-frame jumps of most of a screen-half per
+ *  boundary, landing on frames where SkyText hides the words for the same
+ *  `turn < 0`, which is why they looked like they happened for no reason.
+ *
+ *  There is no sentinel here to misread. The value is a table of holds with
+ *  a smoothstep across each gap, so it is continuous and has zero slope at
+ *  every joint; the index can flip wherever it likes because the value eithe
+ *  side of a boundary is the same number.
+ *
+ *  THE CROSSINGS HAPPEN WHERE THERE IS NOTHING TO READ. A hold occupies
+ *  exactly the stretch its beat's words are up for (turn 0 to 1), so every
+ *  crossing sits strictly inside the quiet between one beat's fade-out and
+ *  the next's fade-in.
+ *
+ *  AND IT ENDS CENTRED BY ARRIVING THERE. The last fact eases to zero over
+ *  the gap that ends at turn 0 of the first parallax beat -- so "centred as
+ *  the parallax begins" is read off the cue table rather than written down,
+ *  and it is a move rather than the teleport it used to be (the old code
+ *  parked him hard right for the whole of the last beat, because its "where
+ *  next" lookup found a parallax cue and gave up, then returned 0 the
+ *  instant the index changed). */
+const DRIFT_REACH = 0.52
+
+/** Where he holds while each beat's words are up. Zero for every beat that
+ *  is not a side beat, which is what puts him in the middle for the intro,
+ *  the parallax run and the outro. */
+const DRIFT_HOLD = SKY_TEXT_CUES.map((cue) => (cue.mode === "side" ? -cue.side * DRIFT_REACH : 0))
+const DRIFT_FROM = SKY_TEXT_CUES.map((_, i) => turnOffset(i, 0))
+const DRIFT_TO = SKY_TEXT_CUES.map((_, i) => turnOffset(i, 1))
+
+export function skyDriftSide(offset: number) {
+  if (offset <= DRIFT_TO[0]) return DRIFT_HOLD[0]
+  for (let i = 0; i < DRIFT_HOLD.length - 1; i++) {
+    if (offset <= DRIFT_TO[i]) return DRIFT_HOLD[i]
+    if (offset < DRIFT_FROM[i + 1]) {
+      const u = smoothstep((offset - DRIFT_TO[i]) / (DRIFT_FROM[i + 1] - DRIFT_TO[i]))
+      return DRIFT_HOLD[i] + (DRIFT_HOLD[i + 1] - DRIFT_HOLD[i]) * u
+    }
+  }
+  return DRIFT_HOLD[DRIFT_HOLD.length - 1]
+}
 
 const LAST_BLOCK = SKY_TEXT_CUES.length - 1
+/** How far into the contact beat the journey comes to rest. Was
+ *  `CARD_CONTRACT_FROM - 0.02`, borrowed from the card state machine that
+ *  no longer exists -- and the contact beat has never had a card anyway. */
+const CONTACT_PARK_AT = 0.78
+/** How far into the contact beat the links go live. Was CARD_INSIDE_FROM,
+ *  borrowed from the card state machine; the contact beat has no card. */
+const CONTACT_REVEAL_AT = 0.26
 
-/** WHERE THE JOURNEY MAY COME TO REST, and why there are now two per card.
+/* THE HOLDS, THE SETTLE AND THEIR REACH ALL LIVED HERE.
  *
- *  The old table had one hold per block, at the moment its words were at
- *  their design size, and the magnet's job was "never leave the reader
- *  somewhere with no text on screen". Cards change that question entirely.
- *  The stretch of empty sky between one card and the next is no longer a gap
- *  to be carried across -- it is the Overscene, and stopping to look at it is
- *  the point of it being there.
+ *  They were the scroll magnet's tables: a hold at the end of each of a
+ *  card's two ramps, a reach for how far a spent gesture could be carried
+ *  onto one, and the shape the integrator took them in. The magnet is gone
+ *  -- "the scroll is painful. It's hard to move through" -- and Lenis
+ *  coasts to wherever it is left, so none of them has a reader.
  *
- *  What a card DOES make unstable is its two ramps. A card caught half
- *  expanded or half retracted is a mistake on screen, and those are the only
- *  two places on the whole axis where stopping looks broken. So each card
- *  gets a hold at the end of each ramp:
- *
- *    - `settled`, just inside INSIDE, so a half-expand always completes;
- *    - `cleared`, just past DEPART, so a half-contract always completes.
- *
- *  Everywhere else -- anywhere within a card's own scene, anywhere in the
- *  sky between two cards -- is a legitimate place to stop, and the bounded
- *  reach below means nothing drags the reader out of it.
- *
- *  THE LAST CARD HAS NO `cleared` HOLD. The journey ends inside it (see
- *  SKY_SCROLL_LIMIT); there is no contract to complete because it never
- *  closes. */
-export const SKY_TEXT_HOLDS: readonly number[] = SKY_TEXT_CUES.flatMap((_, i) => {
-  const settled = turnOffset(i, CARD_INSIDE_FROM + 0.015)
-  return i === LAST_BLOCK ? [settled] : [settled, turnOffset(i, CARD_DEPART_FROM + 0.015)]
-})
-
-/** HOW FAR A SPENT GESTURE MAY BE CARRIED, and this is the number that broke.
- *
- *  advanceSkyScroll used to derive its forward reach from the holds
- *  themselves -- the largest gap between two of them -- on the reasoning that
- *  a reader stranded between blocks should always be able to be landed on the
- *  next one. That was sound when a block was 540 units long. Blocks are now
- *  1476, so the same rule handed the magnet a 1476-unit reach and a single
- *  wheel notch teleported the reader through an entire card. Measured: eight
- *  notches covered 2779 units of an axis where a notch is worth about 39, and
- *  the expand and contract phases were never once on screen.
- *
- *  So the reach says what it is for instead of being inferred. It has exactly
- *  one job -- get out of a ramp -- so it is the longer ramp's length with a
- *  little over. It cannot reach the next card by construction, which is also
- *  what makes STILL_READING almost redundant. */
-export const SKY_SETTLE_REACH = Math.round(
-  (CARD_INSIDE_FROM - CARD_EXPAND_FROM) * ACTIVE_SPAN * 1.18,
-)
-
-/** How close behind a hold the reader can be and still be left alone.
- *
- *  SMALL NOW, AND IT USED TO DO THE HEAVY LIFTING. At 60 units against a
- *  1476-unit reach it was the only thing stopping the magnet carrying a
- *  reader who had nudged the wheel once straight into the next block. With
- *  the reach bounded to a ramp that cannot happen at all, so this is back to
- *  what it sounds like: a little dead ground just past a hold, so the settle
- *  does not argue with someone who has only just pushed off one. */
-export const SKY_STILL_READING = 80
-
-/** The two together, in the shape advanceSkyScroll takes them. A frozen
- *  module constant rather than an object literal at the call site: that call
- *  is in a frame loop, and an allocation per frame to describe two numbers
- *  that never change is pure waste. */
-export const SKY_SETTLE_SHAPE = {
-  reach: SKY_SETTLE_REACH,
-  stillReading: SKY_STILL_READING,
-} as const
+ *  Worth recording on the way out, because it explains some of the feel:
+ *  SKY_SETTLE_REACH was computed from beat 0's span with the comment "every
+ *  section is the same length, so one is all of them". That stopped being
+ *  true when the beats were weighted. It came out at 74 units against the
+ *  214 a parallax beat actually needed, so by the end the magnet could not
+ *  pull a reader out of a half-opened window even when it wanted to. */
 
 /** WHERE THE JOURNEY ENDS, and it is not the end of the axis.
  *
@@ -740,7 +1241,15 @@ export const SKY_SETTLE_SHAPE = {
  *  The axis itself is unchanged. The avatar's keyframes, the corridor and the
  *  cards are all still written against SKY_JOURNEY_DISTANCE; this is a limit
  *  on where the reader may take the scroll, not a shortening of the world. */
-export const SKY_SCROLL_LIMIT = turnOffset(LAST_BLOCK, CARD_CONTRACT_FROM)
+/** A SHADE BEFORE THE CONTRACT, NOT EXACTLY ON IT.
+ *
+ *  Parking on the boundary itself put the journey at rest reporting phase
+ *  "contract" with u exactly 0 -- open was still 1 and it looked right, but
+ *  the one card a visitor has to be able to USE was balanced on the precise
+ *  frame where it begins to close, with nothing but a floating-point
+ *  comparison keeping it open. Two hundredths of a turn back is about
+ *  twenty-four units of margin and reads identically. */
+export const SKY_SCROLL_LIMIT = turnOffset(LAST_BLOCK, CONTACT_PARK_AT)
 
 /** When the contact panel's links become live.
  *
@@ -750,7 +1259,7 @@ export const SKY_SCROLL_LIMIT = turnOffset(LAST_BLOCK, CARD_CONTRACT_FROM)
  *  is on screen -- a reader who stops two thirds of the way through the last
  *  card's scene should not find the one actionable thing in the sky still
  *  switched off. */
-export const SKY_CONTACT_REVEAL = turnOffset(LAST_BLOCK, CARD_INSIDE_FROM)
+export const SKY_CONTACT_REVEAL = turnOffset(LAST_BLOCK, CONTACT_REVEAL_AT)
 
 /** How far the subject is hauled up out of the frame as the contact card
  *  arrives, and over what stretch of the axis.
@@ -855,7 +1364,28 @@ export function skyTextFocus(offset: number) {
   const u = (offset - from) / active
   // -1 means "no block right now": between one turn and the next.
   const turn = u >= 0 && u <= 1 ? u : -1
-  const leanPhase = turn < 0 ? -1 : (turn - LEAN_FROM) / (1 - LEAN_FROM)
+  // THE LEAN BELONGS TO THE APPROACH, AND NOWHERE ELSE.
+  //
+  // It used to be fitted to the LAST half of the turn (LEAN_FROM 0.5), back
+  // when a block was a plane that got closest and most readable near the end
+  // of its pass. A card is the opposite shape: it is off to one side only
+  // while it is small, and by halfway through its turn it IS the screen.
+  // Leaning then does not open up a half of the frame for the words, it
+  // shoves a card that is supposed to cover the picture off the edge of it --
+  // measured as 12 of 42 readings where the fully open card no longer
+  // reached all four corners.
+  //
+  // So the pulse runs over the approach and the expand, and is spent exactly
+  // when the card finishes opening. A raised cosine is still the right curve
+  // and for the original reason: its SLOPE is zero at both ends as well as
+  // its value, so the camera eases out of square and back into it rather
+  // than starting or stopping a turn abruptly. It now also agrees with the
+  // card -- both reach centre on the same frame.
+  // LEAN_SPENT_BY, not the card's old CARD_INSIDE_FROM. The lean belongs to
+  // the text beats, which have no card; it shared the constant only because
+  // both wanted "a quarter of the way in", and the card's state machine has
+  // since been replaced.
+  const leanPhase = turn < 0 ? -1 : turn / LEAN_SPENT_BY
   const lean = centred || leanPhase < 0 || leanPhase > 1 ? 0 : side * pulse(leanPhase)
   return { index, side, lean, turn, centred }
 }

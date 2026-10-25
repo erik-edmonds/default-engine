@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Canvas } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 
 import { Broken } from "@/components/models/Broken";
+import { SceneBoundary } from "@/components/layout/SceneBoundary";
+import { SceneFallback } from "@/components/layout/SceneFallback";
+import { useContextLoss } from "@/helpers/useContextLoss";
 import { usePortraitFrame } from "@/helpers/usePortraitFrame";
 
 /** Where the wreck sits, and how big. Its own raw bounds are about
@@ -178,10 +181,33 @@ export default function NotFound() {
   // disagree about what "a phone" is.
   const portrait = usePortraitFrame()
   const framing = portrait ? FRAMING.portrait : FRAMING.wide
+  // THE SAME THREE GUARDS EVERY OTHER CANVAS IN THE REPO HAS, and this was
+  // the only one without them -- which is the worst place to skip them,
+  // because this is the page someone lands on when something has already
+  // gone wrong. Reported as "it's showing an unstyled page instead of mine,
+  // with the robot"; the page was never unstyled, it was blank, and these
+  // are the two ways it goes blank:
+  //
+  //   Suspense     <Broken> suspends on a 2.57MB glTF. With no boundary
+  //                inside the Canvas the nearest one is the root layout's
+  //                `fallback={null}`, so the WHOLE page -- sentence, link
+  //                and all -- is nothing for the length of the download.
+  //   contextLost  a dropped context painted nothing, recovered never and
+  //                said nothing. See useContextLoss: that exact failure
+  //                "cost a day of this project" once already.
+  //   SceneBoundary  a throw from inside the Canvas replaced the page with
+  //                Next's generic error page -- i.e. an actually unstyled
+  //                page, reachable from here until now.
+  //
+  // The clear colour is #456363, a mid teal, so a scene that is merely
+  // still loading can never be mistaken for one of these: blank is black.
+  const { lost: contextLost, onCreated: watchContext } = useContextLoss()
 
   return (
     <>
+      <SceneBoundary label="not-found-scene">
       <Canvas
+        onCreated={watchContext}
         // SHADOWS ARE OFF UNLESS THE CANVAS ASKS FOR THEM. This was the whole
         // of "it has no shadows": every mesh in Broken.tsx already declares
         // castShadow and receiveShadow, and the model even brings its own
@@ -266,8 +292,24 @@ export default function NotFound() {
           ]}
         />
 
-        <Broken scale={MODEL_SCALE} position={MODEL_POSITION} />
+        {/* Inside the Canvas, so the lights and the background colour above
+          are committed and drawn while the 2.57MB wreck downloads. The
+          teal ground with its own shadow-ready rig is a perfectly good
+          thing to look at for a second; nothing is a bug. */}
+        <Suspense fallback={null}>
+          <Broken scale={MODEL_SCALE} position={MODEL_POSITION} />
+        </Suspense>
       </Canvas>
+      </SceneBoundary>
+
+      {contextLost && (
+        <SceneFallback
+          title="Rendering stopped"
+          detail="The browser released the graphics context, usually to free memory for another tab. It may come back on its own."
+          action="Reload"
+          onAction={() => window.location.reload()}
+        />
+      )}
 
       {/* BOTTOM-LEFT, not top-left: the root layout pins the home logo at
           top-left on every route (see app/layout.tsx), and this would sit

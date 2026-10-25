@@ -12,8 +12,6 @@
 export type AchievementId =
   | "rain"
   | "music"
-  | "ascent"
-  | "voyager"
   | "wanderer"
   | "driver"
 
@@ -49,20 +47,12 @@ export const ACHIEVEMENTS: Achievement[] = [
     how: "Something on the sand plays.",
     target: 1,
   },
-  {
-    id: "ascent",
-    title: "The Great Ascent",
-    detail: "You opened the Poke Ball and left the island behind.",
-    how: "There is a way up from the beach.",
-    target: 1,
-  },
-  {
-    id: "voyager",
-    title: "Voyager",
-    detail: "You read the whole sky journey, all the way to the end.",
-    how: "Keep going once you are up there.",
-    target: 1,
-  },
+  // "ascent" and "voyager" are PARKED, with the sky journey they belonged to.
+  //
+  // One was earned by opening the Poke Ball and leaving the island; the other
+  // by reading the sky journey to its end. The Poke Ball is scenery now and
+  // the journey is unreachable (see the note at the top of config/skyJourney.ts),
+  // so both were rows nobody could ever fill in. They come back with it.
   {
     id: "wanderer",
     title: "Wanderer",

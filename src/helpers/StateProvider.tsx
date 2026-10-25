@@ -157,6 +157,15 @@ export const titleScreenActive = atom(true)
 // restriction to work around.
 export const sfxEnabled = atom(false)
 
+// The browser is refusing to play, despite the switch above being on.
+//
+// Written by AmbientBeds, which owns the Howls and so is the only thing that
+// hears a `playerror`; read by SoundToggle, which draws the only indication
+// the listener has that sound is on. The two used to be one component and
+// this was local state -- see the note at the top of AmbientBeds for why
+// they had to come apart.
+export const sfxBlocked = atom(false)
+
 // Guitar prop's own toggle -- expresses intent only ("I want music
 // playing"), independent of whether the master switch above currently
 // allows anything to be heard. Guitar.tsx gates actual playback on

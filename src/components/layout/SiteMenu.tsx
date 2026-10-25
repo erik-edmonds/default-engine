@@ -1,16 +1,26 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useAtomValue } from "jotai"
 
 import { ACHIEVEMENTS } from "@/config/achievements"
 import { achievementProgress, useAchievementCount } from "@/helpers/achievements"
 
-/** The tabs, in order. */
+/** The tabs, in order, each with the picture that stands beside it.
+ *
+ *  THE PICTURE IS PART OF THE TAB, not decoration on the panel: "images on
+ *  the left side of each tab". Switching tab switches the picture, which is
+ *  what the reference does and what makes the modal read as a place rather
+ *  than a settings dialog.
+ *
+ *  The files are frames of this island, captured from the running scene by
+ *  scripts/captureMenuShots.mjs -- a menu that shows you the thing you are
+ *  standing in. */
 const TABS = [
-  { id: "settings", glyph: "⚙", label: "Settings" },
-  { id: "achievements", glyph: "★", label: "Achievements" },
-  { id: "help", glyph: "?", label: "How this works" },
+  { id: "settings", glyph: "⚙", label: "Settings", shot: "/images/menu/settings.jpg" },
+  { id: "achievements", glyph: "★", label: "Achievements", shot: "/images/menu/achievements.jpg" },
+  { id: "help", glyph: "?", label: "How this works", shot: "/images/menu/help.jpg" },
 ] as const
 type TabId = (typeof TABS)[number]["id"]
 
@@ -52,14 +62,26 @@ const TIPS: { title: string; body: string }[] = [
  *
  *  Now the button is a plain 56px circle that matches SoundToggle's
  *  footprint exactly, and everything else is a centred modal built on
- *  MinimapOverlay's dialog shell -- role=dialog, aria-modal, Escape to
+ *  MinimapStage's dialog shell -- role=dialog, aria-modal, Escape to
  *  close, focus moved in, body unmounted when shut, which is the only real
  *  dialog pattern in this repo.
  */
-export function SiteMenu({ soundToggle }: { soundToggle: React.ReactNode }) {
+export function SiteMenu({
+  soundToggle,
+  onOpenChange,
+}: {
+  soundToggle: React.ReactNode
+  /** Reported up so the scene can be made inert while this covers it --
+   *  see setSceneInputSuppressed, whose one writer is page.tsx. */
+  onOpenChange?: (open: boolean) => void
+}) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<TabId>("settings")
   const { found, total } = useAchievementCount()
+
+  useEffect(() => {
+    onOpenChange?.(open)
+  }, [open, onOpenChange])
 
   return (
     <>
@@ -86,10 +108,16 @@ export function SiteMenu({ soundToggle }: { soundToggle: React.ReactNode }) {
         )}
       </button>
 
-      {/* ALWAYS MOUNTED, because the sound toggle inside owns three Howl
-          ambient beds and crossfades them -- unmounting it with the modal
-          would tear the audio down every time the menu closed. It is parked
-          off-screen while shut rather than removed. */}
+      {/* The parked copy, shown whenever the settings panel is not.
+
+          This used to be load-bearing: the toggle owned three Howl ambient
+          beds, so it had to stay mounted or the audio was torn down -- and
+          moving it between here and the panel did exactly that, because to
+          React a child under a different parent is a remount, not a move.
+          Opening the settings tab unloaded all three beds and the sound went
+          off on its own. The beds are AmbientBeds now and this is just a
+          button, so which of the two places it appears in no longer matters
+          to anything. */}
       <div className="site-menu-keep" aria-hidden={!open || tab !== "settings"}>
         {!open || tab !== "settings" ? soundToggle : null}
       </div>
@@ -109,7 +137,7 @@ export function SiteMenu({ soundToggle }: { soundToggle: React.ReactNode }) {
 }
 
 /** Its own component so that closing the menu UNMOUNTS it, which is what
- *  releases the focus and the key handler -- the same trick MinimapOverlay
+ *  releases the focus and the key handler -- the same trick MinimapStage
  *  uses, and cheaper than effects that reach back to tidy up. */
 function MenuModal({
   tab,
@@ -142,9 +170,29 @@ function MenuModal({
     panel.current?.querySelector<HTMLButtonElement>("button.menu-tab")?.focus()
   }, [])
 
-  return (
+  // PORTALLED TO THE BODY, and this is a bug fix rather than tidiness.
+  //
+  // SiteMenu is mounted inside the top-right chrome row, which is
+  // `position: absolute; z-index: 10` -- and a positioned element with a
+  // z-index CREATES A STACKING CONTEXT. Every z-index inside it, including
+  // this scrim's, is then resolved against its siblings within that context,
+  // not against the page. So a scrim asking for 80 was really sitting at 10,
+  // underneath the minimap at 20 and its overlay at 70: measured, the
+  // bottom-right corner of the screen hit-tested to the minimap while the
+  // modal was open, so the camera could still be flown from behind it.
+  //
+  // Raising the number would not have helped -- nothing inside a stacking
+  // context can climb out of it. Rendering at the body escapes it entirely.
+  return createPortal(
     <div className="menu-scrim" role="dialog" aria-modal="true" aria-label="Menu" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="menu-panel" ref={panel}>
+      {/* THE TABS SIT ABOVE THE PANEL, not inside it.
+          They were a strip along the top edge of the reading column, which
+          made them read as a toolbar belonging to the text rather than as
+          tabs selecting what the whole panel shows -- and left the picture
+          beside them with no tab of its own. Lifted out, spaced apart, they
+          are what the reference does: a row of separate square buttons
+          standing on top of the rectangle. */}
+      <div className="menu-shell" ref={panel}>
         <div className="menu-tabs" role="tablist">
           {TABS.map((t) => (
             <button
@@ -165,13 +213,30 @@ function MenuModal({
           </button>
         </div>
 
-        <div className="menu-body">
-          {tab === "settings" && <SettingsTab soundToggle={soundToggle} />}
-          {tab === "achievements" && <AchievementsTab found={found} total={total} />}
-          {tab === "help" && <HelpTab />}
+        <div className="menu-panel">
+          {/* Decorative: the picture says nothing the tab's own label does
+              not already say, so a screen reader is better off skipping it. */}
+          <figure className="menu-figure">
+            <img src={TABS.find((t) => t.id === tab)?.shot} alt="" aria-hidden="true" />
+          </figure>
+
+          <div className="menu-main">
+            {/* data-lenis-prevent: this panel scrolls on its own, and the
+                journey's Lenis instance drives the document. Without it a
+                wheel over the panel would scroll the sky behind the modal.
+                (The old capture handler made this moot by swallowing the
+                wheel entirely -- which is also why the panel could not be
+                scrolled at all mid-journey.) */}
+            <div className="menu-body" data-lenis-prevent>
+              {tab === "settings" && <SettingsTab soundToggle={soundToggle} />}
+              {tab === "achievements" && <AchievementsTab found={found} total={total} />}
+              {tab === "help" && <HelpTab />}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -204,7 +269,7 @@ function SettingsTab({ soundToggle }: { soundToggle: React.ReactNode }) {
         <dd>
           <button
             type="button"
-            className="menu-value menu-value-live"
+            className="menu-value"
             onClick={() => setRenderer((r) => RENDERERS[(RENDERERS.indexOf(r) + 1) % RENDERERS.length])}
           >
             {renderer}

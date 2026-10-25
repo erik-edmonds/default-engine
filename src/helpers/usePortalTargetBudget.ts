@@ -34,6 +34,20 @@ import * as THREE from 'three'
  *  multisampled. So "multisampled and has a depthTexture" is exactly the set we
  *  mean, and nothing else.
  *
+ *  ONE EXCEPTION, AND IT IS NOT HYPOTHETICAL. three's XR manager builds the
+ *  headset's own framebuffer with `depthTexture: new DepthTexture(...)` and
+ *  `samples: attributes.antialias ? 4 : 0` (three.module.js, XRManager's
+ *  projection-layer branch) -- which is this predicate's signature exactly.
+ *  Left unguarded, the first bind of a session would strip antialiasing from
+ *  the one buffer where it matters most and keep stripping it on every resize
+ *  for the whole session; a headset renders a low-dpi texture through a lens
+ *  that magnifies every stair-step. It saves nothing, either: that target is
+ *  allocated by the compositor whether or not we touch it, so there is no
+ *  memory to win. `isXRRenderTarget` is set by three's XR manager and by
+ *  nothing else in the library or in this app, so testing it costs desktop
+ *  rendering nothing -- the flag is undefined on every target the island
+ *  binds.
+ *
  *  Left armed rather than self-removing, because drei reallocates these on
  *  every canvas resize and the 8 samples come back with them. The cost is two
  *  property reads per bind.
@@ -59,7 +73,12 @@ export function budgetPortalTargets(gl: THREE.WebGLRenderer, samples = 0) {
     target: THREE.WebGLRenderTarget | null,
     ...rest: unknown[]
   ) {
-    if (target && target.samples > samples && target.depthTexture) {
+    if (
+      target &&
+      target.samples > samples &&
+      target.depthTexture &&
+      !(target as THREE.WebGLRenderTarget & { isXRRenderTarget?: boolean }).isXRRenderTarget
+    ) {
       target.samples = samples
     }
     return (original as (t: THREE.WebGLRenderTarget | null, ...a: unknown[]) => void)(

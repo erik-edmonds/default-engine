@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
-import { Bvh, OrbitControls } from "@react-three/drei"
+import { Bvh } from "@react-three/drei"
 import { registerCursorSurface } from "@/helpers/cursor"
 
 import { Clouds } from "@/components/canvas/Sky"
@@ -21,7 +21,7 @@ import { skyWorldMounted } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
 import { Sign } from "@/components/models/Sign"
 
-export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; onDragoniteRelease?: () => void; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
+export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
     // curated raycast surface rather than letting the cursor ray the whole
     // scene -- see the note on cursorSurfaces in helpers/cursor.ts for why
@@ -146,12 +146,12 @@ export function Scene({ from, day, transitionSeconds, onDragoniteRelease, pokeba
                 the ball always belonged on, and the pair read correctly until
                 the sign was moved on top of it. With the sign returned and
                 the lens opened, neither has to give way to the other. */}
-            <Pokeball ref={pokeballRef} scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]} onRelease={onDragoniteRelease}/>
+            <Pokeball ref={pokeballRef} scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]}/>
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth
                 raycast (plus every r3f pointer event on the island) pays for
                 that on each ray. Its meshes have a standard raycast so they
-                actually qualify for acceleration -- the instanced clouds in
+                actually qualify for accelerat  ion -- the instanced clouds in
                 the Bvh above do not, which is why that one buys almost
                 nothing. */}
             {/* The destination. Nothing paper exists on the island -- the

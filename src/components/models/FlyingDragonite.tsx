@@ -17,4 +17,9 @@ export function FlyingDragonite(props: React.ComponentProps<"group">) {
   )
 }
 
-useGLTF.preload("/models/flying_dragonite.glb")
+// NOT PRELOADED. This is the sky journey's subject and the journey is parked
+// (see the note at the top of config/skyJourney.ts), so the only thing a
+// module-scope preload did was fetch six megabytes on every island visit for
+// a model that can no longer be reached. useGLTF still fetches it lazily if
+// the component is ever rendered again, so re-enabling costs nothing.
+// useGLTF.preload("/models/flying_dragonite.glb")

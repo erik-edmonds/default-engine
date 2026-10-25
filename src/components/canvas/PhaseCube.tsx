@@ -415,6 +415,18 @@ export default function PhaseCube({ from, phase, transitionSeconds, onAdvance, s
       // No hover sound -- see Icon.tsx. The cue belongs to the scene, not to
       // the persistent chrome.
       aria-label={`Time of day: ${current}. Change to ${next}.`}
+      // ROUND AND TRANSLUCENT ON PURPOSE -- DO NOT "FIX" THIS AGAIN.
+      //
+      // I squared this off and set the background to FACE_BG, on a report of
+      // "round, and affected by the scene behind it". That report turned out
+      // to be a stale server shipping a 21-byte stylesheet, so every chrome
+      // control was unstyled; nothing was wrong with this button.
+      //
+      // And the change broke it: FACE_BG is the exact navy the cube's own
+      // faces are painted on, so the cube's silhouette vanished against its
+      // own backdrop and a 3D cube read as a flat square. The translucent,
+      // blurred panel is what lets the cube read AS a cube -- the varying
+      // scene behind it is the contrast the silhouette needs.
       style={{
         width: size,
         height: size,

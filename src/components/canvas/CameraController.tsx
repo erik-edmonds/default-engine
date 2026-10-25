@@ -5,8 +5,7 @@ import * as THREE from "three"
 import { useFrame, useThree } from "@react-three/fiber"
 import { useAtomValue, useSetAtom } from "jotai"
 import gsap from "gsap"
-import { easing } from "maath"
-import { publishSkyDisplay, resetSkyScroll } from "@/helpers/skyScroll"
+import { resetSkyScroll, skyScroll } from "@/helpers/skyScroll"
 import { CAMERA_LOOK_ABOVE, setFlightBaseHeading } from "@/config/flightFrame"
 import { ISLAND_FOV_Y, ISLAND_FOV_Y_PORTRAIT, SKY_FOV_Y, skyAltitudeShare } from "@/config/paperSky"
 import { publishSkyFrame, skyFrame } from "@/helpers/skyFrame"
@@ -14,11 +13,11 @@ import { publishSkyFrame, skyFrame } from "@/helpers/skyFrame"
 import { prefersReducedMotion, tweenDuration } from "@/helpers/motion"
 import { cameraFlying, skySequenceStarted } from "@/helpers/StateProvider"
 import { cameraBase, initCameraBase, setCameraBase, setCameraBaseFromEuler } from "@/helpers/cameraBase"
+import { xrActive } from "@/helpers/xr"
 import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions"
 import { journeyPose, trapezoid, type Route } from "@/config/journey"
 import {
   AVATAR_BASE_POSITION,
-  SKY_SCROLL_SMOOTH_TIME,
   avatarSkyPose,
   cameraSkyPose,
   resetSkyEntryStop,
@@ -111,7 +110,6 @@ export interface CameraControllerHandle {
   /** Follow the avatar off the island edge and down through the waterline.
    *  Resolves once the camera is under. */
   beginSkyJourney: () => void
-  setSkyOffset: (offsetZ: number) => void
   /** Hands the camera back. Symmetric with beginSkyJourney, and with
    *  AvatarController.returnHome, which drops the avatar's own latch. */
   endSkyJourney: () => void
@@ -130,6 +128,40 @@ export interface CameraControllerHandle {
   /** Hand the camera back to the tweens, so the spring stops writing and
    *  cannot fight a flight. */
   endJourney: () => void
+}
+
+/** Live camera flights, as gsap handles.
+ *
+ *  Module-level and not a ref, for the same reason cameraBase is: the caller
+ *  is XrTransition, which is not this component and holds no handle to it.
+ *  There is exactly one CameraController in the app -- it is mounted once by
+ *  IslandExperience -- so a module-level set has exactly one owner. */
+const flights = new Set<gsap.core.Tween | gsap.core.Timeline>()
+
+const track = <T extends gsap.core.Tween | gsap.core.Timeline>(tween: T): T => {
+  flights.add(tween)
+  tween.eventCallback("onComplete", ((previous) => () => {
+    flights.delete(tween)
+    previous?.()
+  })(tween.eventCallback("onComplete")))
+  tween.eventCallback("onInterrupt", ((previous) => () => {
+    flights.delete(tween)
+    previous?.()
+  })(tween.eventCallback("onInterrupt")))
+  // Returns the tween so a caller that needs the handle -- intro keeps one so
+  // beginFlight can supersede it -- can keep registering in one expression.
+  return tween
+}
+
+/** Cancel every flight in progress, synchronously.
+ *
+ *  Each kill fires that flight's onInterrupt, which calls endFlight() and
+ *  resolves its promise -- so `cameraFlying` comes back to false and no
+ *  awaiter is left hanging. That is why flyTo's missing onInterrupt had to
+ *  be fixed in the same change as this; see the note on it. */
+export function abortFlights() {
+  for (const tween of [...flights]) tween.kill()
+  flights.clear()
 }
 
 export const CameraController = forwardRef<CameraControllerHandle>((_props, ref) => {
@@ -165,6 +197,24 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     activeFlights.current = Math.max(0, activeFlights.current - 1)
     if (activeFlights.current === 0) setCameraFlying(false)
   }
+
+  /** Register a flight so entering VR can cancel it.
+   *
+   *  A flight is a gsap tween writing camera.position over one to five
+   *  seconds. Handing the camera to a headset while one is mid-flight means
+   *  gsap and three's XR pose both writing it every frame -- and gsap would
+   *  win on its own schedule, which on a head-tracked display is the worst
+   *  possible outcome. So they are killed, not waited for.
+   *
+   *  Kept as a Set of live tweens rather than one `current` slot because
+   *  flights OVERLAP by design -- that is why activeFlights is a counter and
+   *  not a boolean. Entries remove themselves: gsap guarantees exactly one
+   *  of onComplete/onInterrupt per tween, and both routes through
+   *  endFlight() already exist. */
+  useEffect(() => {
+    flights.clear()
+    return () => flights.clear()
+  }, [])
 
   // Seed the aim before anything can layer a look-offset on top of it.
   // CameraLook mounts later (it waits for `started`) and would otherwise find
@@ -214,6 +264,26 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
   const skyScratch = useMemo(() => ({ position: new THREE.Vector3(), look: new THREE.Vector3() }), [])
 
   useFrame((_state, delta) => {
+    // NOTHING HERE RUNS IN A SESSION, AND ONE RETURN COVERS ALL OF IT.
+    //
+    // Everything below writes the camera: the lens blend, the sky driver's
+    // position and look, and the island journey's spring. In a session three
+    // writes camera.position and camera.quaternion from the headset pose
+    // every frame and then builds both eye matrices from them -- so each of
+    // these would be a fight that three wins, except for the lens, which it
+    // does not: fov is copied into the eye cameras from the XR projection,
+    // and writing it here only poisons `skyFrame` with the headset's number
+    // for whatever reads it next.
+    //
+    // This single line is also what stands the island spring down, which
+    // matters more than it looks: the spring's target is a scroll offset,
+    // and a person who turns their head has not scrolled.
+    //
+    // Deliberately NOT a priority change. This callback is already at
+    // priority 0, so it is not part of fiber's render gate and has nothing
+    // to give up there -- see xrPriority for the three that are.
+    if (xrActive.current) return
+
     // --- the sky journey ---------------------------------------------------
     //
     // Runs before the island journey and returns: the two can never both own
@@ -279,19 +349,19 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
     const s = sky.current
     if (s.active) {
       if (activeFlights.current === 0) {
-        if (prefersReducedMotion()) {
-          s.display = s.target
-        } else {
-          // THE RAW DELTA. Clamping is for integrators that can go unstable
-          // over a long step; an exponential damp cannot -- it takes
-          // 1 - exp(-dt/tau) of the remaining distance, which is bounded by
-          // one however large dt gets. Clamping it only makes the follow run
-          // at the frame rate instead of the clock, so on a machine dropping
-          // frames the picture lags the scroll by seconds. Measured on a
-          // software renderer: the journey's displayed position sitting 32
-          // units behind a hold it had already settled onto.
-          easing.damp(s, "display", s.target, SKY_SCROLL_SMOOTH_TIME, delta)
-        }
+        // THE SCROLL IS NOT THIS COMPONENT'S ANY MORE.
+        //
+        // `s.display` used to be the damped follow of `s.target`, computed
+        // here and published for everything else. Lenis owns the easing now
+        // (useSkyLenis) and publishes both numbers itself, so this reads
+        // `skyScroll.display` rather than keeping a second copy.
+        //
+        // Leaving the old `publishSkyDisplay(s.display, delta)` in place
+        // while the damp that fed it was removed is what broke the first
+        // build of this: `s.display` was never assigned again, so the camera
+        // wrote a stale zero over the hook's value every frame. The scene
+        // sat at offset 0 while the scrollbar ran the length of the page.
+        s.display = skyScroll.display
         // Where the avatar is, computed from the SAME table it reads rather
         // than asked for: both controllers damp the same offset with the same
         // constant, so they agree by construction, and the camera stays
@@ -343,10 +413,8 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
         // its cursor offset onto a stale aim.
         setCameraBase(camera.quaternion)
         syncOrbitTarget(camera.rotation)
-        // And published for the paper world and the velocity lines, which move
-        // with the scroll. Reading the DAMPED value, not the target -- see
-        // helpers/skyScroll.ts.
-        publishSkyDisplay(s.display, delta)
+        // Nothing published from here. useSkyLenis is the single writer of
+        // both `display` and `speed`; two writers is what the bug above was.
       }
       return
     }
@@ -441,7 +509,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
         const forward = new THREE.Vector3(0, 0, -1).applyEuler(targetRotation)
         const endPosition = camera.position.clone().addScaledVector(forward, ZOOM_IN_DISTANCE)
 
-        gsap.to(camera.position, {
+        track(gsap.to(camera.position, {
           x: endPosition.x,
           y: endPosition.y,
           z: endPosition.z,
@@ -451,8 +519,15 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             endFlight()
             resolve()
           },
-        })
-        gsap.to(camera.rotation, {
+          // Missing for the same reason flyTo's was, with the same
+          // consequence: a killed zoomIn would never resolve and would hold
+          // activeFlights above zero for good.
+          onInterrupt: () => {
+            endFlight()
+            resolve()
+          },
+        }))
+        track(gsap.to(camera.rotation, {
           x: targetRotation.x,
           y: targetRotation.y,
           z: targetRotation.z,
@@ -466,7 +541,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             setCameraBaseFromEuler(camera.rotation)
             syncOrbitTarget(camera.rotation)
           },
-        })
+        }))
       }),
     flyUp: () =>
       new Promise<void>((resolve) => {
@@ -504,7 +579,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           skyScratch.look,
         )
 
-        gsap.to(camera.position, {
+        track(gsap.to(camera.position, {
           x: skyScratch.position.x,
           y: skyScratch.position.y,
           z: skyScratch.position.z,
@@ -516,7 +591,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           onUpdate: () => syncOrbitTarget(fixedRotation),
           onComplete: () => { endFlight(); resolve() },
           onInterrupt: () => { endFlight(); resolve() },
-        })
+        }))
       }),
     // Takes up the camera at the top of the fly-up. No pose is captured here,
     // unlike the avatar's: the camera path's first stop is DERIVED from where
@@ -567,9 +642,6 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
       sky.current.display = 0
       resetSkyScroll()
     },
-    setSkyOffset: (offset) => {
-      sky.current.target = offset
-    },
     // Must be called before the flight home, not after.
     //
     // The driver stands down while a flight is active, but `active` alone is
@@ -611,7 +683,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
         setCameraBaseFromEuler(ISLAND_CAMERA_ROTATION)
         syncOrbitTarget(camera.rotation)
 
-        introTween.current = gsap.to(camera.position, {
+        introTween.current = track(gsap.to(camera.position, {
           x: ISLAND_CAMERA_POSITION.x,
           y: ISLAND_CAMERA_POSITION.y,
           z: ISLAND_CAMERA_POSITION.z,
@@ -628,7 +700,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             introTween.current = null
             resolve()
           },
-        })
+        }))
       }),
     flyRoute: (route) =>
       new Promise<void>((resolve) => {
@@ -643,7 +715,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
         // departure pose rather than leaving the camera wherever it was for a
         // tick -- gsap does not call onUpdate until the ticker comes round.
         route.poseAt(0, journeyScratch.position, journeyScratch.look)
-        gsap.to(progress, {
+        track(gsap.to(progress, {
           t: 1,
           duration: tweenDuration(seconds),
           // LINEAR, with the shaping done by the journey's own trapezoid below.
@@ -672,7 +744,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             endFlight()
             resolve()
           },
-        })
+        }))
       }),
     flyTo: (position, rotation, duration = 2.5) =>
       new Promise<void>((resolve) => {
@@ -695,7 +767,20 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             endFlight()
             resolve()
           },
+          // THE ONLY ONE OF THE FOUR FLIGHTS THAT LACKED THIS. flyRoute,
+          // flyUp and intro all had it; this did not, and it never showed
+          // because nothing in the app killed a flight. abortFlights() now
+          // does. Without this line, killing a flyTo would strand its
+          // awaiter forever AND leave activeFlights above zero for the rest
+          // of the session -- and `activeFlights.current === 0` is the guard
+          // on the journey spring, so the scroll journey would be
+          // permanently dead with nothing on screen to say why.
+          onInterrupt: () => {
+            endFlight()
+            resolve()
+          },
         })
+        track(timeline)
         timeline.to(
           camera.position,
           {

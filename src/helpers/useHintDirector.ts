@@ -44,11 +44,6 @@ export interface HintDirectorInput {
   hasInteracted: boolean
   /** hotspotNav.current from page.tsx. */
   currentHotspot: string
-  /** Whether the Poke Ball has been opened and the gear used. Unlike the
-   *  guitar and the clouds there is no existing atom that says so -- the
-   *  props report to a single callback each and nothing else -- and
-   *  hasInteracted is far too coarse, since every hotspot flight sets it. */
-  pokeballUsed: boolean
   /** Where each portal-bearing hotspot's hint should pin itself, keyed by
    *  hotspot id. Hotspots with no portal (home) are simply absent. */
   portalTargets: Record<string, THREE.Vector3>
@@ -68,7 +63,7 @@ export interface HintDirectorInput {
 // Runs on an interval rather than purely on dependency changes because most of
 // the conditions are *elapsed time* (idle for long enough, arrived long enough
 // ago) and nothing re-renders when time passes.
-export function useHintDirector({ started, hasInteracted, currentHotspot, pokeballUsed, portalTargets }: HintDirectorInput) {
+export function useHintDirector({ started, hasInteracted, currentHotspot, portalTargets }: HintDirectorInput) {
   const setActive = useSetAtom(activeHint)
   const musicOn = useAtomValue(musicEnabled)
   const rainCount = useAtomValue(rainRequest)
@@ -126,7 +121,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, pokeba
   // portal, or the first pointer move that dismisses InteractionHint.
   useEffect(() => {
     idleSince.current = performance.now()
-  }, [musicOn, rainCount, pokeballUsed, currentHotspot, openPortal, introFinished, started])
+  }, [musicOn, rainCount, currentHotspot, openPortal, introFinished, started])
 
   // Flight edges. A hotspot hint waits for the camera to actually land.
   useEffect(() => {

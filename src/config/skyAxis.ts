@@ -33,6 +33,13 @@
  *  than a beat: asked for explicitly as "a real scene each", two or three
  *  screens of scroll.
  *
+ *  RAISED AGAIN, 8200 -> 11500, because 8200 was not enough: "it should
+ *  scroll for longer inside the card, right now it barely stays inside
+ *  there". At 8200 the INSIDE phase was 629 units, about sixteen wheel
+ *  notches -- a beat, not a scene. It is now a little over a thousand, nearer
+ *  twenty-seven, and CARD_INSIDE_FROM/CARD_CONTRACT_FROM widened at the same
+ *  time so the growth lands in the card rather than in the approach.
+ *
  *  SKY_TEXT_ACTIVE rises with this, which is the other half of the change.
  *  Lengthening the axis alone would stretch the QUIET SKY between cards by
  *  the same factor, and the empty stretches are not what needed more room --
@@ -43,4 +50,4 @@
  *  Nothing here needs the corridor retuned. A prop's depth is a fraction of
  *  its SECTION (see sectionPhase in PaperSky), not a rate against the axis,
  *  so one cloud still crosses per block however long a block takes. */
-export const SKY_JOURNEY_DISTANCE = 8200
+export const SKY_JOURNEY_DISTANCE = 11500

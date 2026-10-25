@@ -167,6 +167,14 @@ export function CursorDriver() {
     }
 
     // ---------------------------------------------------------- zones
+    // CAPTURED BEFORE ANYTHING IN THIS BLOCK TOUCHES THE LOCK.
+    //
+    // It was first written just above the publish at the bottom, and the
+    // release edge was silently lost: `if (!best)` below nulls
+    // cursorLock.current directly, so by the time the bottom read it the
+    // previous value was already gone and onLockChange(false) never fired.
+    // A hotspot stayed orange with its label up after the cursor had left.
+    const previousLock = cursorLock.current
     if (best !== cursorLock.current && cursorLock.current !== null) {
       // Switched targets (or lost the old one) -- drop the lock rather than
       // carrying it across, so the state machine restarts cleanly on the new
@@ -196,7 +204,16 @@ export function CursorDriver() {
     } else if (bestDistance < best.snapRadius) {
       locked.current = true
     }
+    // Published, and announced ON THE EDGE. Targets that care about being
+    // held -- the hotspot markers, which drive their hover from this rather
+    // than from r3f's pointer events -- need the transition, not the state;
+    // this runs every frame and they must not re-render every frame. See
+    // MagneticTarget.onLockChange for why the hover comes from here at all.
     cursorLock.current = locked.current ? best : null
+    if (cursorLock.current !== previousLock) {
+      previousLock?.onLockChange?.(false)
+      cursorLock.current?.onLockChange?.(true)
+    }
 
     // ---------------------------------------------------------- attraction
     let goalX = pointer.x

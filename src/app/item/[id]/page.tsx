@@ -1,4 +1,4 @@
-import IslandScene from "@/app/page"
+import { IslandMount } from "@/components/island/IslandMount"
 
 /**
  * The shareable portal URL.
@@ -10,7 +10,10 @@ import IslandScene from "@/app/page"
  * a visitor is most likely to copy. It also destroyed the `/portfolio` URL the
  * same way, since opening a card there pushes the same path.
  *
- * This renders the island itself, unchanged. No new wiring is needed to open
+ * This mounts the island itself, unchanged -- and it mounts IslandMount
+ * rather than the home route, so the home page's own copy (the hero, the
+ * structured data) does not appear over a shared portal link. A visitor
+ * following `/item/02` asked for a portal, not a pitch. No new wiring is needed to open
  * the right portal: wouter reads `location` at render, sees `/item/01`, and
  * Card.tsx's existing `useRoute('/item/:id')` damps that portal's blend open on
  * its own -- the same code path a double-click uses.
@@ -24,5 +27,5 @@ export function generateStaticParams() {
 }
 
 export default function ItemPage() {
-  return <IslandScene />
+  return <IslandMount />
 }

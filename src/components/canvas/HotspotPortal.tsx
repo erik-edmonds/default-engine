@@ -348,7 +348,19 @@ export function HotspotPortal({ position, rotation, id, name, author, bg, sleepB
   })
 
   return (
-    <group ref={group} position={position} rotation={rotation}>
+    // NAMED AND TAGGED, like paper-sky and sky-card. This group is a portal's
+    // one handle in world space -- where it stands and which way it faces --
+    // and nothing outside the component could find it: the room inside is
+    // named, but the room lives in the portal's OWN scene and carries none of
+    // this transform. A probe hunting for a portal had to guess at a
+    // userData.portalId that was never set, and quietly found nothing.
+    <group
+      ref={group}
+      name={`portal-${id}`}
+      userData={{ portalId: id }}
+      position={position}
+      rotation={rotation}
+    >
       <CarvedFrame width={PORTAL_WIDTH} height={PORTAL_HEIGHT} />
       <Frame id={id} name={name} author={author} bg={bg} interactive={interactive}>
         {/* Inside <MeshPortalMaterial>, so these belong to the portal's own
