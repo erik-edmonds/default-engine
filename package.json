@@ -7,7 +7,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/migrate.ts",
+    "test:arith": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/xr-measure-test.ts",
+    "test:copc": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/copc-golden.ts",
+    "probe:colour": "node scripts/scan-colour-probe.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "6.x",
@@ -24,12 +28,15 @@
     "@neon/config": "^1.9.3",
     "@neon/env": "^1.6.4",
     "@pmndrs/assets": "^1.7.0",
+    "@preact/signals-core": "^1.14.4",
     "@react-spring/three": "^10.1.2",
     "@react-spring/web": "^10.1.2",
     "@react-three/cannon": "^6.6.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@react-three/postprocessing": "^3.0.4",
+    "@react-three/uikit": "1.0.77",
+    "@react-three/uikit-default": "1.0.77",
     "@react-three/xr": "6.6.32",
     "@types/pg": "^8.23.1",
     "antd": "^6.5.0",

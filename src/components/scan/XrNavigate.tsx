@@ -7,6 +7,7 @@ import { useXRInputSourceState } from "@react-three/xr"
 
 import { xrHands } from "@/helpers/xrHands"
 import { xrRig } from "@/helpers/xrRig"
+import { xrGrab, menuSnapshot } from "@/helpers/xrMenu"
 import {
   beginTwoHand,
   deadzone,
@@ -132,11 +133,22 @@ export function XrNavigate({ onReset }: { onReset?: () => void }) {
     }
 
     // --- the grips: move the model -------------------------------------
+    // THE MENU IS MODAL FOR THE GRIPS. While it is up, a squeeze must not
+    // also drag the survey: the ray is pressing buttons, and a gesture that
+    // both clicks a control and moves the thing the control is about is
+    // indefensible in an instrument. Suppressed here rather than by denying
+    // pointer types, because this is about the GRAB, not about the pointer --
+    // the menu's own buttons deny `grab` separately.
+    const menuUp = menuSnapshot()
     const lh = xrHands.left
     const rh = xrHands.right
-    const lOn = squeezing(left) && lh != null
-    const rOn = squeezing(right) && rh != null
+    const lOn = !menuUp && squeezing(left) && lh != null
+    const rOn = !menuUp && squeezing(right) && rh != null
     const held = (lOn ? 1 : 0) + (rOn ? 1 : 0)
+    // Published for the wrist gate, which has to suppress itself while a grab
+    // is in progress: the two-handed scale gesture turns the model by the
+    // bearing between the hands, so resizing the survey IS a wrist roll.
+    xrGrab.held = held
 
     // BROUGHT UP TO DATE BY HAND. This runs BEFORE gl.render, which is where
     // three refreshes world matrices, so without these the grab would track

@@ -3,6 +3,7 @@ import { Copc, Hierarchy } from "copc"
 import { createRangeGetter, type RangeGetter } from "./getter"
 import { DecodePool } from "./pool"
 import type { DecodedNode, Scaling } from "./records"
+import { HAG_DIMENSION, locateExtraByte, type ExtraByteLocation } from "./extraBytes"
 
 /** A COPC file, opened, with its octree discoverable a page at a time.
  *
@@ -21,14 +22,30 @@ export class CopcSource {
      *  to descend past one -- this is how a 300M-point file stays navigable
      *  without ever reading its whole index. */
     readonly pages: Map<string, Hierarchy.Page>,
+    /** Where height-above-ground lives in this file, or null when the file has
+     *  not been through the annotation pipeline.
+     *
+     *  RESOLVED ONCE, HERE, because the answer is a property of the file and
+     *  not of a node -- and because the alternative is shipping the whole
+     *  Extra Bytes VLR to a worker a few hundred times a session to recompute
+     *  the same sum. `hasHag` below is what the viewer switches its height
+     *  colour mode on. */
+    readonly hagLocation: ExtraByteLocation | null,
   ) {}
 
   static async open(url: string, pool: DecodePool): Promise<CopcSource> {
     const getter = createRangeGetter(url)
     const copc = await Copc.create(getter)
-    const source = new CopcSource(url, copc, getter, pool, new Map(), new Map())
+    const hagLocation = locateExtraByte(HAG_DIMENSION, copc.header.pointDataRecordFormat, copc.eb)
+    const source = new CopcSource(url, copc, getter, pool, new Map(), new Map(), hagLocation)
     await source.loadPage("0-0-0-0", copc.info.rootHierarchyPage)
     return source
+  }
+
+  /** Whether this file carries height above ground, i.e. whether it is an
+   *  annotated product rather than a raw survey. */
+  get hasHag(): boolean {
+    return this.hagLocation !== null
   }
 
   /** The octree's half-width, and the centre every position is made relative
@@ -105,6 +122,7 @@ export class CopcSource {
       pointDataRecordLength,
       scaling: this.scaling,
       origin: this.origin,
+      hagLocation: this.hagLocation,
     })
   }
 }

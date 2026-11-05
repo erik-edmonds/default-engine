@@ -1,0 +1,36 @@
+{
+  "comment": [
+    "Height-above-ground bands, and the ASPRS class each one implies.",
+    "",
+    "READ BY BOTH SIDES OF THE PIPELINE, WHICH IS THE ONLY REASON THIS IS JSON.",
+    "pipeline/thresholds.py reads this file to build the PDAL filters.assign",
+    "statements that do the classifying; src/config/asprs.ts imports it to draw",
+    "the legend and the height ramp for the same data. If these two ever",
+    "disagreed, the viewer would confidently mislabel what the pipeline wrote,",
+    "so they are not allowed to be two files.",
+    "",
+    "IN METRES, ALWAYS. The sample survey is in FEET and a crop scan may be in",
+    "either, so a threshold written in file units is a threshold that is wrong",
+    "for the next file. thresholds.py divides by the scan's unitsToMetres (the",
+    "same number src/config/scans.ts already carries, read from the file's own",
+    "WKT) to reach file units. Nothing anywhere hard-codes feet.",
+    "",
+    "THESE NUMBERS ARE STARTING VALUES AND ARE EXPECTED TO CHANGE. They are",
+    "defensible for row crops -- stubble and seedlings under half a metre,",
+    "most row crops and canopy between there and five, shelterbelts and trees",
+    "above -- but the only scan currently wired up is an aerial survey of a",
+    "football stadium, which tests the plumbing and not the agronomy. They",
+    "cannot be tuned until a real field scan exists."
+  ],
+  "unit": "metres",
+  "groundClass": 2,
+  "otherClass": 1,
+  "noiseClass": 7,
+  "nearGroundM": 0.1,
+  "bands": [
+    { "minM": 0.1, "maxM": 0.5, "class": 3, "label": "low vegetation" },
+    { "minM": 0.5, "maxM": 5.0, "class": 4, "label": "medium vegetation" },
+    { "minM": 5.0, "maxM": null, "class": 5, "label": "high vegetation" }
+  ],
+  "heightRampMaxM": 10.0
+}

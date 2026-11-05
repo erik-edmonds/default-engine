@@ -15,15 +15,17 @@ import { EnterVrButton } from "@/components/scan/EnterVrButton"
 import { XrControls, stepBudget } from "@/components/scan/XrControls"
 import { FrameMeter } from "@/components/scan/FrameMeter"
 import { SampleTable } from "@/components/scan/SampleTable"
-import { LeftControllerWithPanel, RightController } from "@/components/scan/WristPanel"
+import { LeftController, RightController } from "@/components/scan/XrControllerHands"
 import { XrNavigate } from "@/components/scan/XrNavigate"
+import { WristGate } from "@/components/scan/WristGate"
+import { ScanMenuHost } from "@/components/scan/ScanMenuHost"
 import { scanStats } from "@/helpers/scanStats"
 import { xrRig } from "@/helpers/xrRig"
 import { SceneBoundary } from "@/components/layout/SceneBoundary"
 import { SceneFallback } from "@/components/layout/SceneFallback"
 import { useContextLoss } from "@/helpers/useContextLoss"
 import { xrArmed } from "@/helpers/xr"
-import type { ScanDefinition } from "@/config/scans"
+import { scanUrl, type ScanDefinition } from "@/config/scans"
 import { TABLE_LONGEST_M, TABLE_ORIGIN, XR_POINT_BUDGET, XR_TARGET_HZ } from "@/config/xrScan"
 import { lifeSizeRig, tabletopRig, type ScanRig } from "@/lib/copc/scale"
 
@@ -62,7 +64,23 @@ const DEFAULT_BUDGET = 1_500_000
  *  fake. Left on deliberately, and nothing needs disabling to test on
  *  hardware. */
 const xrStore = createXRStore({
-  offerSession: "immersive-vr",
+  // OFF, AND IT USED TO BE "immersive-vr".
+  //
+  // `offerSession` hands the runtime a standing offer so a browser such as the
+  // Quest's can show its own "enter VR" affordance. The cost is that the
+  // library re-offers -- on store setup, after the bundled emulator injects,
+  // and again after every session end (store.js:90,103,112) -- and each new
+  // offer rejects the previous one with "Offer superseded by a new
+  // offerSession call", which the library logs through its own
+  // `.catch(console.error)`. It is noise rather than a failure (the session
+  // still starts), but it is noise in the console of the person testing this,
+  // and `offerSession: false` returns before a promise is ever created.
+  //
+  // What this gives up is the headset browser's own entry button. The viewer
+  // has its own "View in VR", and ScanXrSetup now arms from `gl.xr`'s events
+  // rather than from that button, so a session started by any other route
+  // still works -- see r118. Put it back if the native affordance is wanted.
+  offerSession: false,
   frameRate: (supported: ArrayLike<number>) => {
     const rates = Array.from(supported)
     return rates.includes(XR_TARGET_HZ) ? XR_TARGET_HZ : Math.min(...rates)
@@ -72,7 +90,7 @@ const xrStore = createXRStore({
   // having loaded -- see helpers/xrHands.ts. The left one also carries the
   // wrist panel. Both wrap `<DefaultXRController/>` rather than replacing it,
   // so the library's model and pointers are untouched.
-  controller: { left: LeftControllerWithPanel, right: RightController },
+  controller: { left: LeftController, right: RightController },
 })
 
 export default function ScanExperience({ scan }: { scan: ScanDefinition }) {
@@ -216,6 +234,23 @@ export default function ScanExperience({ scan }: { scan: ScanDefinition }) {
           {/* Not black. A still-loading scene must never be mistakable for a
               dead context -- the same reason the 404 clears to #456363. */}
           <color attach="background" args={["#0e1217"]} />
+          {/* THE ONLY LIGHTS IN THIS SCENE, and they exist for the hands.
+              
+              A point cloud carries its own colour and is unlit by construction
+              -- `pointsMaterial` is not a lit material and `toneMapped` is off
+              -- so nothing here ever needed a light and none was added. The
+              moment anything with a standard material appears on a controller
+              that becomes visible as "the hands are there but there's no
+              light, I can't see anything": they rendered as flat black
+              silhouettes, and so did the library's own default hand models,
+              which are loaded whenever hand tracking is used and whose
+              materials are not ours to change.
+              
+              Cheap and deliberately dull: ambient for a floor so nothing is
+              pure black, one directional from above and slightly behind the
+              wearer so the mitten's facets read. Neither touches the cloud. */}
+          <ambientLight intensity={1.1} />
+          <directionalLight position={[0.4, 1.6, 0.8]} intensity={1.5} />
           <PerspectiveCamera makeDefault fov={55} near={1} far={100_000} position={camStart} />
           {/* UNMOUNTED IN A SESSION, NOT DISABLED.
               `enabled={false}` gates OrbitControls' DOM listeners only --
@@ -257,6 +292,29 @@ export default function ScanExperience({ scan }: { scan: ScanDefinition }) {
                 return () => { if (xrRig.origin === node) xrRig.origin = null }
               }}
             />
+            {/* NOT A CHILD OF <XROrigin> ANY MORE, and that was the bug.
+                
+                The menu was parented here on the reasoning that the origin is
+                what locomotion moves, so a panel under it would travel with
+                the wearer. True, but it also meant the panel's `position` was
+                LOCAL to an origin that XrNavigate moves on every stick push --
+                while the pose being written into it was computed in WORLD
+                space. The two disagreed by however far the wearer had walked,
+                which at 1:1 threw the menu out into the middle of the survey.
+                
+                It is head-locked now: ScanMenuHost portals it into the camera,
+                so "in front of the head" is a parent-child relationship rather
+                than a computation, and there is no second coordinate space for
+                anything to disagree about. */}
+            <ScanMenuHost
+              onToggleScale={() => {
+                resetUserRig()
+                setScaleMode((m) => (m === "table" ? "life" : "table"))
+              }}
+              onBudget={setXrBudget}
+              onReset={() => { resetUserRig(); xrRig.origin?.position.set(0, 0, 0) }}
+            />
+            <WristGate />
             <XrNavigate />
             <Suspense fallback={null}>
               {/* THE HANDLING GROUP, outside the rig and above it.
@@ -309,7 +367,13 @@ export default function ScanExperience({ scan }: { scan: ScanDefinition }) {
                       black screen. */}
                   <group position={[-active.anchor[0], -active.anchor[2], active.anchor[1]]}>
                     <PointCloud
-                      url={scan.url}
+                      // THE DERIVED FILE WHEN A PIPELINE RUN HAS PRODUCED ONE,
+                      // the raw survey otherwise -- see scanUrl. The class and
+                      // height colour modes can only draw something meaningful
+                      // from the derivative, and the un-annotated case is what
+                      // the repo ships with, so both have to work.
+                      url={scanUrl(scan)}
+                      unitsToMetres={scan.unitsToMetres}
                       pointBudget={armed ? xrBudget : budget}
                       onStats={publishStats}
                       onBounds={onBounds}

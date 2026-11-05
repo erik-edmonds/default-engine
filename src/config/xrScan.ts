@@ -99,48 +99,148 @@ export const STICK_DEADZONE = 0.18
 export const GRAB_SCALE_MIN = 0.05
 export const GRAB_SCALE_MAX = 40
 
-/** --- the wrist panel ------------------------------------------------- */
+/** --- what is on the arm ------------------------------------------------ */
 
-/** Panel size in metres, width then height.
+/** Where the Pip-Boy sits relative to the controller's GRIP space, and how
+ *  big it is.
  *
- *  0.12 x 0.232 m held at arm's length reads like a clipboard, not a HUD. The
- *  height is the sum of its parts -- seventeen rows of numbers, a rule, and
- *  seven lines of bindings -- so a row added to either list needs this moved
- *  with it; WristPanel derives every offset inside from the same constants. The
- *  reason it is on the wrist at all rather than pinned to the view: a panel
- *  welded to the camera is in the way of the thing being measured, and a
- *  point cloud is exactly the kind of scene where a floating rectangle hides
- *  the detail you are leaning in to judge. On the wrist it is there when you
- *  look and gone when you do not. */
-export const WRIST_PANEL_SIZE: [number, number] = [0.12, 0.232]
+ *  GUESSES, AND LABELLED AS SUCH -- the same treatment the wrist panel's
+ *  offsets had, for the same reason: grip space is defined by where the hand
+ *  is, not by any fixed relationship to a given controller's shell, so the
+ *  only way to find a comfortable forearm placement is to wear it. These are
+ *  the first things to change after five minutes in the headset.
+ *
+ *  The SCALE is derived rather than guessed. The GLB's own bounding box is
+ *  1.871 x 2.000 x 1.918 units, and a real Pip-Boy 3000 is about 0.22 m along
+ *  its longest axis, so 0.22 / 2.0 = 0.11 is life size for this asset. */
+export const PIPBOY_OFFSET: [number, number, number] = [0, 0.03, 0.10]
+export const PIPBOY_ROTATION: [number, number, number] = [-0.25, 0, 0]
+export const PIPBOY_SCALE = 0.11
 
-/** Offset from the controller's GRIP space, in metres, and the tilt.
- *
- *  GUESSES, AND LABELLED AS SUCH. Grip space is specified by where the hand
- *  is, not by any fixed relationship to the panel of a given controller, and
- *  the only way to find a comfortable wrist angle is to wear it. These are
- *  the first thing to change after five minutes in the headset, which is why
- *  they are here and not inline. */
-export const WRIST_PANEL_OFFSET: [number, number, number] = [0, 0.05, 0.08]
-/** Radians about X. Negative tilts the face up toward the eyes. */
-export const WRIST_PANEL_TILT = -0.9
+/** --- the wrist menu ----------------------------------------------------- */
 
-/** Hide the panel once its face turns away from the eyes.
+/** How far the wrist must roll to raise the menu, and how far it must come
+ *  back to drop it again.
  *
- *  The dot product of the panel's normal with the direction to the camera; at
- *  0.25 it fades out roughly 75 degrees off-axis. Without this the panel is a
- *  bright rectangle edge-on in your peripheral vision for the whole session,
- *  and in a point cloud any stray bright quad reads as geometry. */
-export const WRIST_PANEL_FACING_MIN = 0.25
+ *  TWO THRESHOLDS, NOT ONE. A single angle chatters: an arm resting near the
+ *  boundary crosses it repeatedly on nothing more than tremor, and the menu
+ *  flickers in and out. Opening at 35 degrees and closing at 20 leaves a 15
+ *  degree dead band that tremor cannot cross. */
+export const WRIST_MENU_ON_DEG = 35
+export const WRIST_MENU_OFF_DEG = 20
 
-/** Panel refresh, in Hz.
+/** And two dwells, for the same reason at a different timescale -- a threshold
+ *  swept through on the way to somewhere else is not a request for a menu.
+ *  The OFF dwell is the longer one deliberately: a menu that vanishes while
+ *  you are reaching for one of its buttons is a worse failure than one that
+ *  lingers a quarter second after you look away. */
+export const WRIST_MENU_ON_DWELL_MS = 120
+export const WRIST_MENU_OFF_DWELL_MS = 250
+
+/** Which grip-space axes are "along the forearm" and "out of the palm".
  *
- *  4 Hz, NOT PER FRAME. troika rebuilds its text geometry on the main thread
- *  on every content change — the same thread the frame is drawn on. A panel
- *  updated every frame would add its own cost to the p95 it is reporting,
- *  which is the one failure mode a measurement instrument may not have. 4 Hz
- *  is also about as fast as a number can be read. */
-export const WRIST_PANEL_HZ = 4
+ *  THE ONE THING THAT CANNOT BE SETTLED OFF-HARDWARE. WebXR defines grip space
+ *  by where the hand is rather than by a fixed relationship to a controller's
+ *  shell, and the mapping differs between profiles. The roll is computed from
+ *  these two vectors and nothing else, so correcting it on the device is a
+ *  change to these two lines rather than to any logic. */
+export const WRIST_FOREARM_AXIS: [number, number, number] = [0, 0, 1]
+export const WRIST_PALM_AXIS: [number, number, number] = [0, -1, 0]
+
+/** Where the menu stands when it opens, relative to the head: metres forward
+ *  along the head's yaw, and metres below eye level.
+ *
+ *  2.0 m IS A READING DISTANCE, not an arm's length. The first version put a
+ *  small panel at 0.62 m and the owner's note was exact -- "it should fill the
+ *  screen and be centered, so the user doesn't strain themselves looking at
+ *  it." Both halves of that point the same way: a panel close to the face has
+ *  to be small to fit, and a small panel close to the face is the single most
+ *  tiring thing to read in a headset, because the eyes converge hard and the
+ *  text still subtends almost nothing. Further away and much bigger gives the
+ *  same screen-filling angle with the eyes nearly parallel -- it reads like
+ *  sitting back from a large monitor rather than holding a phone to your nose.
+ *
+ *  MOVED BACK FROM 1.3 m, AND SCALED BY THE SAME FACTOR. The owner's note was
+ *  "let's move it a little further, the user still needs to be able to interact
+ *  with it, but other than that this section is fine" -- and those two halves
+ *  pull against each other, because pushing a panel back shrinks it. "Fine" is
+ *  the apparent size, so the fix is to move it and grow it together by
+ *  2.0/1.3 = 1.538, which holds the 108 x 85 degrees that was signed off and
+ *  changes only where the panel sits relative to your arms. See MENU_SIZE_M,
+ *  which carries the same factor, and the ray's `maxLength` in
+ *  XrControllerHands, which has to reach the new distance.
+ *
+ *  Nearly CENTRED on the eyeline now (0.05 m, not 0.18): a panel meant to fill
+ *  the view should not also ask you to look down at it. */
+export const MENU_DISTANCE_M = 2.0
+export const MENU_DROP_M = 0.05
+
+/** The panel's size in metres, and what one layout pixel inside it is worth.
+ *
+ *  BOTH NUMBERS CARRY THE SAME FACTOR, ALWAYS. The layout inside is expressed
+ *  in uikit pixels, so scaling the panel without scaling the pixel leaves the
+ *  content marooned in one corner. Every resize of this panel has been a single
+ *  multiplier applied to both lines, and it has to stay that way.
+ *
+ *  Two such resizes have happened, in opposite directions and for different
+ *  reasons, and they are easy to confuse:
+ *
+ *  1. 2.5x FOR APPARENT SIZE. The first full-size attempt was 1.45 x 0.95 m at
+ *     1.3 m and still read as small and hard to read. That was fixed by growing
+ *     the panel AT THE SAME DISTANCE, because growing it and pushing it back by
+ *     the same factor subtends exactly the same angle and would have been no
+ *     change at all. Text went from roughly 1.35 to 3.4 degrees, which was the
+ *     part actually being complained about.
+ *
+ *  2. 1.538x FOR DISTANCE, which is this one and is the exact move ruled out
+ *     above -- deliberately, because here no change in apparent size is wanted.
+ *     The owner asked for the panel "a little further" while staying
+ *     interactable, and said the section was otherwise fine. So distance went
+ *     1.3 -> 2.0 m and both numbers below grew by 2.0/1.3, leaving the angle
+ *     identical and moving the panel out of arm's space. It is NOT bigger to
+ *     look at; it is further away and the same size to look at.
+ *
+ *  So at 2.0 m, 5.58 x 3.66 m subtends about 108 x 85 degrees, which very
+ *  nearly fills a Quest 3's ~110 x 96 degree field of view: full screen in the
+ *  literal sense.
+ *
+ *  One consequence worth knowing rather than discovering: at this angle the
+ *  far corners sit near the edge of the optics, so reading them means turning
+ *  your head a little. That is the trade a full-screen panel makes, and it is
+ *  why the controls are gathered into the left sidebar rather than spread to
+ *  the edges. */
+export const MENU_SIZE_M: [number, number] = [5.58, 3.66]
+export const MENU_PIXEL_SIZE = 0.00692
+
+/** Where `?menu=1` puts the panel on a MONITOR, and why it is not the real
+ *  distance.
+ *
+ *  A headset sees about 110 degrees across; this window sees about 78. A panel
+ *  sized to fill the first therefore overflows the second by a wide margin --
+ *  correct in the headset, useless for checking a layout. Pushing it back only
+ *  changes its apparent size, and apparent size is the one thing a monitor
+ *  cannot show faithfully anyway.
+ *
+ *  5.2 m fits 5.58 m of panel inside a 78-degree view with margin, subtending
+ *  about 56 degrees. It tracks MENU_SIZE_M rather than MENU_DISTANCE_M and has
+ *  to move whenever the panel is resized -- at the old 3.4 m the panel that
+ *  grew to 5.58 m would overflow the window and `?menu=1` would stop being
+ *  able to show a layout, which is the only thing it is for. The ratio to hold
+ *  is the one that was already working: distance ~= 0.94 x panel width.
+ *
+ *  Used for nothing else; the panel is head-locked either way, and this is only
+ *  the local Z offset from the camera it is parented to. */
+export const MENU_PREVIEW_DISTANCE_M = 5.2
+
+/** Readout refresh, in Hz.
+ *
+ *  4 Hz, NOT PER FRAME, and it outlived the panel it was written for. Whatever
+ *  draws the numbers -- troika then, uikit now -- rebuilds text geometry on
+ *  the main thread on every content change, which is the same thread the frame
+ *  is drawn on. A readout updated every frame adds its own cost to the p95 it
+ *  is reporting, which is the one failure mode a measurement instrument may not
+ *  have. 4 Hz is also about as fast as a number can be read. */
+export const READOUT_HZ = 4
 
 /** --- sampling --------------------------------------------------------- */
 

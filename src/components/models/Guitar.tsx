@@ -109,6 +109,23 @@ export function Guitar(props: ThreeElements['group']) {
   // the note in RainController.tsx on what exhausting that pool looks like.
   useEffect(() => () => { song.unload() }, [song])
 
+  // AND CLEAR THE INTENT WITH IT, the way RainController clears `raining`.
+  //
+  // `musicEnabled` is documented as expressing intent only -- "I want music
+  // playing" -- which is right while the island is up, and a lie across a
+  // route change: the line above has already unloaded the Howl, so there is
+  // nothing left that could honour it. Leaving it true meant a client-side
+  // navigation back from the scan viewer (where jotai is never torn down)
+  // remounted this with `sound && masterOn` already satisfied, and the music
+  // started over the loading screen. Same shape as the ambient-bed bug in
+  // AmbientBeds.tsx, reached by a different route.
+  //
+  // Clearing it rather than gating on `started` because the Howl cannot
+  // survive the trip either way, and because a gate read from an atom written
+  // in an effect would leave one frame in which the stale value still says
+  // "play".
+  useEffect(() => () => { setSound(false) }, [setSound])
+
   useShadows(group)
 
   return (

@@ -16,10 +16,24 @@
  *  exactly where a buffer like this goes wrong, and it goes wrong silently.
  */
 import { DROP_FACTOR, FrameTimes, frameBudgetMs } from "@/helpers/frameStats"
-import { WRIST_ROWS, wristValues } from "@/helpers/wristRows"
+import { WRIST_ROWS, WRIST_SPACERS, wristColumns, wristValues } from "@/helpers/wristRows"
 import { samplesToCsv, type Sample } from "@/helpers/sampleLog"
 import * as THREE from "three"
+import { basePointLength, locateExtraByte, readExtraByte } from "@/lib/copc/extraBytes"
+import { pointSizeForDepth } from "@/lib/scan/pointMaterial"
+import { XR_POINT_MAX_PX, XR_POINT_MIN_PX } from "@/config/xrScan"
+import {
+  HAG_BANDS,
+  HAG_NEAR_GROUND_M,
+  HAG_RAMP_MAX_M,
+  bandForHeight,
+  buildClassPalette,
+  buildHagRamp,
+  srgbToLinear,
+} from "@/config/asprs"
 import { fileToWorld, lifeSizeRig, tabletopRig, worldToFile } from "@/lib/copc/scale"
+import { buildHandGeometry } from "@/lib/xr/handGeometry"
+import { GATE_CLOSED, nextGateState, wristRoll, type GateState } from "@/lib/xr/wristGate"
 import {
   beginTwoHand,
   deadzone,
@@ -170,7 +184,21 @@ const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
     drawCalls: 65,
     programs: 1,
     pointSize: 1.6,
+    pointSizeMax: 1.6,
     pixelRatio: 1,
+    colorMode: "rgb" as const,
+    hasHag: false,
+    // 60% ground, 25% medium vegetation, 10% low vegetation, 5% noise, so
+    // every share the panel reports has a known answer.
+    classHistogram: (() => {
+      const h = new Uint32Array(256)
+      h[2] = 600; h[3] = 100; h[4] = 250; h[7] = 50
+      return h
+    })(),
+    hagMax: 0,
+    unitsToMetres: 0.3048,
+    userScale: 1,
+    wristRoll: 0,
   }
   const vals = wristValues(readout)
   check("the panel's labels and values have the same row count",
@@ -209,6 +237,273 @@ const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
   check("before any frames, the panel shows a dash rather than 0.0 ms",
     empty[0] === "—" && empty[WRIST_ROWS.indexOf("eye" as never)] === "—",
     `median "${empty[0]}", eye "${empty[WRIST_ROWS.indexOf("eye" as never)]}" -- a confident 0.0 would read as a measurement`)
+
+  // --- WHAT THE PIPELINE MADE OF IT ------------------------------------
+  //
+  // These four rows are the only readout of the annotation on the whole
+  // route, so a formatting error here is an annotation nobody can check.
+  check("the ground share is a percentage of the resident set",
+    row("ground") === "60.0%",
+    `"${row("ground")}" -- 600 of 1000 binned points`)
+  check("canopy sums every vegetation class the pipeline assigns",
+    row("canopy") === "35.0%",
+    `"${row("canopy")}" -- classes 3+4 (100+250 of 1000), taken from hagBands.json rather than restated`)
+  check("noise is reported separately, because a classifier can quietly eat a scan",
+    row("noise") === "5.0%", `"${row("noise")}"`)
+  check("a file with no height dimension shows a dash, not 0.0 m",
+    row("tallest") === "—",
+    `"${row("tallest")}" -- 0.0 m would read as "the ground is flat" rather than "this has not been annotated"`)
+
+  const empties = wristValues({ ...readout, classHistogram: new Uint32Array(256) })
+  check("an empty cloud shows a dash rather than 0.0% ground",
+    empties[WRIST_ROWS.indexOf("ground" as never)] === "—",
+    `"${empties[WRIST_ROWS.indexOf("ground" as never)]}" -- no ground and no data are different things to be looking at`)
+
+  // FEET -> METRES, and this is the conversion that would be invisible if
+  // wrong. The sample survey is in feet; a canopy at 94 file units is 28.7 m.
+  const tall = wristValues({ ...readout, hasHag: true, hagMax: 94.2 })
+  check("tallest is converted from file units to metres",
+    tall[WRIST_ROWS.indexOf("tallest" as never)] === "28.7 m",
+    `"${tall[WRIST_ROWS.indexOf("tallest" as never)]}" -- 94.2 ft x 0.3048. Reporting the raw 94.2 would look entirely plausible and be wrong by 3.28x`)
+
+  const byClass = wristValues({ ...readout, colorMode: "class" })
+  check("the colour row names the mode in force",
+    byClass[WRIST_ROWS.indexOf("colour" as never)] === "Class",
+    `"${byClass[WRIST_ROWS.indexOf("colour" as never)]}" -- the buttons carry no active state, so this row is the only indication`)
+
+  // --- the point size is a RANGE now -----------------------------------
+  const spread = wristValues({ ...readout, pointSize: 3, pointSizeMax: 11.5, pixelRatio: 1 })
+  check("a resident set spanning depths reports a size range",
+    spread[WRIST_ROWS.indexOf("point" as never)] === "3.0–11.5 px",
+    `"${spread[WRIST_ROWS.indexOf("point" as never)]}"`)
+  check("and collapses to one figure when every node is the same depth",
+    row("point") === "1.6 px", `"${row("point")}"`)
+  const retina = wristValues({ ...readout, pointSize: 3, pointSizeMax: 3, pixelRatio: 2 })
+  check("the size is still reported in DEVICE pixels",
+    retina[WRIST_ROWS.indexOf("point" as never)] === "6.0 px",
+    `"${retina[WRIST_ROWS.indexOf("point" as never)]}" -- three multiplies size by the pixel ratio, and a session's ratio is 1 while a retina monitor's is 2`)
+}
+
+// --- THE TWO-COLUMN SPLIT, which fixed a row nobody could see -----------
+//
+// At 19 rows the single column needed ~442 uikit px in a 427px box, so the
+// last row was clipped -- and the last row is `roll`, the live wrist angle the
+// gate thresholds are supposed to be tuned against. The split has to balance
+// AND to break only on a spacer, or a column starts mid-group and reads as
+// though the heading above it applied.
+{
+  const columns = wristColumns(WRIST_ROWS.length, WRIST_SPACERS)
+  check("the rows are split into two columns",
+    columns.length === 2, `${columns.length} columns`)
+  const flat = [...columns[0], ...columns[1]]
+  // Every row but ONE survives: the spacer the break lands on is consumed,
+  // because the column break now does the separating it was doing. The other
+  // spacers stay -- they divide groups WITHIN a column and are still wanted.
+  check("every row appears exactly once and in order, less the consumed break",
+    flat.length === WRIST_ROWS.length - 1
+      && flat.every((v, i) => i === 0 || v > flat[i - 1]),
+    `${flat.length} rows placed from ${WRIST_ROWS.length} labels -- one spacer consumed by the break`)
+  check("no column begins or ends with a spacer",
+    columns.every((c) => WRIST_ROWS[c[0]] !== "" && WRIST_ROWS[c[c.length - 1]] !== ""),
+    `column heads "${WRIST_ROWS[columns[0][0]]}" / "${WRIST_ROWS[columns[1][0]]}" -- a leading gap reads as a missing row`)
+  check("the break falls on a spacer, so no group is split",
+    WRIST_SPACERS.includes(columns[0][columns[0].length - 1] + 1),
+    `column one ends at row ${columns[0][columns[0].length - 1]} ("${WRIST_ROWS[columns[0][columns[0].length - 1]]}")`)
+  const longest = Math.max(columns[0].length, columns[1].length)
+  // The box fits about 21 rows; the point of splitting is to be comfortably
+  // inside that, not just inside it.
+  check("the taller column fits the panel with room to spare",
+    longest <= 18,
+    `${longest} rows in the taller column, against the ~21 the 427px box holds`)
+
+  // Degenerate inputs, because this runs before anything is measured.
+  check("no spacers means one column rather than a split through a group",
+    wristColumns(5, []).length === 1, `${wristColumns(5, []).length}`)
+  check("zero rows does not throw", wristColumns(0, []).length === 1)
+}
+
+// --- EXTRA BYTES: the offsets the pipeline's output is read through -----
+//
+// This is the arithmetic that decides whether height-above-ground is read at
+// all, and getting it wrong does not throw -- it reads whatever bytes happen
+// to be at the offset and produces a plausible, wrong height. The layout rule
+// is a CONVENTION, not a stored field: dimensions sit end to end after the
+// base PDRF record, in VLR order, and you are expected to add up the lengths.
+{
+  check("PDRF 6, 7 and 8 have the base lengths the spec gives",
+    basePointLength(6) === 30 && basePointLength(7) === 36 && basePointLength(8) === 38,
+    `${basePointLength(6)} / ${basePointLength(7)} / ${basePointLength(8)}`)
+  let threw = false
+  try { basePointLength(5.5 as number) } catch { threw = true }
+  check("an unknown format throws rather than guessing a length", threw)
+
+  const eb = [
+    { name: "Amplitude", type: "unsigned" as const, length: 2 },
+    { name: "HeightAboveGround", type: "float" as const, length: 4 },
+    { name: "Trailing", type: "unsigned" as const, length: 1 },
+  ]
+  const hag = locateExtraByte("HeightAboveGround", 7, eb)
+  check("a dimension's offset is the base length plus everything before it",
+    hag?.byteOffset === 38,
+    `${hag?.byteOffset} -- PDRF 7's 36 bytes plus Amplitude's 2, NOT 36`)
+  check("a dimension the file does not carry resolves to null, not to offset 0",
+    locateExtraByte("Intensity", 7, eb) === null,
+    "null is the normal case: the raw survey has no extra bytes at all")
+  check("a file with no extra bytes at all resolves to null",
+    locateExtraByte("HeightAboveGround", 7, []) === null)
+  check("the same dimension moves when the format does",
+    locateExtraByte("HeightAboveGround", 6, eb)?.byteOffset === 32,
+    `${locateExtraByte("HeightAboveGround", 6, eb)?.byteOffset} -- PDRF 6 has no RGB, so everything shifts 6 bytes earlier`)
+
+  // THE ONE THAT MATTERS MOST. PDAL writes scale and offset as literal 0.0
+  // with the options bitmask cleared -- correct per the spec, and its own
+  // source says so. A reader that believes the stored number multiplies every
+  // value by zero and renders a dimension that is uniformly, plausibly flat.
+  check("an absent scale flag means scale 1, NEVER the stored 0",
+    hag?.valueScale === 1 && hag?.valueOffset === 0,
+    `scale ${hag?.valueScale}, offset ${hag?.valueOffset} -- believing PDAL's stored 0.0 would zero every height in the file`)
+  const scaled = locateExtraByte("S", 6, [{ name: "S", type: "signed" as const, length: 2, scale: 0.01, offset: 5 }])
+  check("a scale that IS declared is honoured",
+    scaled?.valueScale === 0.01 && scaled?.valueOffset === 5,
+    `scale ${scaled?.valueScale}, offset ${scaled?.valueOffset}`)
+
+  // An undocumented field (raw type 0) carries a length and no interpretation.
+  // It cannot be read, but it still takes up space -- skipping its length
+  // would misplace everything after it.
+  const withOpaque = [
+    { name: "Opaque", length: 3 },
+    { name: "HeightAboveGround", type: "float" as const, length: 4 },
+  ]
+  check("an unreadable field still consumes its bytes",
+    locateExtraByte("HeightAboveGround", 7, withOpaque)?.byteOffset === 39,
+    `${locateExtraByte("HeightAboveGround", 7, withOpaque)?.byteOffset} -- 36 + 3, so the opaque field is counted even though it cannot be decoded`)
+  check("and is itself unreadable rather than silently mis-typed",
+    locateExtraByte("Opaque", 7, withOpaque) === null)
+
+  // Round-trip a real value through the reader, little-endian as LAS is.
+  {
+    // Two records' worth, so the stride test below has somewhere to write.
+    const buffer = new ArrayBuffer(128)
+    const view = new DataView(buffer)
+    // Written AT the resolved offset rather than at a hand-computed one, so
+    // the round trip tests the reader and not my arithmetic twice.
+    view.setFloat32(hag!.byteOffset, 12.5, true)
+    check("a float32 extra byte reads back exactly",
+      readExtraByte(view, 0, hag!) === 12.5,
+      `${readExtraByte(view, 0, hag!)} from byte ${hag!.byteOffset}`)
+    view.setInt16(scaled!.byteOffset, 400, true)
+    check("a scaled integer has its scale and offset applied",
+      near(readExtraByte(view, 0, scaled!), 9, 1e-9),
+      `${readExtraByte(view, 0, scaled!)} -- 400 x 0.01 + 5, from byte ${scaled!.byteOffset}`)
+    // Not point zero: the offset is within a RECORD, so it has to be added to
+    // the record's own start. Reading from the first record every time is the
+    // failure mode that looks like a uniformly flat dimension.
+    const stride = 40
+    view.setFloat32(stride + hag!.byteOffset, 77.25, true)
+    check("the offset is relative to the point record, not to the buffer",
+      readExtraByte(view, stride, hag!) === 77.25,
+      `${readExtraByte(view, stride, hag!)} from record 1 at stride ${stride}`)
+  }
+}
+
+// --- THE PALETTE AND THE RAMP -------------------------------------------
+{
+  const palette = buildClassPalette()
+  check("the palette answers for all 256 classification codes",
+    palette.length === 256 * 4,
+    `${palette.length / 4} entries -- LAS classification is a full byte, and 64-255 are user-definable`)
+  const at = (code: number) => [palette[code * 4], palette[code * 4 + 1], palette[code * 4 + 2]]
+  const ground = at(2)
+  const highVeg = at(5)
+  check("ground and vegetation are different colours",
+    ground.join() !== highVeg.join(), `ground ${ground.map((v) => v.toFixed(3))}, high veg ${highVeg.map((v) => v.toFixed(3))}`)
+  check("an unnamed code gets the unknown colour, not black and not a neighbour's",
+    at(200).join() === at(100).join() && at(200).join() !== ground.join(),
+    `code 200 ${at(200).map((v) => v.toFixed(3))} -- a private scheme should read as "unknown", not as a wrong label`)
+  check("every entry is opaque",
+    Array.from({ length: 256 }, (_, i) => palette[i * 4 + 3]).every((a) => a === 1))
+
+  // LINEAR, NOT sRGB, and this is the half of the colour fix that lives in
+  // TypeScript. The shader writes linear and three applies the sRGB transfer
+  // function on output, so a palette authored in sRGB would be encoded twice.
+  // #b0793f's red channel is 0xb0/255 = 0.690 in sRGB and 0.430 in linear.
+  check("the palette is stored linear, so three's output encode is not doubled",
+    near(ground[0], srgbToLinear(0xb0 / 255), 1e-6),
+    `${ground[0].toFixed(4)} against sRGB ${(0xb0 / 255).toFixed(4)} -- the gap between these two IS the washed-out cloud`)
+  check("srgbToLinear is the real transfer function at both ends",
+    near(srgbToLinear(0), 0) && near(srgbToLinear(1), 1) && near(srgbToLinear(0.04045), 0.04045 / 12.92, 1e-9),
+    "0, 1 and the kink where the linear segment meets the power curve")
+
+  const ramp = buildHagRamp()
+  check("the ramp spans 256 texels", ramp.length === 256 * 4)
+  const lum = (i: number) => 0.2126 * ramp[i * 4] + 0.7152 * ramp[i * 4 + 1] + 0.0722 * ramp[i * 4 + 2]
+  let monotonic = true
+  for (let i = 1; i < 256; i++) if (lum(i) < lum(i - 1) - 1e-6) monotonic = false
+  // A SEQUENTIAL ramp, not a rainbow: height is an ordered quantity, and a
+  // rainbow makes an ordered quantity unreadable without a legend.
+  check("luminance increases monotonically with height",
+    monotonic,
+    `${lum(0).toFixed(3)} at the bottom to ${lum(255).toFixed(3)} at the top -- so the picture reads without consulting the legend`)
+}
+
+// --- THE BANDS, shared with the Python pipeline --------------------------
+//
+// hagBands.json is read by thresholds.py to build the PDAL assign statements
+// AND imported here to draw the legend. These assertions are what stop the
+// viewer confidently mislabelling what the pipeline wrote.
+{
+  check("near-ground is below the first band",
+    HAG_NEAR_GROUND_M <= HAG_BANDS[0].minM,
+    `${HAG_NEAR_GROUND_M} m against a first band starting at ${HAG_BANDS[0].minM} m`)
+  let contiguous = true
+  for (let i = 1; i < HAG_BANDS.length; i++) {
+    if (HAG_BANDS[i].minM !== HAG_BANDS[i - 1].maxM) contiguous = false
+  }
+  check("the bands are contiguous, so no height falls between two of them",
+    contiguous,
+    HAG_BANDS.map((b) => `${b.minM}-${b.maxM ?? "∞"}`).join(" "))
+  check("the last band is open-ended",
+    HAG_BANDS[HAG_BANDS.length - 1].maxM === null,
+    "a closed top band would leave the tallest points unclassified")
+  check("every band maps to a distinct class",
+    new Set(HAG_BANDS.map((b) => b.class)).size === HAG_BANDS.length)
+  check("bandForHeight agrees with the table at every boundary",
+    bandForHeight(0.05) === null
+      && bandForHeight(0.1)?.class === 3
+      && bandForHeight(0.49)?.class === 3
+      && bandForHeight(0.5)?.class === 4
+      && bandForHeight(4.99)?.class === 4
+      && bandForHeight(5)?.class === 5
+      && bandForHeight(900)?.class === 5,
+    "bands are min-inclusive and max-exclusive, which is what filters.assign's >= / < produce")
+  check("the ramp tops out above the tallest band's floor",
+    HAG_RAMP_MAX_M > HAG_BANDS[HAG_BANDS.length - 1].minM,
+    `${HAG_RAMP_MAX_M} m -- a ramp topping out below the last band would clip every tall point to one colour`)
+}
+
+// --- PER-NODE POINT SIZE, and its clamp ---------------------------------
+//
+// XR_POINT_MIN_PX and XR_POINT_MAX_PX sat in config imported by nothing for a
+// whole phase. The floor is the part that matters: sub-pixel points shimmer,
+// a headset's head never stops moving, and the two eyes disagree about which
+// points survive rasterisation.
+{
+  const cube = 4655
+  const root = pointSizeForDepth(cube / 128, cube)
+  const deep = pointSizeForDepth(cube / 128 / 2 ** 8, cube)
+  check("a shallow node draws larger points than a deep one",
+    root > deep, `root ${root.toFixed(1)} px, depth 8 ${deep.toFixed(1)} px`)
+  check("nothing is ever drawn below the shimmer floor",
+    deep >= XR_POINT_MIN_PX && pointSizeForDepth(0, cube) >= XR_POINT_MIN_PX,
+    `${deep.toFixed(2)} px at depth 8, ${pointSizeForDepth(0, cube).toFixed(2)} px at zero spacing, floor ${XR_POINT_MIN_PX}`)
+  check("and nothing above the ceiling, however coarse the node",
+    pointSizeForDepth(cube, cube) <= XR_POINT_MAX_PX && pointSizeForDepth(cube * 1000, cube) <= XR_POINT_MAX_PX,
+    `${pointSizeForDepth(cube * 1000, cube).toFixed(2)} px against a ceiling of ${XR_POINT_MAX_PX}`)
+  // SCALE-FREE, because a survey in feet and one in metres must not get
+  // different point sizes for the same octree shape.
+  check("the size depends on the octree's shape, not on its units",
+    near(pointSizeForDepth(cube / 128, cube), pointSizeForDepth((cube / 128) * 0.3048, cube * 0.3048), 1e-9),
+    "the same file in feet and in metres draws identically")
 }
 
 // --- THE RIG, and the two ways it was wrong ----------------------------
@@ -424,6 +719,195 @@ const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
       `distance from the hand is ${p.distanceTo(handPos).toFixed(4)}m before and after -- a rigid motion, so nothing is stretched or sheared by a wrist turn`)
   }
 }
+
+// --- THE HAND, as geometry ---------------------------------------------
+//
+// One draw call per hand is the claim, and it is the kind that rots quietly:
+// add a part as a `<mesh>` child instead of merging it and nothing breaks, the
+// hand looks identical, and the viewer's own `draws` readout climbs by two
+// without anyone connecting the two facts.
+{
+  const left = buildHandGeometry("left")
+  const right = buildHandGeometry("right")
+
+  check("each hand is ONE geometry, not a group of parts",
+    left instanceof THREE.BufferGeometry && right instanceof THREE.BufferGeometry,
+    "merged at module scope -- this route reports its own draw-call count, so a hand that costs six calls is the instrument charging itself for furniture")
+
+  const tris = left.index ? left.index.count / 3 : left.attributes.position.count / 3
+  check("and is low-poly, as asked",
+    tris > 50 && tris < 400,
+    `${tris} triangles -- palm, four fingers, a thumb and a cuff`)
+
+  left.computeBoundingBox()
+  right.computeBoundingBox()
+  const lb = left.boundingBox!
+  const size = lb.getSize(new THREE.Vector3())
+  // A human hand is roughly 95mm across the knuckles and 180mm heel to
+  // fingertip. Anything outside this envelope is wrong in a way that is
+  // obvious in a headset and invisible everywhere else.
+  check("it is hand-sized, in metres",
+    size.x > 0.07 && size.x < 0.16 && size.z > 0.10 && size.z < 0.22 && size.y < 0.08,
+    `${(size.x * 1000).toFixed(0)} x ${(size.y * 1000).toFixed(0)} x ${(size.z * 1000).toFixed(0)} mm`)
+
+  // The grip origin sits in the middle of a closed fist, so the palm must
+  // straddle it rather than hang off it -- otherwise the hand pivots about
+  // its wrist and swings like a flag when you turn the controller.
+  check("the grip origin is inside the palm, not at the wrist",
+    Math.abs((lb.min.z + lb.max.z) / 2) < size.z * 0.35 && lb.min.z < 0 && lb.max.z > 0,
+    `z spans ${lb.min.z.toFixed(3)} to ${lb.max.z.toFixed(3)} -- the origin is enclosed`)
+
+  // The thumb is the only asymmetric part, and it is what tells you at a
+  // glance which hand you are looking at.
+  const rb = right.boundingBox!
+  check("left and right are mirror images, not the same hand twice",
+    Math.abs(lb.min.x + rb.max.x) < 1e-5 && Math.abs(lb.max.x + rb.min.x) < 1e-5 && Math.abs(lb.min.x - rb.min.x) > 1e-4,
+    `left x ${lb.min.x.toFixed(4)}..${lb.max.x.toFixed(4)} against right ${rb.min.x.toFixed(4)}..${rb.max.x.toFixed(4)}`)
+
+  check("and it carries normals, so the facets can catch the light",
+    left.attributes.normal != null && left.attributes.normal.count === left.attributes.position.count,
+    `${left.attributes.normal?.count ?? 0} normals for ${left.attributes.position.count} vertices -- the scene has lights now precisely for these`)
+}
+
+// --- THE WRIST GATE ----------------------------------------------------
+//
+// The requirement was "when the left wrist rotates 30 or 45 degrees then a
+// menu pops up", and the thing that makes such a gate good or unusable is
+// whether it flickers. That cannot be checked in a browser here -- a real XR
+// session cannot be driven headless in this project -- so it is checked as
+// arithmetic or not at all.
+{
+  const FOREARM = [0, 0, 1] as const
+  const PALM = [0, -1, 0] as const
+  const q = (axis: THREE.Vector3, deg: number) =>
+    new THREE.Quaternion().setFromAxisAngle(axis, (deg * Math.PI) / 180)
+  const Z = new THREE.Vector3(0, 0, 1)
+  const X = new THREE.Vector3(1, 0, 0)
+
+  check("a level wrist reads zero roll",
+    Math.abs(wristRoll(new THREE.Quaternion(), FOREARM, PALM)) < 1e-6,
+    `${wristRoll(new THREE.Quaternion(), FOREARM, PALM).toFixed(6)} degrees -- palm down is the zero`)
+
+  for (const deg of [20, 35, 45, 90]) {
+    const got = Math.abs(wristRoll(q(Z, deg), FOREARM, PALM))
+    check(`rolling ${deg} degrees about the forearm reads ${deg}`,
+      Math.abs(got - deg) < 1e-4,
+      `${got.toFixed(3)} degrees`)
+  }
+
+  // Rolling about a PERPENDICULAR axis is not a roll, and a naive
+  // implementation reports one.
+  check("but pitching the arm is not a roll",
+    Math.abs(wristRoll(q(X, 40), FOREARM, PALM)) < 1e-4,
+    `${wristRoll(q(X, 40), FOREARM, PALM).toFixed(4)} degrees for a 40 degree pitch -- the gate must not fire just because you raised your arm`)
+
+  // THE GIMBAL TEST. An Euler-based implementation passes everything above and
+  // fails this one, and "arm pointing down" is where an arm actually lives.
+  {
+    const pitched = q(X, -85).multiply(q(Z, 35))
+    const got = Math.abs(wristRoll(pitched, FOREARM, PALM))
+    check("and a 35 degree roll still reads 35 with the arm pointing down",
+      Math.abs(got - 35) < 0.5,
+      `${got.toFixed(2)} degrees at an 85 degree pitch -- an Euler decomposition degenerates here, which is why this is atan2 of a projection`)
+  }
+
+  // --- the state machine --------------------------------------------
+  const IN = { held: 0, onDeg: 35, offDeg: 20, onDwellMs: 120, offDwellMs: 250 }
+  const step = (s: GateState, roll: number, now: number, held = 0) =>
+    nextGateState(s, { ...IN, roll, now, held })
+
+  {
+    // Crossing ON is not enough; it has to be held.
+    let s = step(GATE_CLOSED, 40, 0)
+    check("crossing the threshold does not open it immediately",
+      !s.open,
+      "the dwell has not elapsed -- a threshold swept through on the way somewhere else is not a request for a menu")
+    s = step(s, 40, 119)
+    check("...nor one millisecond early", !s.open, "119ms of a 120ms dwell")
+    s = step(s, 40, 120)
+    check("...and does once the dwell is met", s.open, "120ms held past 35 degrees")
+  }
+
+  // THE NO-FLICKER ASSERTIONS, which are two properties and not one. The
+  // first version of this conflated them and asserted "exactly one transition"
+  // for a wrist wobbling across the ON threshold -- and got zero, correctly:
+  // 35 +/- 1.5 with a ~232ms period sits above 35 for only ~116ms at a time,
+  // just under the 120ms dwell, so the roll genuinely never sustains. The
+  // code was right and the expectation was wrong.
+  {
+    // Resting ON the boundary: whatever it decides, it must not FLAP.
+    let s: GateState = GATE_CLOSED
+    let transitions = 0
+    let was = false
+    for (let t = 0; t < 4000; t += 16) {
+      s = step(s, 35 + Math.sin(t / 37) * 1.5, t)
+      if (s.open !== was) { transitions++; was = s.open }
+    }
+    check("a wrist resting ON the threshold never flaps",
+      transitions <= 1,
+      `${transitions} transition(s) over 4s of +/-1.5 degree wobble straddling the boundary -- a single-threshold gate would toggle on every crossing, roughly 17 times here`)
+  }
+
+  {
+    // Held clearly past it, with the same tremor: opens once, stays open.
+    let s: GateState = GATE_CLOSED
+    let transitions = 0
+    let was = false
+    for (let t = 0; t < 4000; t += 16) {
+      s = step(s, 48 + Math.sin(t / 37) * 1.5, t)
+      if (s.open !== was) { transitions++; was = s.open }
+    }
+    check("and a wrist held past it opens exactly once and stays open",
+      transitions === 1 && s.open,
+      `${transitions} transition over 4s at 48 +/- 1.5 degrees`)
+  }
+
+  {
+    // The dead band: open, then come back to 25 degrees. 25 is below ON but
+    // above OFF, so it must stay open indefinitely.
+    let s: GateState = { open: true, since: null }
+    for (let t = 0; t < 3000; t += 16) s = step(s, 25, t)
+    check("and relaxing into the dead band leaves it open",
+      s.open,
+      "25 degrees is under the 35 that opens it but over the 20 that closes it, so nothing happens -- that gap is what tremor cannot cross")
+  }
+
+  {
+    let s: GateState = { open: true, since: null }
+    s = step(s, 10, 0)
+    check("dropping below the close threshold does not close it at once", s.open, "the 250ms off-dwell")
+    s = step(s, 10, 249)
+    check("...nor early", s.open, "249ms of 250")
+    s = step(s, 10, 250)
+    check("...and does once the longer off-dwell is met",
+      !s.open,
+      "250ms, deliberately longer than the 120ms to open -- a menu that vanishes while you reach for a button is the worse failure")
+  }
+
+  {
+    // THE GRAB COLLISION. Scaling the model with two hands IS a wrist roll.
+    let s = step(GATE_CLOSED, 90, 0, 2)
+    check("a two-handed grab cannot open the menu",
+      !s.open,
+      "90 degrees of roll with both grips held stays shut -- the two-handed scale gesture turns the model by the bearing between the hands, so without this the menu would open every time the survey was resized")
+    s = step({ open: true, since: null }, 90, 100, 1)
+    check("and starting a grab closes one that is already open",
+      !s.open,
+      "a menu left hanging through a manipulation would be in front of the thing being manipulated")
+  }
+}
+
+// The menu's placement used to be tested here -- four assertions on a pure
+// `menuPlacement(head, quaternion, distance, drop)`. Both the function and the
+// tests are gone, and their absence is the fix rather than a gap in it: the
+// panel is head-locked now, portalled into the camera by ScanMenuHost, so its
+// pose IS the head's pose and there is no computation left to assert. The
+// arithmetic those tests guarded -- discard pitch, keep yaw, never roll --
+// only existed to stop a WORLD-placed panel lying on the floor, and a panel
+// parented to the head inherits its orientation by definition.
+//
+// Deleting a passing test is usually wrong; deleting one whose subject no
+// longer exists is the other half of deleting the subject.
 
 // --- the CSV export generates its own header --------------------------
 {

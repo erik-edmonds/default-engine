@@ -35,7 +35,14 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const SRC = path.resolve(import.meta.dirname, "..", "src")
+const SCRIPTS = path.resolve(import.meta.dirname)
 const EXTENSIONS = [".ts", ".tsx", ".mjs", ".js", ".json"]
+
+/** Is this one of our files, rather than something in node_modules? */
+function isOurs(parentURL) {
+  const file = fileURLToPath(parentURL)
+  return file.startsWith(SRC + path.sep) || file.startsWith(SCRIPTS + path.sep)
+}
 
 /** Add an extension, or resolve a directory to its index, if the path as
  *  given is not a file. Returns null when nothing matches, so the caller can
@@ -60,8 +67,22 @@ registerHooks({
       if (resolved) return nextResolve(pathToFileURL(resolved).href, context)
     }
 
-    // "./x" or "../x" with no extension, from a file inside the project.
-    if (specifier.startsWith(".") && !path.extname(specifier) && context.parentURL?.startsWith("file:")) {
+    // "./x" or "../x" with no extension, from one of OUR OWN files.
+    //
+    // SCOPED TO src/ AND scripts/, AND THAT SCOPE IS LOAD-BEARING. Without it
+    // this branch also fires for every relative `require` inside
+    // node_modules, where packages ship real CommonJS with their own
+    // resolution expectations -- copc depends on cross-fetch, which depends on
+    // node-fetch, which depends on whatwg-url, and rewriting whatwg-url's
+    // internal requires into file: URLs breaks the CJS loader with a
+    // MODULE_NOT_FOUND three packages deep. Nothing in node_modules needs
+    // help; only our extensionless TypeScript does.
+    if (
+      specifier.startsWith(".") &&
+      !path.extname(specifier) &&
+      context.parentURL?.startsWith("file:") &&
+      isOurs(context.parentURL)
+    ) {
       const from = path.dirname(fileURLToPath(context.parentURL))
       const resolved = withExtension(path.resolve(from, specifier))
       if (resolved) return nextResolve(pathToFileURL(resolved).href, context)

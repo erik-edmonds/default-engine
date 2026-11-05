@@ -1326,7 +1326,11 @@ export default function IslandExperience() {
           {/* The ambient beds, mounted once and never moved. The switch
               above is free to be rendered wherever the menu wants it; this
               is the thing that must not be torn down. */}
-          <AmbientBeds currentPhase={currentPhase} />
+          {/* `started` as well as the sound switch: coming back from the scan
+              viewer is a client-side navigation, so `sfxEnabled` survives from
+              the previous visit while this remounts with the loading screen
+              up. See the note on the early return in AmbientBeds. */}
+          <AmbientBeds currentPhase={currentPhase} started={started} />
           <SiteMenu
             soundToggle={<SoundToggle currentPhase={currentPhase} bare />}
             onOpenChange={setMenuOpen}

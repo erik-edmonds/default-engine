@@ -21,6 +21,7 @@
 import { createLazPerf } from "laz-perf"
 
 import { decodeRecords, type Scaling } from "./records"
+import type { ExtraByteLocation } from "./extraBytes"
 
 interface WorkerScope {
   postMessage(message: unknown, transfer?: Transferable[]): void
@@ -37,6 +38,10 @@ export interface DecodeRequest {
   pointDataRecordLength: number
   scaling: Scaling
   origin: [number, number, number]
+  /** Plain data, so it structured-clones without ceremony. Null for a file
+   *  with no height-above-ground dimension, which is every file that has not
+   *  been through the annotation pipeline. */
+  hagLocation: ExtraByteLocation | null
 }
 
 export interface DecodeResponse {
@@ -44,6 +49,9 @@ export interface DecodeResponse {
   position?: Float32Array
   color?: Float32Array
   classification?: Uint8Array
+  hag?: Float32Array
+  classHistogram?: Uint32Array
+  hagMax?: number
   pointCount?: number
   error?: string
 }
@@ -118,20 +126,29 @@ ctx.addEventListener("message", (event: MessageEvent) => {
         job.pointDataRecordFormat,
         job.scaling,
         job.origin,
+        job.hagLocation,
       )
       const response: DecodeResponse = {
         id: job.id,
         position: decoded.position,
         color: decoded.color,
         classification: decoded.classification,
+        hag: decoded.hag,
+        classHistogram: decoded.classHistogram,
+        hagMax: decoded.hagMax,
         pointCount: decoded.pointCount,
       }
       // Transferred, not copied -- these are the only reference the main
       // thread will hold, and a megabyte per node adds up fast otherwise.
+      //
+      // A zero-length array still has a buffer and still transfers fine, so
+      // the empty `color`/`hag` cases need no special case here.
       ctx.postMessage(response, [
         decoded.position.buffer,
         decoded.color.buffer,
         decoded.classification.buffer,
+        decoded.hag.buffer,
+        decoded.classHistogram.buffer,
       ])
     } catch (error) {
       const response: DecodeResponse = {

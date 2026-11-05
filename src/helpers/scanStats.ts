@@ -1,4 +1,5 @@
 import type { CloudStats } from "@/components/scan/PointCloud"
+import type { ColorModeName } from "@/config/asprs"
 
 import { FrameTimes } from "@/helpers/frameStats"
 
@@ -46,8 +47,42 @@ export const scanStats: {
   /** renderer.info at the last panel tick. */
   drawCalls: number
   programs: number
-  /** `pointsMaterial.size`, in CSS pixels, as the cloud sets it. */
+  /** Point size in CSS pixels across the RESIDENT SET, not one number.
+   *
+   *  It stopped being one number when the size started being computed per node
+   *  from the octree's own spacing -- see pointSizeForDepth. A single figure
+   *  would have to be a lie about either the coarse nodes or the fine ones, and
+   *  the whole reason the per-node size exists is that those differ. The panel
+   *  shows the range. */
   pointSize: number
+  pointSizeMax: number
+  /** Which colour the cloud is drawn in. */
+  colorMode: ColorModeName
+  /** Whether this file carries height above ground, i.e. whether it has been
+   *  through the annotation pipeline. The height colour mode is meaningless
+   *  without it, and the panel says so rather than offering a control that
+   *  draws flat grey. */
+  hasHag: boolean
+  /** Classification counts over the resident set, 256 bins summed from the
+   *  per-node histograms the decoder produces.
+   *
+   *  THE RESIDENT SET, NOT THE FILE, and the difference matters when reading
+   *  it: this is what is on screen at the current budget and camera, so it
+   *  changes as you move. Whole-file proportions are the pipeline's job, in
+   *  scan_stats, computed over every point rather than over a view. */
+  classHistogram: Uint32Array
+  /** Tallest resident point above ground, in FILE UNITS. */
+  hagMax: number
+  /** Metres per file unit, so the panel can report a height in metres without
+   *  having to be handed the scan definition. */
+  unitsToMetres: number
+  /** The left wrist's roll in degrees, as the gate measures it.
+   *
+   *  Published for tuning, not for decoration: which grip-space axis is the
+   *  forearm is the one thing that cannot be determined away from the
+   *  hardware, so the menu shows the live angle and the thresholds can be set
+   *  by watching the number rather than by guessing. */
+  wristRoll: number
   /** `gl.getPixelRatio()`. THREE MULTIPLIES THE TWO: the shader's
    *  `gl_PointSize` is `size * pixelRatio`, and three sets the ratio to 1 for
    *  a session, so the worn size is not the desktop one. The panel shows the
@@ -66,5 +101,12 @@ export const scanStats: {
   drawCalls: 0,
   programs: 0,
   pointSize: 0,
+  pointSizeMax: 0,
+  colorMode: "rgb",
+  hasHag: false,
+  classHistogram: new Uint32Array(256),
+  hagMax: 0,
+  unitsToMetres: 1,
+  wristRoll: 0,
   pixelRatio: 1,
 }

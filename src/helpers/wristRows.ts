@@ -1,6 +1,7 @@
 import { DROP_FACTOR, frameBudgetMs } from "@/helpers/frameStats"
 import type { scanStats } from "@/helpers/scanStats"
 import { XR_TARGET_HZ } from "@/config/xrScan"
+import { COLOR_MODE_LABELS, GROUND_CLASS, HAG_BANDS, NOISE_CLASS } from "@/config/asprs"
 
 /** The wrist panel's rows, as data rather than as JSX.
  *
@@ -34,11 +35,30 @@ export const WRIST_ROWS = [
   "",
   "scale",
   "point",
+  "colour",
+  "",
+  // WHAT THE PIPELINE MADE OF IT. Proportions over the RESIDENT SET, so they
+  // move as you look around -- whole-file figures belong in scan_stats, where
+  // they are computed over every point instead of over a view. Ground and
+  // canopy are the two numbers an agricultural QA pass is actually reading,
+  // and noise is on the panel because a classifier that has quietly thrown
+  // half the scan into class 7 looks fine until you check.
+  "ground",
+  "canopy",
+  "noise",
+  "tallest",
   "",
   "eye",
   "foveation",
   "refresh",
   "draws",
+  "",
+  // THE TUNING ROW. Which grip-space axis is the forearm cannot be determined
+  // away from the hardware, so the gate's live measurement is on the panel:
+  // turn your wrist, watch the number, and set WRIST_MENU_ON_DEG to whatever
+  // the comfortable position actually reads. Without it the threshold is a
+  // guess checked by trial and error.
+  "roll",
 ] as const
 
 /** What the model is actually at, after the rig and then the hands.
@@ -58,6 +78,78 @@ export function effectiveRatio(s: Readout): string {
   const up = 1 / ratio
   return `${up < 10 ? up.toFixed(1) : Math.round(up)}:1`
 }
+
+/** Point size in DEVICE pixels, as a range across the resident set. */
+export function pointSizeRange(s: Readout): string {
+  const lo = s.pointSize * s.pixelRatio
+  const hi = s.pointSizeMax * s.pixelRatio
+  if (lo <= 0 && hi <= 0) return "—"
+  if (Math.abs(hi - lo) < 0.05) return `${lo.toFixed(1)} px`
+  return `${lo.toFixed(1)}–${hi.toFixed(1)} px`
+}
+
+/** Share of the resident points carrying any of `codes`, as a percentage.
+ *
+ *  Returns an em dash rather than "0.0%" for an empty cloud, because zero
+ *  percent ground and no data at all are very different things to be looking
+ *  at while deciding whether a pipeline run worked. */
+export function classShare(s: Readout, codes: readonly number[]): string {
+  let total = 0
+  for (let i = 0; i < s.classHistogram.length; i++) total += s.classHistogram[i]
+  if (total === 0) return "—"
+  let n = 0
+  for (const c of codes) n += s.classHistogram[c] ?? 0
+  return `${((n / total) * 100).toFixed(1)}%`
+}
+
+/** The vegetation classes, taken from the bands the pipeline assigns rather
+ *  than restated, so "canopy" on the panel means exactly what the pipeline
+ *  called vegetation. */
+const CANOPY_CLASSES = HAG_BANDS.map((b) => b.class)
+
+/** Split the rows into balanced columns, breaking ONLY on a spacer.
+ *
+ *  THE READOUT ALREADY OVERFLOWED BEFORE THIS PHASE ADDED A ROW, which is
+ *  worth recording because it was invisible: at 19 rows of 17px with a 3px gap
+ *  the column needs about 442 uikit px and the panel leaves 427, so the last
+ *  row was clipped -- and the last row is `roll`, the live wrist angle the
+ *  thresholds are supposed to be tuned against. A number you cannot see is
+ *  worse than no number, and nothing about it looked broken.
+ *
+ *  Two columns fix it with room to spare and also make better use of a panel
+ *  that is 806px wide and was spending 520 of them on one narrow list.
+ *
+ *  Breaking only on a spacer keeps the groups intact: a column that started
+ *  mid-group would read as though the heading above it applied. Returns
+ *  INDICES, not strings, so labels and values cannot drift apart -- the same
+ *  concern the row-count invariant at the top of this file exists for. */
+export function wristColumns(rowCount: number, spacers: readonly number[]): number[][] {
+  if (rowCount === 0) return [[]]
+  const midpoint = rowCount / 2
+  let breakAt = -1
+  for (const i of spacers) {
+    if (breakAt === -1 || Math.abs(i - midpoint) < Math.abs(breakAt - midpoint)) breakAt = i
+  }
+  // No spacer at all: one column is the honest answer rather than a split
+  // through the middle of a group.
+  if (breakAt === -1) return [Array.from({ length: rowCount }, (_, i) => i)]
+  const left: number[] = []
+  const right: number[] = []
+  for (let i = 0; i < rowCount; i++) {
+    // The spacer itself is dropped: it was separating groups within one
+    // column, and the column break now does that job.
+    if (i === breakAt) continue
+    ;(i < breakAt ? left : right).push(i)
+  }
+  return [left, right]
+}
+
+/** Indices of the spacer rows, derived rather than hand-listed so inserting a
+ *  row cannot leave this stale. */
+export const WRIST_SPACERS: readonly number[] = WRIST_ROWS.reduce<number[]>(
+  (acc, label, i) => (label === "" ? [...acc, i] : acc),
+  [],
+)
 
 /** Right column, in the same order. One string per label.
  *
@@ -88,12 +180,27 @@ export function wristValues(s: Readout): string[] {
     // pointsMaterial.size by the renderer's pixel ratio, and in a session it
     // sets that ratio to 1 — so a 1.6 that is 3.2px on a retina monitor is
     // 1.6px worn, under the shimmer floor.
-    `${(s.pointSize * s.pixelRatio).toFixed(1)} px`,
+    //
+    // A RANGE, because the size is now computed per node from the octree's
+    // spacing rather than being one constant. Collapsed to a single figure
+    // when the resident set happens to be one depth, which is what it is
+    // before the first refinement lands.
+    pointSizeRange(s),
+    COLOR_MODE_LABELS[s.colorMode],
+    "",
+    classShare(s, [GROUND_CLASS]),
+    classShare(s, CANOPY_CLASSES),
+    classShare(s, [NOISE_CLASS]),
+    // In METRES, converted from file units, because "tallest: 94" is unusable
+    // when the file is in feet and the bands that produced it were in metres.
+    s.hasHag ? `${(s.hagMax * s.unitsToMetres).toFixed(1)} m` : "—",
     "",
     s.framebuffer[0] ? `${s.framebuffer[0]}x${s.framebuffer[1]}` : "—",
     s.foveation.toFixed(2),
     `${s.hz || 0} Hz`,
     `${s.drawCalls}`,
+    "",
+    `${s.wristRoll >= 0 ? "" : "-"}${Math.abs(s.wristRoll).toFixed(0)}\u00b0`,
   ]
 }
 

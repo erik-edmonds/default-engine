@@ -18,8 +18,19 @@ export interface ScanDefinition {
   label: string
   /** One line about what this is and where it came from. */
   credit: string
-  /** A COPC file, served with CORS and HTTP range support. */
+  /** A COPC file, served with CORS and HTTP range support. The RAW survey. */
   url: string
+  /** The annotated derivative, when a pipeline run has produced one.
+   *
+   *  Written by pipeline/annotate.py: corrected ASPRS classification, plus
+   *  height above ground as an extra-bytes dimension. It is the only file the
+   *  class and height colour modes can draw anything meaningful from.
+   *
+   *  OPTIONAL, AND THE ABSENT CASE IS THE SHIPPED ONE. The sample survey has
+   *  never been through the pipeline, so every path has to render correctly
+   *  without it -- see `scanUrl` in lib/scans.ts, and the HAS_HAG define in
+   *  lib/scan/pointMaterial.ts. */
+  derivedUrl?: string
   /** Roughly, for the readout before the header has been parsed. */
   approxPoints: number
   /** Metres per file unit. 1 for a survey in metres, 0.3048 for one in feet.
@@ -32,6 +43,18 @@ export interface ScanDefinition {
    *  Read from the file's WKT rather than guessed; see the note on autzen.
    *  Parsing it automatically is possible and fragile, and is its own job. */
   unitsToMetres: number
+}
+
+/** The URL the viewer should actually stream: the annotated derivative when a
+ *  pipeline run has produced one, the raw survey otherwise.
+ *
+ *  HERE AND NOT IN lib/scans.ts, DELIBERATELY. That module reads the registry
+ *  from Postgres and therefore imports `pg`, which is Node-only --
+ *  `ScanExperience` is a client component, so importing anything from there
+ *  would drag the Postgres driver into the browser bundle. This function needs
+ *  no database; it only needs the definition it is handed. */
+export function scanUrl(scan: ScanDefinition): string {
+  return scan.derivedUrl ?? scan.url
 }
 
 export const SCANS: Record<string, ScanDefinition> = {

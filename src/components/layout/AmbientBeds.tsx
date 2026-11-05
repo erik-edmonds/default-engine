@@ -44,7 +44,7 @@ const SKY_AMBIENT_VOLUME = 0.22
 // there's no risk of the audio outlasting the phase it belongs to.
 const CROSSFADE_MS = 4000
 
-export function AmbientBeds({ currentPhase }: { currentPhase: TimeOfDay }) {
+export function AmbientBeds({ currentPhase, started }: { currentPhase: TimeOfDay; started: boolean }) {
   const enabled = useAtomValue(sfxEnabled)
   const setBlocked = useSetAtom(sfxBlocked)
 
@@ -96,7 +96,30 @@ export function AmbientBeds({ currentPhase }: { currentPhase: TimeOfDay }) {
   const inSky = useAtomValue(inSkyJourney)
 
   useEffect(() => {
-    if (!enabled) {
+    // `!started` SHARES THE EARLY RETURN WITH `!enabled`, rather than getting
+    // a guard of its own. The comment below is the reason: the one bug this
+    // effect has already had was a bed reached by the fade logic but not by
+    // this return, and a second entry point for "stop everything" is how that
+    // happens again.
+    //
+    // WHY `started` IS HERE AT ALL -- reported as "when I click to go back to
+    // the island, on the loading screen the background noise is playing."
+    // Three facts compose into it:
+    //
+    //   1. `sfxEnabled` defaults false and is flipped true by the Enter click
+    //      itself, "a real user gesture" (StateProvider.tsx) -- so on a cold
+    //      load nothing can play before the scene is entered.
+    //   2. The scan viewer's way back is `<Link href="/">`, a CLIENT-SIDE
+    //      navigation. The jotai store is never torn down, so `sfxEnabled`
+    //      arrives still true from the previous visit and the audio context is
+    //      already unlocked.
+    //   3. IslandExperience remounts with `started` false and the loading
+    //      screen back up.
+    //
+    // So the gesture requirement that used to stand in for "the island is on
+    // screen" silently stopped standing in for it the moment a second route
+    // could hand control back. The invariant is stated directly now.
+    if (!enabled || !started) {
       // Guarded on playing(): pausing a Howl that was never started still
       // makes Howler touch its underlying <audio> element, and with
       // html5 streaming that tears down an in-flight range request --
@@ -170,7 +193,7 @@ export function AmbientBeds({ currentPhase }: { currentPhase: TimeOfDay }) {
     return () => {
       for (const t of stops) clearTimeout(t)
     }
-  }, [enabled, isNight, inSky, waves, tides, clouds])
+  }, [enabled, started, isNight, inSky, waves, tides, clouds])
 
   // Stop AND unload on unmount.
   //

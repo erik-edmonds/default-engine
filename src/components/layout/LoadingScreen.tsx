@@ -26,19 +26,28 @@ const STAMP_DURATION = 0.42 // seconds -- matches globals.css's .animate-stamp
 const STAMP_EASE = "cubic-bezier(0.2, 0.8, 0.3, 1)" // same curve, for motion continuity with the hero name-stamp
 const DESKTOP_DOT_BLUR = 3 // down from an earlier 6 -- crisper dots, since the connection graph now carries more of the visual richness
 
-// Nearest-neighbor connection graph: each particle links to its 2-3 closest
+// Nearest-neighbor connection graph: each particle links to its k closest
 // neighbors (by real, unclamped distance), redrawn continuously. A uniform
 // spatial grid keeps this cheap (avoids an O(n^2) pairwise scan every
-// frame) -- see rebuildGrid/findNeighbors below. The grid's own box is
-// deliberately *tighter* than the particles' full scatter radius, and only
-// used to pick which cell a particle buckets into (never for the actual
-// distance/line-drawing math, which always uses true position). That one
-// choice is what makes the "chaotic web while scattered, clean mesh once
-// converged" effect happen for free: scattered particles clamp to the same
-// border cells regardless of how far apart they really are, so their
-// (true-distance) connections read as long, crossing lines; once particles
-// land inside the box, clamping becomes a no-op and the graph naturally
-// tightens into an accurate nearest-neighbor mesh tracing the logo.
+// frame) -- see rebuildGrid/findNeighbors below.
+//
+// THE GRID BOX USED TO BE FIXED, AND DELIBERATELY TIGHTER than the particles'
+// scatter radius. The stated intent was a free visual effect: scattered
+// particles would clamp into the same border cells however far apart they
+// really were, so their true-distance edges read as "long, crossing lines",
+// and the graph tightened into an accurate mesh only once everything had
+// landed inside the box.
+//
+// The intent was fine and the geometry was not. Clamping happens PER AXIS, so
+// a particle outside the box on one axis only kept its true coordinate on the
+// other -- producing four axis-aligned streak fields, one off each edge of the
+// box, instead of a chaotic web. Reported as: "the north south east and west
+// lines run really weird and stretched. They don't look like the floating
+// parts of the parts around it." See the note on cellIndex.
+//
+// The box is now measured from the particles each rebuild (rebuildGrid), so
+// nothing is ever clamped and every edge is a true nearest neighbour at every
+// stage of the convergence.
 /** Edges per particle. The selection below is a generic k-nearest insertion,
  *  so this genuinely controls how dense the mesh looks -- it used to be a
  *  hand-unrolled best-of-three and the constant was decorative. Line drawing
@@ -148,6 +157,14 @@ interface ConnectionState {
   neighborDistSq: Float32Array
   currentX: Float32Array // this frame's drawn position -- shared between the line and dot passes
   currentY: Float32Array
+  /** The box the grid currently spans, recomputed from the particles
+   *  themselves on every rebuild. Written by rebuildGrid, read by
+   *  findNeighbors -- they MUST agree, or a particle buckets into one cell and
+   *  is searched for in another. See the note on cellIndex. */
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
 }
 
 function buildConnectionState(n: number): ConnectionState {
@@ -163,26 +180,80 @@ function buildConnectionState(n: number): ConnectionState {
     neighborDistSq: new Float32Array(n * NEIGHBOR_COUNT),
     currentX: new Float32Array(n),
     currentY: new Float32Array(n),
+    minX: CONNECTION_GRID_MIN,
+    maxX: CONNECTION_GRID_MAX,
+    minY: CONNECTION_GRID_MIN,
+    maxY: CONNECTION_GRID_MAX,
   }
 }
 
-function clampCellIndex(v: number, gridSize: number): number {
-  const t = (v - CONNECTION_GRID_MIN) / (CONNECTION_GRID_MAX - CONNECTION_GRID_MIN)
+/** Bucket a coordinate into a cell, against a box given per axis.
+ *
+ *  THE PER-AXIS CLAMP IS THE WHOLE BUG, when the box is tighter than the
+ *  particles -- which is what the fixed CONNECTION_GRID_MIN/MAX box did.
+ *  Clamping x and y INDEPENDENTLY means a particle outside the box on one axis
+ *  only keeps its true coordinate on the other, so every particle in that edge
+ *  strip collapses onto one shared row (or column) while staying spread along
+ *  the axis that was kept. Their nearest in-cell candidates are therefore
+ *  spread along the collapsed axis, and every edge drawn between them is long
+ *  and axis-aligned.
+ *
+ *  That produced exactly four of them -- above, below, left and right of the
+ *  box -- which is what was reported: "the north south east and west lines run
+ *  really weird and stretched... there are really long lines, not short local
+ *  joined lines that look more relaxed and natural." The particles outside on
+ *  BOTH axes land in a corner cell, where the candidate set is dense enough
+ *  that the nearest few really are nearby, which is why the surrounding web
+ *  looks right and only the four arms do not. */
+function cellIndex(v: number, min: number, max: number, gridSize: number): number {
+  const t = (v - min) / (max - min)
   const c = Math.floor(Math.min(1, Math.max(0, t)) * gridSize)
   return c >= gridSize ? gridSize - 1 : c
 }
 
+
 // Bucket-sort (linked-cell-list) grid rebuild -- O(n + gridSize^2), no
 // per-call allocation. Only run on a cadence (see drawFrame), not every
 // frame; positions still animate smoothly every frame regardless.
-function rebuildGrid(particles: Particles, conn: ConnectionState, eased: number) {
+function rebuildGrid(particles: Particles, conn: ConnectionState, eased: number, adaptive: boolean) {
   const G = conn.gridSize
   conn.cellCount.fill(0)
+
+  // MEASURE THE CLOUD, THEN BUCKET INTO IT.
+  //
+  // Two passes over the particles instead of one, which at 1600 particles
+  // every 90ms is nothing, and it is what removes the four arms: if the box
+  // always contains every particle then nothing is ever clamped, so no axis is
+  // ever collapsed and every edge is a true nearest neighbour. The box
+  // contracts with the cloud as it converges, so the mesh keeps the same
+  // local character at 3% as at 100% -- just at a different size.
+  if (adaptive) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (let i = 0; i < particles.n; i++) {
+      const nx = particles.scatterX[i] + (particles.targetX[i] - particles.scatterX[i]) * eased
+      const ny = particles.scatterY[i] + (particles.targetY[i] - particles.scatterY[i]) * eased
+      if (nx < minX) minX = nx
+      if (nx > maxX) maxX = nx
+      if (ny < minY) minY = ny
+      if (ny > maxY) maxY = ny
+    }
+    // A hair of padding so the extreme particle is inside the box rather than
+    // exactly on its edge, and so a degenerate extent can never divide by zero.
+    const padX = Math.max((maxX - minX) * 1e-3, 1e-6)
+    const padY = Math.max((maxY - minY) * 1e-3, 1e-6)
+    conn.minX = minX - padX
+    conn.maxX = maxX + padX
+    conn.minY = minY - padY
+    conn.maxY = maxY + padY
+  } else {
+    conn.minX = conn.minY = CONNECTION_GRID_MIN
+    conn.maxX = conn.maxY = CONNECTION_GRID_MAX
+  }
 
   for (let i = 0; i < particles.n; i++) {
     const nx = particles.scatterX[i] + (particles.targetX[i] - particles.scatterX[i]) * eased
     const ny = particles.scatterY[i] + (particles.targetY[i] - particles.scatterY[i]) * eased
-    const cell = clampCellIndex(ny, G) * G + clampCellIndex(nx, G)
+    const cell = cellIndex(ny, conn.minY, conn.maxY, G) * G + cellIndex(nx, conn.minX, conn.maxX, G)
     conn.cellOf[i] = cell
     conn.cellCount[cell]++
   }
@@ -205,8 +276,11 @@ function findNeighbors(particles: Particles, conn: ConnectionState, eased: numbe
   for (let i = 0; i < particles.n; i++) {
     const nxi = particles.scatterX[i] + (particles.targetX[i] - particles.scatterX[i]) * eased
     const nyi = particles.scatterY[i] + (particles.targetY[i] - particles.scatterY[i]) * eased
-    const cxi = clampCellIndex(nxi, G)
-    const cyi = clampCellIndex(nyi, G)
+    // THE SAME BOX rebuildGrid bucketed into, read off the shared state. If
+    // these two ever disagree a particle is filed in one cell and looked for
+    // in another, and the mesh quietly loses half its edges.
+    const cxi = cellIndex(nxi, conn.minX, conn.maxX, G)
+    const cyi = cellIndex(nyi, conn.minY, conn.maxY, G)
 
     // k-nearest by insertion, kept sorted nearest-first. Written straight into
     // the output arrays so there is no per-particle allocation.
@@ -317,10 +391,30 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
     // existing perf-tier convention (ContactShadows/N8AO in page.tsx).
     const showConnections = !isCoarsePointer
 
-    const progressRef = useRef(progress)
+    /** DEBUG PINS, read once, in the style of the scan viewer's `?budget=`
+     *  and the island's `?path`.
+     *
+     *  `?loading=40` freezes the convergence at 40% so the particle web can be
+     *  looked at, and compared against itself, at a fixed point -- it is
+     *  otherwise only ever glimpsed for the duration of a real asset load, and
+     *  two runs never agree closely enough to compare.
+     *
+     *  `?grid=clamped` restores the old fixed-box bucketing, so the change
+     *  that removed the four arms can be shown rather than argued about. */
+    const [pinnedProgress, adaptiveGrid] = useMemo(() => {
+      if (typeof window === "undefined") return [null as number | null, true]
+      const q = new URLSearchParams(window.location.search)
+      const raw = q.get("loading")
+      const pin = raw === null || raw === "" || Number.isNaN(Number(raw))
+        ? null
+        : Math.min(100, Math.max(0, Number(raw)))
+      return [pin, q.get("grid") !== "clamped"]
+    }, [])
+
+    const progressRef = useRef(pinnedProgress ?? progress)
     useEffect(() => {
-      progressRef.current = progress
-    }, [progress])
+      progressRef.current = pinnedProgress ?? progress
+    }, [progress, pinnedProgress])
 
     const [displayPercent, setDisplayPercent] = useState(0)
     // Lerp-chased toward the real `progress` prop, not read/set directly --
@@ -429,7 +523,7 @@ export const LoadingScreen = forwardRef<LoadingScreenHandle, LoadingScreenProps>
 
         const now = performance.now()
         if (now - lastGridRebuildTimeRef.current >= NEIGHBOR_REBUILD_INTERVAL_MS) {
-          rebuildGrid(particles, connections, eased)
+          rebuildGrid(particles, connections, eased, adaptiveGrid)
           findNeighbors(particles, connections, eased)
           lastGridRebuildTimeRef.current = now
         }

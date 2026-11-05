@@ -79,6 +79,9 @@ export class DecodePool {
       position: response.position,
       color: response.color ?? new Float32Array(0),
       classification: response.classification ?? new Uint8Array(0),
+      hag: response.hag ?? new Float32Array(0),
+      classHistogram: response.classHistogram ?? new Uint32Array(256),
+      hagMax: response.hagMax ?? 0,
       pointCount: response.pointCount ?? 0,
     })
   }

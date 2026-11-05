@@ -7,7 +7,7 @@ import { useFrame, useThree } from "@react-three/fiber"
 import { DROP_FACTOR, frameBudgetMs } from "@/helpers/frameStats"
 import { recordSample, type Sample } from "@/helpers/sampleLog"
 import { scanStats } from "@/helpers/scanStats"
-import { SAMPLE_SETTLE_MS, SAMPLE_WINDOW_MS, WRIST_PANEL_HZ, XR_TARGET_HZ } from "@/config/xrScan"
+import { SAMPLE_SETTLE_MS, SAMPLE_WINDOW_MS, READOUT_HZ, XR_TARGET_HZ } from "@/config/xrScan"
 
 /** Reused, because this is read inside a frame callback. */
 const drawingSize = new THREE.Vector2()
@@ -79,7 +79,7 @@ export function FrameMeter({ scan }: { scan: string }) {
     last.current = now
 
     if (now < nextPublish.current) return
-    nextPublish.current = now + 1000 / WRIST_PANEL_HZ
+    nextPublish.current = now + 1000 / READOUT_HZ
 
     // --- four times a second: publish the renderer's own view -----------
     const presenting = gl.xr.isPresenting

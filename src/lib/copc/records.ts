@@ -33,7 +33,14 @@
  *
  *  PDRF 7 appends Red/Green/Blue as uint16 at 30/32/34, giving 36 bytes.
  *  PDRF 8 appends NIR as uint16 at 36, giving 38. So the colour offset is the
- *  same for both, and PDRF 6 simply has none. */
+ *  same for both, and PDRF 6 simply has none.
+ *
+ *  EXTRA BYTES ARE THE ONE THING THAT CANNOT BE A CONSTANT HERE, because where
+ *  they sit depends on what the file declares. Their offset arrives already
+ *  resolved, as an ExtraByteLocation -- see extraBytes.ts, which also explains
+ *  why a stored scale of 0 must never be believed. */
+
+import { readExtraByte, type ExtraByteLocation } from "./extraBytes"
 
 /** Byte offsets within one point record. Constant across PDRF 6, 7 and 8. */
 const X = 0
@@ -53,9 +60,37 @@ export interface DecodedNode {
   position: Float32Array
   /** rgb, 0..1, three per point. Empty when the file carries no colour. */
   color: Float32Array
-  /** One per point. Kept because it is nearly free here and is what any
-   *  later classification view will colour by. */
+  /** One per point. Kept because it is nearly free here and is what the
+   *  classification view in config/asprs.ts colours by. */
   classification: Uint8Array
+  /** Height above the interpolated ground surface, one per point, in FILE
+   *  UNITS -- the same units as `position`, because it is a length in the same
+   *  space and converting it here would make it the only quantity in this
+   *  struct that is not.
+   *
+   *  EMPTY IS THE NORMAL CASE, not a failure. It is only populated for a file
+   *  the annotation pipeline has been through; the source survey this viewer
+   *  ships with has no extra dimensions at all. Everything downstream has to
+   *  handle a zero-length array, which is the same contract `color` already
+   *  has for a PDRF 6 file. */
+  hag: Float32Array
+  /** 256 bins, one per possible classification byte, counting this node.
+   *
+   *  COMPUTED HERE AND NOT ON THE FRAME THREAD. The readout wants "what is
+   *  this cloud made of", which is a pass over a few hundred thousand bytes
+   *  per node -- cheap, but not cheap enough to do once a second on the thread
+   *  that draws the frame, on a route whose whole purpose is measuring its own
+   *  frame times. Summing 256-bin histograms across the resident set is
+   *  instead trivial, and summing is all the main thread ever does.
+   *
+   *  Deliberately NOT a percentage and NOT sorted: a count composes under
+   *  addition and a percentage does not. */
+  classHistogram: Uint32Array
+  /** Tallest point in this node, in file units. 0 when the file has no height
+   *  dimension. A max rather than a percentile because a percentile cannot be
+   *  combined across nodes from per-node summaries -- the honest place for
+   *  percentiles is the pipeline, over every point, into scan_stats. */
+  hagMax: number
   pointCount: number
 }
 
@@ -79,12 +114,20 @@ export function decodeRecords(
   pointDataRecordFormat: number,
   { scale, offset }: Scaling,
   origin: [number, number, number],
+  /** Where height-above-ground lives in this file, or null when it does not.
+   *  Resolved ONCE per file by CopcSource rather than per node here: it is the
+   *  same answer for every node, and this function runs a few hundred times a
+   *  session. */
+  hagLocation: ExtraByteLocation | null = null,
 ): DecodedNode {
   const view = new DataView(records.buffer, records.byteOffset, records.byteLength)
   const position = new Float32Array(pointCount * 3)
   const hasColor = pointDataRecordFormat === 7 || pointDataRecordFormat === 8
   const color = hasColor ? new Float32Array(pointCount * 3) : new Float32Array(0)
   const classification = new Uint8Array(pointCount)
+  const hag = hagLocation ? new Float32Array(pointCount) : new Float32Array(0)
+  const classHistogram = new Uint32Array(256)
+  let hagMax = 0
 
   // 16-BIT COLOUR THAT IS ACTUALLY 8-BIT IS THE COMMON CASE.
   //
@@ -108,13 +151,23 @@ export function decodeRecords(
     position[o] = view.getInt32(at + X, true) * scale[0] + offset[0] - origin[0]
     position[o + 1] = view.getInt32(at + Y, true) * scale[1] + offset[1] - origin[1]
     position[o + 2] = view.getInt32(at + Z, true) * scale[2] + offset[2] - origin[2]
-    classification[i] = view.getUint8(at + CLASSIFICATION)
+    const cls = view.getUint8(at + CLASSIFICATION)
+    classification[i] = cls
+    classHistogram[cls]++
     if (hasColor) {
       color[o] = view.getUint16(at + RGB, true) / colorDivisor
       color[o + 1] = view.getUint16(at + RGB + 2, true) / colorDivisor
       color[o + 2] = view.getUint16(at + RGB + 4, true) / colorDivisor
     }
+    // NOT origin-relative, and not rotated: this is a height, not a position.
+    // Subtracting an origin from it or sending it through the group's -90
+    // degrees about X would both be category errors that happen to typecheck.
+    if (hagLocation) {
+      const h = readExtraByte(view, at, hagLocation)
+      hag[i] = h
+      if (h > hagMax) hagMax = h
+    }
   }
 
-  return { position, color, classification, pointCount }
+  return { position, color, classification, hag, classHistogram, hagMax, pointCount }
 }
