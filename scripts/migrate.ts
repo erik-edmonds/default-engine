@@ -27,6 +27,28 @@ if (!hasDatabase()) {
   process.exit(1)
 }
 
+/** MIGRATIONS GO DIRECT, NOT THROUGH THE POOLER.
+ *
+ *  `DATABASE_URL` points at Neon's `-pooler` host, which is PgBouncer in
+ *  transaction pooling mode. That is the right endpoint for the application --
+ *  short request-scoped queries -- and the wrong one for DDL: in transaction
+ *  pooling a session is only yours for the length of a transaction, so
+ *  anything session-scoped (advisory locks, `set`, prepared statements) does
+ *  not behave the way a migration assumes, and failures there are of the
+ *  intermittent, hard-to-reproduce kind.
+ *
+ *  Neon provisions `DATABASE_URL_UNPOOLED` for exactly this, and until now
+ *  nothing in the repo read it. Assigning it here works because the pool in
+ *  lib/db.ts is LAZY and reads the variable on first use, which is the next
+ *  statement -- the same laziness that was introduced so the fallback in
+ *  lib/scans.ts could be reachable. */
+if (process.env.DATABASE_URL_UNPOOLED) {
+  process.env.DATABASE_URL = process.env.DATABASE_URL_UNPOOLED
+  console.log("  using the unpooled connection for DDL")
+} else {
+  console.warn("  DATABASE_URL_UNPOOLED is not set -- applying DDL through the pooler")
+}
+
 // schema_migrations is created by 001 itself, so the first run has to cope
 // with it not existing yet -- hence `if not exists` here as well as there.
 await query(`

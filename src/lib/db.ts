@@ -23,6 +23,31 @@ declare global {
  *
  *  Deferring to first use keeps the error exactly as loud, at the moment
  *  someone actually asks for data, where it can be handled. */
+/** The SSL modes node-postgres treats as `verify-full` TODAY and will stop
+ *  treating that way.
+ *
+ *  `pg` emits a runtime warning when it sees one of these, saying that in
+ *  pg v9 / pg-connection-string v3 they will adopt libpq semantics -- under
+ *  which `require` means "encrypt but do not verify anything". Upgrading them
+ *  to `verify-full` here is therefore a no-op against today's behaviour and a
+ *  guard against that future default. */
+const ALIASED_SSL_MODES = /([?&]sslmode=)(prefer|require|verify-ca)(&|$)/i
+
+/** Rewrite only the `sslmode` value, leaving the rest of the URL byte-identical.
+ *
+ *  SURGICAL ON PURPOSE. The obvious implementation parses the string with
+ *  `new URL()` and re-serialises it, which also re-encodes the userinfo -- and
+ *  the userinfo is a password. A regex that touches four known literal values
+ *  cannot corrupt a credential; a round-trip through URL can.
+ *
+ *  A connection string with NO sslmode is left alone rather than having one
+ *  appended: that is the shape of a local unencrypted Postgres, which is a
+ *  legitimate development target. Remote databases should carry the parameter,
+ *  and Neon's URLs always do. */
+function withVerifiedSsl(connectionString: string): string {
+  return connectionString.replace(ALIASED_SSL_MODES, '$1verify-full$3')
+}
+
 function getPool(): Pool {
   if (globalThis.postgresPool) return globalThis.postgresPool
 
@@ -32,13 +57,39 @@ function getPool(): Pool {
   }
 
   const pool = new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false },
+    connectionString: withVerifiedSsl(connectionString),
+    // NO `ssl` KEY, AND ITS ABSENCE IS THE FIX.
+    //
+    // This used to pass `ssl: { rejectUnauthorized: false }`. In node-postgres
+    // an explicit `ssl` object OVERRIDES whatever the connection string says,
+    // so despite `sslmode=require` sitting in the URL the certificate was not
+    // being verified at all -- on the connection that carries the entire scan
+    // registry. That is the opposite of what the URL appeared to promise.
+    //
+    // `rejectUnauthorized: false` is advice inherited from platforms that
+    // served self-signed certificates. Neon serves a publicly-trusted one, so
+    // verification needs no custom CA bundle and no option here: letting the
+    // connection string govern gives a verified TLS session.
+
+    // Fail a request rather than hang it. Without this a connect that never
+    // completes blocks the caller indefinitely, which on a server-rendered
+    // route means a page that never responds.
+    connectionTimeoutMillis: 5_000,
+    // Neon's connection ceiling is not large and is shared across every
+    // instance, so each pool stays small and gives idle connections back
+    // quickly instead of holding them for the life of the container.
+    max: 3,
+    idleTimeoutMillis: 10_000,
   })
 
-  // Cached on the global in development so Next's hot reload does not open a
-  // new pool per edit until Neon refuses the connection count.
-  if (process.env.NODE_ENV !== 'production') globalThis.postgresPool = pool
+  // CACHED UNCONDITIONALLY, which it was not. The guard here used to be
+  // `NODE_ENV !== 'production'`, with a comment about hot reload -- so the
+  // development problem was solved and the production one was created: a
+  // serverless container IS reused between invocations, and without a
+  // module-global pool every invocation built a fresh `Pool`, paid a fresh TLS
+  // handshake, and then abandoned it without draining. The global is the
+  // mechanism that makes a pool a pool on this runtime.
+  globalThis.postgresPool = pool
   return pool
 }
 

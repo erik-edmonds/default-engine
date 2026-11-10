@@ -11,6 +11,7 @@
     "migrate": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/migrate.ts",
     "test:arith": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/xr-measure-test.ts",
     "test:copc": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/copc-golden.ts",
+    "test:pipeline": "python3 -m unittest discover -s pipeline -t pipeline -p 'test_*.py'",
     "probe:colour": "node scripts/scan-colour-probe.mjs"
   },
   "dependencies": {
