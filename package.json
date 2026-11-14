@@ -11,7 +11,8 @@
     "migrate": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/migrate.ts",
     "test:arith": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/xr-measure-test.ts",
     "test:copc": "node --experimental-strip-types --import ./scripts/alias-hook.mjs scripts/copc-golden.ts",
-    "test:pipeline": "python3 -m unittest discover -s pipeline -t pipeline -p 'test_*.py'",
+    "test:pipeline": "cd pipeline && python3 -m unittest test_thresholds",
+    "test:sim": "conda run -n cornsim python -m unittest discover -s sim -t sim -p 'test_*.py' && conda run -n cornsim python -m unittest discover -s pipeline -t pipeline -p 'test_rows.py'",
     "probe:colour": "node scripts/scan-colour-probe.mjs"
   },
   "dependencies": {

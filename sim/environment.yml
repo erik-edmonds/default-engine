@@ -1,0 +1,33 @@
+# The simulation and analysis environment: one conda env for everything that
+# is not the website.
+#
+#   conda env create -f sim/environment.yml
+#   conda activate cornsim
+#
+# WHY CONDA AND NOT pip. HELIOS++ is distributed through conda-forge, with a
+# native osx-arm64 build, and is not on PyPI at all -- the PyPI package named
+# `pyhelios` is a different project. PDAL is the same story. Solving them
+# together also guarantees the two agree about GDAL, which they both link.
+#
+# WHY PDAL IS HERE AS WELL AS IN DOCKER. pipeline/Dockerfile remains how the
+# pipeline is deployed. Locally, a native PDAL means annotate.py runs with no
+# bind mounts and no emulation -- and conda-forge's 2.10.1 is above the 2.10.0
+# floor that writers.gdal percentiles need, which require_pdal() asserts at
+# startup rather than trusting.
+name: cornsim
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - helios=2.2.2
+  - pdal>=2.10
+  - python-pdal
+  - numpy
+  - scipy
+  - scikit-learn
+  - laspy
+  - lazrs-python
+  - matplotlib-base
+  - pyyaml
+  - joblib

@@ -64,3 +64,11 @@ next-env.d.ts
 /public/water/tiles_gray_white.png
 /public/water/worn.png
 .neon
+
+# simulation: the pinned CropCraft checkout and Blender-side packages
+# (recreated by sim/setup.sh), and every generated field, cloud and model.
+# Generated data is reproducible from a seed; committing it would only add
+# weight. The one exception is the scan the viewer serves, in public/scans/.
+/sim/.cache/
+/data/
+__pycache__/

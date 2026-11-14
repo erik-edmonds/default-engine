@@ -71,8 +71,28 @@ DTM_NAME = "dtm.tif"
 CSM_NAME = "csm.tif"
 
 
+def pdal_executable() -> str:
+    """The `pdal` to run: the one beside this interpreter, else whatever is on PATH.
+
+    WHY NOT JUST "pdal". In the container, PATH leads to it. Run from a conda
+    environment's interpreter directly -- which is how this is driven locally,
+    because `conda run` eats stdin -- PATH is the shell's, and the shell has
+    no pdal. Both ways then disagree about which PDAL is in use, which for a
+    tool whose version is asserted at startup is the one disagreement that
+    must not be possible. Preferring the sibling means the pdal that runs is
+    the one belonging to the Python that asked for it.
+    """
+    return _sibling("pdal")
+
+
+def _sibling(tool: str) -> str:
+    """`tool` from beside this interpreter if it is there, else from PATH."""
+    candidate = Path(sys.executable).parent / tool
+    return str(candidate) if candidate.exists() else tool
+
+
 def pdal_version() -> tuple[str, tuple[int, ...]]:
-    out = subprocess.run(["pdal", "--version"], capture_output=True, text=True, check=True).stdout
+    out = subprocess.run([pdal_executable(), "--version"], capture_output=True, text=True, check=True).stdout
     match = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
     if not match:
         raise RuntimeError(f"could not read a version out of: {out.strip()!r}")
@@ -159,7 +179,7 @@ def run_pipeline(pipeline: list[dict[str, Any]], out_dir: Path, name: str = "pip
     spec.write_text(json.dumps({"pipeline": pipeline}, indent=2))
 
     proc = subprocess.run(
-        ["pdal", "pipeline", str(spec), "--metadata", str(meta)],
+        [pdal_executable(), "pipeline", str(spec), "--metadata", str(meta)],
         capture_output=True,
         text=True,
     )
@@ -178,7 +198,7 @@ def raster_info(path: Path) -> dict[str, Any]:
     alongside it; no new tool enters the image for this.
     """
     out = subprocess.run(
-        ["gdalinfo", "-json", "-stats", str(path)], capture_output=True, text=True, check=True
+        [_sibling("gdalinfo"), "-json", "-stats", str(path)], capture_output=True, text=True, check=True
     ).stdout
     info = json.loads(out)
     corners = info.get("cornerCoordinates", {})
@@ -210,12 +230,29 @@ def raster_info(path: Path) -> dict[str, Any]:
     }
 
 
+def reader_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Whichever reader this run used.
+
+    Looked up by PREFIX rather than by name: thresholds.reader_stage picks
+    readers.copc for a COPC and readers.las for the plain LAZ a sensor
+    delivers, and every caller here wants "the reader" rather than a
+    particular one. Hard-coding `readers.copc` is what made the first version
+    of this fail on a synthetic field with a bounds error that said nothing
+    about the real cause.
+    """
+    stages = metadata.get("stages", {})
+    for name, value in stages.items():
+        if name.startswith("readers."):
+            return value if isinstance(value, dict) else {}
+    raise RuntimeError(f"the run metadata has no reader stage; it has {sorted(stages)}")
+
+
 def reader_bounds(metadata: dict[str, Any]) -> dict[str, float]:
-    reader = metadata.get("stages", {}).get("readers.copc", {})
+    reader = reader_metadata(metadata)
     try:
         return {k: float(reader[k]) for k in ("minx", "maxx", "miny", "maxy")}
     except (KeyError, TypeError) as exc:
-        raise RuntimeError("the run metadata has no readers.copc bounds") from exc
+        raise RuntimeError("the reader stage reported no bounds") from exc
 
 
 def check_dtm_covers(dtm: Path, cloud: dict[str, float]) -> dict[str, Any]:
@@ -285,7 +322,8 @@ def check_dtm_crs(raster: dict[str, Any], metadata: dict[str, Any]) -> None:
     full WKT, because an identical CRS can be spelled several ways and a strict
     string compare would reject correct inputs.
     """
-    cloud_wkt = metadata.get("stages", {}).get("readers.copc", {}).get("comp_spatialreference", "")
+    reader = reader_metadata(metadata)
+    cloud_wkt = reader.get("comp_spatialreference") or reader.get("spatialreference") or ""
     raster_wkt = raster.get("wkt", "")
     if not raster_wkt or not cloud_wkt:
         print("  WARNING: could not compare the DTM's CRS with the cloud's", file=sys.stderr)
@@ -326,7 +364,7 @@ def source_summary(source: str) -> dict[str, float]:
     is no surface pass to take bounds from.
     """
     out = subprocess.run(
-        ["pdal", "info", source, "--summary"], capture_output=True, text=True, check=True
+        [pdal_executable(), "info", source, "--summary"], capture_output=True, text=True, check=True
     ).stdout
     bounds = json.loads(out).get("summary", {}).get("bounds", {})
     try:
@@ -339,11 +377,11 @@ def source_srs(source: str) -> dict[str, Any]:
     """The source's SRS, shaped like pipeline metadata so check_dtm_crs reads
     it the same way whether it came from a run or from a header."""
     out = subprocess.run(
-        ["pdal", "info", source, "--metadata"], capture_output=True, text=True, check=True
+        [pdal_executable(), "info", source, "--metadata"], capture_output=True, text=True, check=True
     ).stdout
     meta = json.loads(out).get("metadata", {})
     wkt = meta.get("comp_spatialreference") or meta.get("spatialreference") or ""
-    return {"stages": {"readers.copc": {"comp_spatialreference": wkt}}}
+    return {"stages": {"readers.las": {"comp_spatialreference": wkt}}}
 
 
 def prepare_ground(

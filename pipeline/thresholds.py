@@ -92,19 +92,40 @@ UNCLASSIFIED = 1
 # know", which is exactly right.
 NEVER_CLASSIFIED = 0
 
-# What filters.hag_dem writes where the raster has no data.
+# The raster's own nodata value, set explicitly rather than left to
+# writers.gdal's default, because the arithmetic below depends on knowing it.
+DTM_NODATA = -9999.0
+
+# What filters.hag_dem is ASKED to write for a nodata pixel.
 #
-# A SENTINEL RATHER THAN THE DEFAULT 0.0, and this is the whole mechanism for
-# catching a holed ground surface. Left at 0.0, a point over a nodata cell gets
-# a height of exactly zero -- indistinguishable from a point lying on the
-# ground, so a DTM full of holes reads as a field that is uniformly at ground
-# level and nothing anywhere complains. A large negative value cannot be
-# mistaken for a real measurement, fails every vegetation band condition, and
-# is cheap to count.
+# Positive, and large, for a reason established by measurement rather than by
+# reading the documentation -- see NODATA_LEAK_ABOVE.
+NODATA_HAG = 1.0e6
+
+# How a nodata cell is actually detected, in file units.
 #
-# In FILE UNITS, so it must be far outside any plausible height in feet or
-# metres; -9999 is roughly -3 km in feet.
-NODATA_HAG = -9999.0
+# THE DOCUMENTED MECHANISM DOES NOT WORK, and this was measured on pdal 2.10.2
+# rather than assumed. filters.hag_dem has two nodata checks in processOne() --
+# a `GDALError::NoData` read status and a secondary `val == m_bandNoData` -- and
+# on a GeoTIFF written by writers.gdal, which correctly declares
+# `NoData Value=-9999`, NEITHER fires for all but a handful of pixels. The
+# filter reads -9999 as a real terrain elevation and computes
+# `hag = z - (-9999)`, so a nodata cell produces a height of about +10,500 file
+# units. Measured on the sample survey: 5,149 points, and
+# `max |(hag - 9999) - Z| = 0.0005`, which is the arithmetic confirmed exactly.
+#
+# A first version of this keyed detection on a large NEGATIVE height, which is
+# what `nodata_hag` would produce if it fired. It matched zero points.
+#
+# So detection is by MAGNITUDE, and `nodata_hag` is set positive too, so that
+# the rare pixel the documented path does catch lands in the same place as the
+# many it does not. One threshold covers both.
+#
+# Safe because the two populations are orders of magnitude apart: a real height
+# is bounded by MAX_PLAUSIBLE_HAG_M (120 m, 394 ft), while a leak is at least
+# |DTM_NODATA| less the terrain elevation -- about 9,500 file units on this
+# file. Anything between is unoccupied.
+NODATA_LEAK_ABOVE = 5000.0
 
 # SMRF's own defaults, in METRES, which is the unit they were tuned in. Only
 # the lengths are converted; slope is a rise over run and scalar is a
@@ -315,6 +336,26 @@ def below_ground_stage(units_to_metres: float) -> dict[str, Any]:
     }
 
 
+def reader_stage(source: str) -> dict[str, Any]:
+    """The reader, chosen by what the source actually is.
+
+    readers.copc is the right reader for a COPC over HTTP: it fetches by
+    octree node over byte ranges and never moves the whole file. It is the
+    WRONG reader for a plain LAZ, which it refuses, and the synthetic fields
+    this project generates are plain LAZ because that is what a sensor
+    delivers -- a COPC is a product of processing, not of scanning.
+
+    Chosen by extension rather than by probing, because a remote COPC would
+    have to be fetched to probe it, and `.copc.laz` is the convention the
+    format's own specification uses.
+    """
+    if source.lower().endswith(".copc.laz") or source.lower().startswith(("http", "s3://")):
+        # `requests` is the number of concurrent range requests, which only
+        # means anything over a network.
+        return {"type": "readers.copc", "filename": source, "requests": 16}
+    return {"type": "readers.las", "filename": source}
+
+
 def surface_stage(
     path: str, percentile: int, units_to_metres: float, resolution_m: float | None = None
 ) -> dict[str, Any]:
@@ -339,6 +380,16 @@ def surface_stage(
     classified it as 7, and a single low noise return inside a cell would
     otherwise become that cell's 1st percentile and drag the ground surface --
     and therefore every height above it -- down with it.
+
+    NO `window_size`, AND THAT IS A CHOICE. writers.gdal offers it as a
+    fallback interpolation that fills empty cells from their neighbours, which
+    would make the nodata leak disappear entirely. It is deliberately not used:
+    filling invents a ground elevation underneath points that have no ground
+    measurement, and for a product whose value is knowing what was measured,
+    "no answer" beats a plausible guess. Those points are marked class 0 and
+    counted instead -- 5,149 of 10.65 million on the sample survey, 0.048%.
+    If a real crop scan ever came back with a materially larger share, the
+    honest fix is a coarser cell, not interpolation.
     """
     metres = dtm_resolution_m() if resolution_m is None else resolution_m
     return {
@@ -349,6 +400,11 @@ def surface_stage(
         "binmode": True,
         "dimension": "Z",
         "where": f"Classification != {NOISE_CLASS}",
+        # Explicit, because filters.hag_dem subtracts this value verbatim from
+        # every point over an empty cell -- see NODATA_LEAK_ABOVE. Leaving it to
+        # the writer's default would make that arithmetic depend on a number
+        # this module never named.
+        "nodata": DTM_NODATA,
     }
 
 
@@ -389,20 +445,65 @@ def hag_dem_stage(raster: str) -> dict[str, Any]:
 def nodata_stage() -> dict[str, Any]:
     """Mark the points the ground surface could not account for.
 
-    MUST RUN BEFORE ground_from_hag_stage, and the ordering is the bug this
-    exists to prevent: the sentinel is a very negative height, so
-    `HeightAboveGround < nearGround` is true for it, and a nodata point would
-    be classified as GROUND -- the single most misleading answer available,
-    since the reason it has no height is that there was no ground under it.
+    MUST RUN BEFORE ground_from_hag_stage. A leaked height is enormous and
+    positive, so it fails `HeightAboveGround < nearGround` and would NOT become
+    ground -- but it sails past the top vegetation band's open-ended lower
+    bound and would be classified as high vegetation, which is just as wrong
+    and harder to notice.
 
-    Compared against half the sentinel rather than against the sentinel itself,
-    because PDAL's expressions compare floats and exact equality on a value
-    that has been through a raster read and a subtraction is not something to
-    rely on.
+    Matched by magnitude rather than by equality: the leaked value is
+    `z - DTM_NODATA`, so it differs for every point, and there is no single
+    number to compare against. See NODATA_LEAK_ABOVE for why a threshold is
+    safe here.
     """
     return {
         "type": "filters.assign",
-        "value": f"Classification = {NEVER_CLASSIFIED} WHERE HeightAboveGround < {NODATA_HAG / 2:.1f}",
+        "value": (
+            f"Classification = {NEVER_CLASSIFIED} "
+            f"WHERE HeightAboveGround > {NODATA_LEAK_ABOVE:.1f} "
+            # NOISE IS PRESERVED, like it is in reset_stage and band_stage.
+            # filters.outlier made a positive determination about these points;
+            # "never classified" means "no answer", which is strictly less
+            # information, and a reviewer looking for what the classifier
+            # rejected would no longer find it. It also matters for the guard:
+            # noise is 3.24% of the sample survey and is exactly the population
+            # that sits alone in a column -- bird and aircraft returns -- so
+            # those cells are nodata and these points would otherwise dominate
+            # a count that exists to measure something else entirely.
+            f"&& Classification != {NOISE_CLASS}"
+        ),
+    }
+
+
+def clear_nodata_hag_stage() -> dict[str, Any]:
+    """Replace a leaked nodata height with zero, once it has been counted.
+
+    THE LEAK MUST NOT REACH THE WRITTEN FILE, and this is the stage that stops
+    it. Measured on the sample survey, the leaked values run to +10,558 file
+    units -- about 3.2 km. Three things break if that ships:
+
+      * The viewer's height colour mode normalises by the maximum height and
+        builds its ramp across the observed range. One point at 3.2 km makes
+        the real 0-58 m range occupy a half-percent sliver of the ramp, so
+        every cloud renders as a single flat colour.
+      * check_output's sanity bound trips at 120 m, so the run fails on the
+        leak rather than on anything about the survey -- which is exactly what
+        happened the first time this ran, and is why these points have to be
+        dealt with rather than merely detected.
+      * The reported maximum and median would both be meaningless.
+
+    Run AFTER nodata_stage, which needs the leaked value to identify these
+    points, and deliberately NOT keyed on class 0 -- a noise point over a
+    nodata cell keeps class 7 by the guard above, and still has to have its
+    height cleared.
+
+    Zero is the right replacement because class 0 is what carries the meaning:
+    "no height" and "at ground level" are then distinguishable by class, which
+    is the ordinary way to carry a nodata mask.
+    """
+    return {
+        "type": "filters.assign",
+        "value": f"HeightAboveGround = 0 WHERE HeightAboveGround > {NODATA_LEAK_ABOVE:.1f}",
     }
 
 
@@ -434,8 +535,9 @@ def ground_from_hag_stage(units_to_metres: float) -> dict[str, Any]:
             f"WHERE HeightAboveGround < {near:.4f} "
             f"&& Classification != {NOISE_CLASS} "
             # Without this, every point the DTM could not account for becomes
-            # ground -- see nodata_stage. The sentinel height satisfies
-            # `< nearGround` by a margin of three kilometres.
+            # ground. A leaked height does not satisfy `< nearGround`, but a
+            # cleared one is exactly 0 and would -- so the guard is what keeps
+            # a point with no ground reference from being called ground.
             f"&& Classification != {NEVER_CLASSIFIED}"
         ),
     }
@@ -480,7 +582,7 @@ def build_surface_pipeline(
     unrelated interpolations subtracted.
     """
     return [
-        {"type": "readers.copc", "filename": source, "requests": 16},
+        reader_stage(source),
         outlier_stage(),
         reset_stage(),
         surface_stage(dtm_path, GROUND_PERCENTILE, units_to_metres, resolution_m),
@@ -522,7 +624,7 @@ def build_pipeline(
         raise ValueError("method 'slg' needs dtm_path -- run build_surface_pipeline first")
 
     head: list[dict[str, Any]] = [
-        {"type": "readers.copc", "filename": source, "requests": 16},
+        reader_stage(source),
         outlier_stage(),
         reset_stage(),
     ]
@@ -540,9 +642,13 @@ def build_pipeline(
         # two methods.
         ground = [
             hag_dem_stage(dtm_path),  # type: ignore[arg-type]
-            # Order matters: nodata is marked BEFORE ground is derived, or
-            # every heightless point becomes ground.
+            # Order matters three times over. nodata is marked BEFORE the
+            # height is cleared, because marking is what needs the leaked
+            # value; ground is derived AFTER both, because a cleared height of
+            # 0 would otherwise qualify as ground; and all of it happens before
+            # any stats stage, so nothing reports a 3 km height.
             nodata_stage(),
+            clear_nodata_hag_stage(),
             ground_from_hag_stage(units_to_metres),
         ]
 

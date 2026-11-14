@@ -261,6 +261,51 @@ is a single scalar applied to both. The discrepancy is 2 ppm — 0.12 mm on a
 later "fixes" it into a 1.3 m error by confusing the two at state-plane
 magnitudes, where coordinates are ~637,000 ft.
 
+## SLG against SMRF, measured
+
+Both methods, same code, same file, same machine: the stadium sample's 10.65M
+points, native PDAL 2.10.1 on an M4.
+
+| | SMRF | SLG (percentile grid) |
+|---|---|---|
+| ground | 7,852,839 — **73.71%** | 6,730,651 — **63.18%** |
+| height, max | 58.241 m | 58.250 m |
+| height, min | **−31.110 m** | **0.000 m** |
+| height, median | 0.000 m | 0.059 m |
+| points > 1 m below ground | **649** | **0** |
+| no height at all (class 0) | 0 | 4 of 10.65M |
+| wall clock | 90 s | 91 s |
+
+**SLG eliminates the roof-latching completely.** SMRF's −31 m minimum and its
+649 sub-ground points are the signature of a morphological filter deciding
+that the stadium roof is ground, which puts the real surface 31 m underneath
+it. A low percentile taken per cell in PLAN VIEW cannot make that mistake: the
+lowest return in a column is the concourse floor, so the roof becomes canopy
+and nothing ends up below the ground. The derivative passes all 14 checks of
+`scripts/copc-golden.ts`, which reports "0 points more than 1 unit below
+ground" where the SMRF file gave 649.
+
+Four of five predictions written down before the run held: lower ground
+fraction, a far smaller below-ground tail, a near-identical maximum, and
+almost nothing left heightless. **The fifth was wrong** -- two passes were
+expected to cost about twice as much and cost 1% more. SMRF spends its time in
+the morphological solve; SLG spends it rasterising and then looking values up,
+and the two happen to come out level.
+
+The 63% ground fraction is still high for a stadium, and it is still the
+number to distrust on a cornfield, where a closed canopy should be hiding the
+soil rather than dominating the return.
+
+### One thing this does NOT settle
+
+`readers.copc` reading the sample over HTTPS **hung for six hours** on the SLG
+path and had to be killed; the same file read from local disk takes 41 s for
+the surface pass. SMRF over the same connection had completed in 90 s minutes
+earlier, so this is not a method difference. Whether it is the extra pass, the
+16 concurrent range requests, or the remote host is unresolved -- and until it
+is, a network source is not safe to run unattended. `annotate.py` has no
+retry; one transient read failure on 10 November killed a run outright.
+
 ## What this cannot tell you yet
 
 **The band thresholds are not merely unvalidated for corn — they are wrong for

@@ -360,13 +360,53 @@ class Slg(unittest.TestCase):
         self.assertNotIn("filters.smrf", types)
         self.assertNotIn("filters.hag_nn", types)
         assigns = [i for i, t in enumerate(types) if t == "filters.assign"]
-        # reset, nodata, ground-from-hag, bands
-        self.assertEqual(len(assigns), 4)
-        reset, nodata, ground, bands = assigns
+        # reset, nodata, clear-sentinel, ground-from-hag, bands
+        self.assertEqual(len(assigns), 5)
+        reset, nodata, clear, ground, bands = assigns
         self.assertLess(reset, types.index("filters.hag_dem"))
         self.assertLess(types.index("filters.hag_dem"), nodata)
-        self.assertLess(nodata, ground)
+        self.assertLess(nodata, clear)
+        self.assertLess(clear, ground)
         self.assertLess(ground, bands)
+
+    def test_nodata_preserves_noise(self):
+        """filters.outlier made a positive determination about those points.
+        "Never classified" means "no answer", which is strictly less
+        information -- and noise is 3.24% of the sample survey, which would
+        swamp a guard that exists to measure holes in the ground surface."""
+        value = thresholds.nodata_stage()["value"]
+        self.assertIn(f"Classification != {thresholds.NOISE_CLASS}", value)
+
+    def test_sentinel_is_cleared_before_any_stats_stage(self):
+        """THE SENTINEL MUST NOT REACH THE WRITTEN FILE. At -9999 it would
+        dominate the below-ground count, skew the reported minimum to about
+        -3 km, and flatten the viewer's height ramp to a single colour."""
+        slg = thresholds.build_pipeline("s", "d", 1.0, method="slg", dtm_path="dtm.tif")
+        types = [s["type"] for s in slg]
+        clear_at = next(
+            i
+            for i, s in enumerate(slg)
+            if s["type"] == "filters.assign" and str(s["value"]).startswith("HeightAboveGround =")
+        )
+        first_stats = types.index("filters.stats")
+        self.assertLess(clear_at, first_stats)
+        self.assertLess(clear_at, types.index("writers.copc"))
+
+    def test_clear_is_not_keyed_on_class(self):
+        """A noise point over a nodata cell keeps class 7 by the guard above
+        and still has to have its height cleared, so the clear stage matches on
+        the height rather than on the classification."""
+        value = thresholds.clear_nodata_hag_stage()["value"]
+        self.assertIn("HeightAboveGround >", value)
+        self.assertNotIn("Classification", value)
+
+    def test_clear_runs_after_the_mark_that_needs_the_sentinel(self):
+        slg = thresholds.build_pipeline("s", "d", 1.0, method="slg", dtm_path="dtm.tif")
+        assigns = [s for s in slg if s["type"] == "filters.assign"]
+        values = [str(s["value"]) for s in assigns]
+        mark = next(i for i, v in enumerate(values) if f"Classification = {thresholds.NEVER_CLASSIFIED}" in v)
+        clear = next(i for i, v in enumerate(values) if v.startswith("HeightAboveGround ="))
+        self.assertLess(mark, clear, "clearing first would leave nothing to identify")
 
     def test_nodata_is_marked_before_ground_is_derived(self):
         """THE ORDERING BUG THIS GUARDS. The nodata sentinel is a very negative
@@ -387,24 +427,49 @@ class Slg(unittest.TestCase):
             if stage["type"] != "filters.assign":
                 continue
             text = stage["value"] if isinstance(stage["value"], str) else " ".join(stage["value"])
-            if "HeightAboveGround >" in text or "nearGround" in text or "< 0.1000" in text:
+            # The nodata stage is what ASSIGNS class 0; it is not supposed to
+            # exclude it. Everything downstream of it is.
+            if f"Classification = {thresholds.NEVER_CLASSIFIED} " in text:
+                continue
+            if text.startswith("HeightAboveGround ="):
+                continue
+            if "HeightAboveGround >" in text or "HeightAboveGround <" in text:
                 self.assertIn(f"Classification != {thresholds.NEVER_CLASSIFIED}", text)
                 guarded += 1
         self.assertGreaterEqual(guarded, 2, "the ground assign and the band assigns")
 
-    def test_nodata_sentinel_cannot_be_a_real_height(self):
-        """In FILE UNITS, so it has to be absurd in feet as well as metres.
-        -9999 ft is about -3 km."""
-        self.assertLess(thresholds.NODATA_HAG, -1000)
-        self.assertIs(thresholds.hag_dem_stage("d.tif")["nodata_hag"], thresholds.NODATA_HAG)
-
-    def test_nodata_is_compared_loosely(self):
-        """Against half the sentinel, not against the sentinel itself: exact
-        float equality on a value that has been through a raster read and a
-        subtraction is not something to rely on."""
+    def test_nodata_is_detected_upward_not_downward(self):
+        """REGRESSION, AND IT COST A RUN TO FIND. filters.hag_dem's documented
+        nodata handling does not fire on a writers.gdal GeoTIFF: it reads the
+        declared -9999 as a real terrain elevation and computes
+        `hag = z - (-9999)`, so a nodata cell yields about +10,500 file units,
+        not a negative sentinel. The first version of this detection keyed on a
+        large NEGATIVE height and matched zero of the 5,149 affected points."""
         value = thresholds.nodata_stage()["value"]
-        self.assertIn(f"{thresholds.NODATA_HAG / 2:.1f}", value)
-        self.assertNotIn(f"{thresholds.NODATA_HAG:.1f}", value)
+        self.assertIn("HeightAboveGround >", value)
+        self.assertNotIn("HeightAboveGround <", value)
+
+    def test_nodata_hag_is_positive_so_both_paths_agree(self):
+        """`nodata_hag` is what the filter writes when its own detection DOES
+        fire -- which happened for exactly one point in 10.65 million. Setting
+        it positive puts that rare case in the same place as the common leak,
+        so one threshold covers both."""
+        self.assertGreater(thresholds.NODATA_HAG, thresholds.NODATA_LEAK_ABOVE)
+        self.assertEqual(thresholds.hag_dem_stage("d.tif")["nodata_hag"], thresholds.NODATA_HAG)
+
+    def test_leak_threshold_sits_in_the_empty_gap(self):
+        """Above any real height, below any leak. MAX_PLAUSIBLE_HAG_M is 120 m
+        = 394 ft, and a leak is at least |DTM_NODATA| less the terrain
+        elevation -- about 9,440 file units on the sample survey."""
+        self.assertGreater(thresholds.NODATA_LEAK_ABOVE, 120.0 / INTERNATIONAL_FOOT)
+        self.assertLess(thresholds.NODATA_LEAK_ABOVE, abs(thresholds.DTM_NODATA) - 600)
+
+    def test_raster_nodata_is_declared_explicitly(self):
+        """filters.hag_dem subtracts this value verbatim, so it cannot be left
+        to the writer's default -- the arithmetic above depends on knowing it."""
+        self.assertEqual(
+            thresholds.surface_stage("d.tif", 1, 1.0)["nodata"], thresholds.DTM_NODATA
+        )
 
     def test_slg_needs_a_dtm(self):
         with self.assertRaises(ValueError):
@@ -447,8 +512,13 @@ class Slg(unittest.TestCase):
             # 3.28 would be meaningless -- and would move the comparison
             # threshold relative to the value hag_dem actually writes, which
             # is the one place a conversion here would do harm.
-            if str(thresholds.NODATA_HAG / 2) in text or "-4999" in text:
-                self.assertEqual(a["value"], b["value"], "the sentinel must be unit-free")
+            # The nodata LEAK THRESHOLD is not a length -- it is a magnitude
+            # chosen to sit in the empty gap between any real height and
+            # `z - DTM_NODATA`. Scaling it by 3.28 would move it relative to
+            # the leaked values it has to separate, which is the one place a
+            # conversion here would do harm.
+            if f"{thresholds.NODATA_LEAK_ABOVE:.1f}" in text:
+                self.assertEqual(a["value"], b["value"], "the leak threshold must be unit-free")
                 continue
             self.assertNotEqual(a["value"], b["value"], "an assign threshold did not convert")
             converted += 1
@@ -459,6 +529,29 @@ class Slg(unittest.TestCase):
         for a, b in zip(surf_feet, surf_metric):
             if a["type"] == "writers.gdal":
                 self.assertNotEqual(a["resolution"], b["resolution"])
+
+
+class StdlibOnly(unittest.TestCase):
+    """This suite must keep running where the pipeline runs.
+
+    thresholds.py and annotate.py import nothing outside the standard library
+    so that they work in the container's bare `base` conda environment, and
+    this suite exists to guard the unit conversions -- which are the most
+    expensive thing in the project to get silently wrong. If it grows a numpy
+    dependency it stops being runnable there, and that is easy to do by
+    accident: `unittest discover` once picked up the numpy-based row tests
+    sitting in the same directory and the suite passed anyway, because the
+    machine it ran on happened to have numpy installed.
+    """
+
+    THIRD_PARTY = ("numpy", "scipy", "sklearn", "pandas", "laspy", "pdal", "yaml")
+
+    def test_imports_nothing_outside_the_standard_library(self):
+        import sys
+
+        loaded = {name.split(".")[0] for name in sys.modules}
+        for package in self.THIRD_PARTY:
+            self.assertNotIn(package, loaded, f"{package} reached a stdlib-only suite")
 
 
 class VersionFloor(unittest.TestCase):
