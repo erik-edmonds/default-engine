@@ -543,7 +543,30 @@ def ground_from_hag_stage(units_to_metres: float) -> dict[str, Any]:
     }
 
 
-def copc_writer_stage(destination: str) -> dict[str, Any]:
+def copc_writer_stage(destination: str, carry_point_id: bool = False) -> dict[str, Any]:
+    """The writer.
+
+    `carry_point_id` FORWARDS THE INPUT'S PointId, AND IT IS WHAT MAKES THE
+    OUTPUT SCOREABLE. Without it the derivative cannot be joined back to
+    anything: COPC reorders every point into its octree, so position in the
+    file carries no meaning, and the simulator's ground truth
+    (sim/truth.py -> truth.npz) is indexed by PointId. Scoring a run against
+    truth therefore needs the key to survive the pipeline, and until this
+    existed it did not -- `pdal info --schema` on a derivative showed
+    HeightAboveGround and no PointId, while the input it came from had one.
+
+    OFF BY DEFAULT because it is a property of the SOURCE, not a preference.
+    Real survey data has no PointId dimension, and naming a dimension in
+    `extra_dims` that the stream does not carry is a write-time error -- so
+    annotate.py asks the file first and only sets this when the answer is yes.
+    """
+    extra = "HeightAboveGround=float32"
+    if carry_point_id:
+        # uint32, matching the simulator's own dtype. The default for an
+        # unlisted dimension would be its in-memory type, which for PointId is
+        # float64 -- eight bytes to carry an integer, and one that stops being
+        # exact above 2^53 for no reason at all.
+        extra += ",PointId=uint32"
     return {
         "type": "writers.copc",
         "filename": destination,
@@ -559,7 +582,7 @@ def copc_writer_stage(destination: str) -> dict[str, Any]:
         # point and removes all four hazards. `extra_dims: "all"` would be
         # worse than either: it writes the dimension at its in-memory type,
         # which is float64.
-        "extra_dims": "HeightAboveGround=float32",
+        "extra_dims": extra,
     }
 
 
@@ -596,6 +619,7 @@ def build_pipeline(
     units_to_metres: float,
     method: str = "smrf",
     dtm_path: str | None = None,
+    carry_point_id: bool = False,
 ) -> list[dict[str, Any]]:
     """The classification pipeline, as PDAL's list-of-stages form.
 
@@ -658,5 +682,5 @@ def build_pipeline(
         band_stage(units_to_metres),
         stats_stage(),
         below_ground_stage(units_to_metres),
-        copc_writer_stage(destination),
+        copc_writer_stage(destination, carry_point_id),
     ]

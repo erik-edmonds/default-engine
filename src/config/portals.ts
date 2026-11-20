@@ -14,7 +14,7 @@
 export type PortalHotspotId = "left-tree" | "moon-island" | "upper"
 
 /** Which interior renders inside the portal's own scene. */
-export type PortalInteriorKind = "points" | "water" | "avatar" | "globe" | "minigame" | "vr"
+export type PortalInteriorKind = "points" | "water" | "avatar" | "globe" | "minigame" | "vr" | "phone"
 
 export type PortalDestination =
   /** Entering offers a link out to another page. */
@@ -138,21 +138,34 @@ export const PORTALS: PortalDefinition[] = [
   {
     id: "02",
     hotspotId: "moon-island",
-    title: "Gallery",
-    credit: "the places · a turning globe",
-    // Dark, where the globe wanted light. The point cloud is unlit
-    // meshBasicMaterial with toneMapped off, tuned against this exact value in
-    // its old home -- on the old #f0f0f0 it washed out to nothing.
+    title: "Reconstruction",
+    credit: "a phone video · structure from motion",
+    // Dark, and it stays dark for a new reason. The value was tuned for an
+    // unlit point cloud that washed out on the old #f0f0f0; what is in here
+    // now is a lit model whose own rig does the work (PhoneInterior), and a
+    // deep blue-black is what lets a sparse reconstruction read against it.
     bg: "#0d1b2a",
-    // The globe, turning, with a pin on where Erik currently is -- which is
-    // the question the portal's name asks. It replaced a generated point
-    // cloud chosen back when this portal was called "About" and the brief was
-    // "something abstract".
-    interior: "globe",
-    // Empty on purpose. The panel under this portal shows a hovered pin's
-    // link and nothing otherwise -- see PortalDestination's "places" branch.
-    blurb: "",
-    destination: { kind: "places" },
+    // THE TRAVEL GLOBE IS SHELVED, NOT DELETED.
+    //
+    // This portal was a gallery of places -- earth.glb turning, with pins on
+    // Vietnam and Thailand, driven by config/places.ts. The whole of that
+    // machinery stays in the tree and stays compiling: places.ts,
+    // helpers/useGlobeDrag.ts, helpers/globeMarker.ts,
+    // components/layout/GlobeMarker.tsx, components/models/Earth.tsx, the
+    // `places` branch of PortalDestination and the .globe-pin rules in
+    // globals.css. They are simply unreferenced now, exactly as
+    // `PointCloudInterior` and the entire water subsystem already are.
+    // Changing this one line is the whole detachment, and putting it back is
+    // the whole restoration -- the same contract portal 01 above records for
+    // the water.
+    //
+    // What replaces it is a computer-vision project, and the phone is both its
+    // sensor and the only prop that says the input was something anybody could
+    // shoot. A globe no longer describes what is behind this glass.
+    interior: "phone",
+    blurb:
+      "A handheld video, turned into the objects that are actually in the room — then searchable by any words you like, with no fixed list of classes.",
+    destination: { kind: "route", href: "/detection", label: "Search it in 3D" },
   },
   {
     id: "03",

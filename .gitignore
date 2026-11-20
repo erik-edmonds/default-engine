@@ -15,6 +15,19 @@
 
 # next.js
 /.next/
+
+# Regenerated from the pinned @techstark/opencv-js on every build by the
+# `prebuild` script -- see scripts/sync-opencv.mjs. Eleven megabytes of
+# Emscripten output does not belong in git history, and leaving it merely
+# UNTRACKED was worse than either: a git-push deploy shipped a /detection
+# route that 404'd its own runtime with nothing in the build log to say why.
+/public/wasm/opencv.js
+# verification builds, kept out of the dev server's way -- see distDir in
+# next.config.ts
+/.next-verify/
+
+# Generated test fixtures -- scripts/sfm-camera-fixture.mjs
+/.fixtures/
 /out/
 
 # production

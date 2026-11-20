@@ -99,6 +99,32 @@ def pdal_version() -> tuple[str, tuple[int, ...]]:
     return match.group(0), tuple(int(g) for g in match.groups())
 
 
+def source_dimensions(source: str) -> set[str]:
+    """What dimensions the input actually carries.
+
+    Asked rather than assumed, because `extra_dims` naming a dimension the
+    stream does not have is a write-time failure -- after every expensive
+    stage has already run. `pdal info --schema` is cheap: it reads the header
+    and stops.
+
+    Returns an empty set rather than raising if the probe fails. A source that
+    cannot be inspected is one the main pipeline is about to fail on anyway,
+    with a better message than this would produce, and an optional
+    pass-through dimension is not the place to turn a warning into an abort.
+    """
+    try:
+        out = subprocess.run(
+            [pdal_executable(), "info", "--schema", source],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        schema = json.loads(out).get("schema", {})
+        return {d.get("name", "") for d in schema.get("dimensions", [])}
+    except (subprocess.CalledProcessError, json.JSONDecodeError, OSError):
+        return set()
+
+
 def require_pdal(method: str = "smrf") -> str:
     """Assert the runtime version, which is the only thing worth trusting.
 
@@ -673,8 +699,21 @@ def main() -> int:
         dtm_arg, surfaces = prepare_ground(
             args.source, args.units, work, method, args.dtm, args.resolution
         )
+        # CARRY PointId IF THE FILE HAS ONE. Simulated scans do (sim/truth.py
+        # writes it so the ground truth can be joined back); real surveys do
+        # not. Without it the derivative is unscoreable, because COPC reorders
+        # every point into its octree and position in the file stops meaning
+        # anything. See thresholds.copc_writer_stage.
+        carry = "PointId" in source_dimensions(args.source)
+        if carry:
+            print("  source carries PointId -- forwarding it so the run can be scored")
         pipeline = thresholds.build_pipeline(
-            args.source, str(output), args.units, method=method, dtm_path=dtm_arg
+            args.source,
+            str(output),
+            args.units,
+            method=method,
+            dtm_path=dtm_arg,
+            carry_point_id=carry,
         )
         metadata = run_pipeline(pipeline, work, name="classify")
         print(f"  wrote {output} ({output.stat().st_size / 1e6:.1f} MB)")

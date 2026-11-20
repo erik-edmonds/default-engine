@@ -4,7 +4,7 @@
  *  for the whole app, and a second import bundles the entire framework again.
  *  This file used to be the Next.js starter's globals, sitting at the
  *  portfolio root imported by nothing, next to a duplicate of itself under
- *  driving/. It is the shared stylesheet now, imported by app/portfolio/layout.tsx.
+ *  driving/. It is the shared stylesheet now, imported by app/(work)/layout.tsx.
  *
  *  THESE PAGES ARE THE QUIET HALF OF THE SITE. The island is the thing people
  *  remember; this is where someone who is considering hiring Erik goes to

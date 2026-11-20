@@ -50,4 +50,17 @@ export function Earth(props: ThreeElements['group']) {
   )
 }
 
-useGLTF.preload('/models/earth.glb')
+// NO MODULE-SCOPE PRELOAD ANY MORE.
+//
+// This read `useGLTF.preload('/models/earth.glb')`, and a module-scope preload
+// fires the moment anything imports the file -- PortalInteriors.tsx still
+// does, because GlobeInterior is kept compiling. Portal 02 is the phone
+// reconstruction now (config/portals.ts), so the globe is never mounted, and
+// the preload was fetching 716 KB on every first paint for a model nothing
+// draws. Measured in a production probe: /models/earth.glb came back 200 on a
+// cold load of the island with no globe anywhere in the scene.
+//
+// Restoring the globe does not need this line back: drei's useGLTF suspends on
+// its own inside the Canvas's boundary, which is how WaterInterior's models
+// already load. Put it back only if the globe returns AND the suspense pause
+// on opening the portal is measurably worse than the cost of the early fetch.

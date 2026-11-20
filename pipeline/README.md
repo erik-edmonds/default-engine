@@ -321,3 +321,83 @@ the class.
 The only scan wired up is still an aerial survey of a football stadium. It
 exercises every stage, the extra-bytes offsets and the viewer end to end — and
 it has now done so — but it is not a test of the agronomy.
+
+## Scored against ground truth, for the first time
+
+`score.py` joins an annotated run to the simulator's per-point truth and
+reports what agrees. Run on `data/fields/smoke/A` — a CropCraft maize field
+flown with a simulated VLP-16, 228,521 points, SLG method, PDAL 2.10.2:
+
+### Ground, which both taxonomies genuinely mean the same thing by
+
+| | |
+|---|---|
+| Precision | **0.983** |
+| Recall | **0.617** |
+| IoU | 0.611 |
+| F1 | 0.758 |
+
+**When it says ground it is right; it does not say ground often enough.**
+74,593 points of true soil — 38% of all of it — were labelled `0.1-0.5 m`
+instead. That is one number, it is actionable, and it points at the near-ground
+threshold (`nearGroundM` 0.1 in `src/config/hagBands.json`) or at the ground
+percentile being too low for a canopy this dense, not at the ground surface
+itself: the DTM filled 100% of its 17x13 cells and the below-ground tail is
+still zero.
+
+### The band defect, now a number rather than a note
+
+| truth \ predicted | ground | 0.1-0.5 m | 0.5-5 m | noise |
+|---|---|---|---|---|
+| **soil** | 120,297 | 74,593 | 0 | 0 |
+| **weed** | 1,995 | 2,270 | 0 | 0 |
+| **crop** | 110 | 27,624 | 1,514 | 4 |
+| **noise** | 0 | 0 | 0 | 114 |
+
+- **104,487 points were given class 3, which the truth taxonomy never uses.**
+- **All 29,252 true crop points failed to be predicted as crop (class 5).**
+- Weed and crop are not separated at all: both land in the same band, which is
+  what the section above predicted from KC & Khanal's field measurements and
+  what `rows.py` exists to fix — the discriminator has to be row geometry, not
+  height.
+- Noise is perfect: 114 of 114, no false positives.
+
+### A height that cannot be right
+
+`hag_max` is **12.063 m** on a field whose tallest *true* crop point is at
+**0.911 m** (p95 0.504 m). CropCraft's maize models stop at 0.49 m, so nothing
+in this scene is twelve metres tall. The guard in `annotate.py` passed it
+because `MAX_PLAUSIBLE_HAG_M` is 120 — a bound set for a stadium with mature
+trees, which is useless on a crop. A per-scene plausible ceiling is the obvious
+next guard.
+
+### Why the output carries `PointId` now
+
+It did not, and that made every number above impossible. COPC reorders every
+point into its octree — the first row of an export is `PointId 3891` — so row
+order in the derivative carries no meaning, while `truth.npz` is indexed by
+`PointId`. `thresholds.copc_writer_stage` forwards it when the source has one
+(simulated scans do, real surveys do not), which is what lets the two files be
+joined at all.
+
+### Reproducing
+
+```sh
+# annotate (needs pdal)
+docker run --rm -v "$PWD:/work" -w /work/pipeline pdal/pdal:latest \
+  python3 annotate.py --source /work/data/fields/smoke/A/sensor.laz \
+  --units 1.0 --no-upload --keep /work/data/fields/smoke/A/annotated --method slg
+
+# export the three columns (needs pdal)
+docker run --rm -v "$PWD:/work" pdal/pdal:latest pdal translate \
+  /work/data/fields/smoke/A/annotated/sensor.annotated.copc.laz \
+  /work/data/fields/smoke/A/annotated/points.csv \
+  --writers.text.order="PointId,Classification,HeightAboveGround" \
+  --writers.text.keep_unspecified=false
+
+# score (needs numpy)
+conda run -n cornsim python pipeline/score.py \
+  --points data/fields/smoke/A/annotated/points.csv \
+  --truth  data/fields/smoke/A/truth.npz \
+  --out    data/fields/smoke/A/annotated/scores.json
+```

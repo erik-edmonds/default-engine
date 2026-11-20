@@ -36,7 +36,6 @@ import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/c
 import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import { HintAnchor } from "@/components/canvas/HintAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
-import { GlobeMarker } from "@/components/layout/GlobeMarker";
 import { CursorDriver } from "@/components/canvas/CursorDriver";
 import { CameraLook } from "@/components/canvas/CameraLook";
 import { JourneyPath } from "@/components/canvas/JourneyPath";
@@ -177,6 +176,15 @@ const HOTSPOT_VIEWPOINT_BY_ID = {
   "moon-island": { position: MOON_ISLAND_VIEWPOINT_POSITION, rotation: MOON_ISLAND_VIEWPOINT_ROTATION },
   upper: { position: UPPER_ISLAND_VIEWPOINT_POSITION, rotation: UPPER_ISLAND_VIEWPOINT_ROTATION },
 } as const;
+
+/** The routes a portal can send you to, so they are warm before you arrive.
+ *
+ *  Only `route` destinations: a `scan` opens its own canvas on a route built
+ *  from an id (app/scan/[id]) and is far too heavy to want warmed on the
+ *  island, and `prose`/`links`/`none` go nowhere at all. */
+const PORTAL_PREFETCH = PORTALS.flatMap((p) =>
+  p.destination.kind === "route" ? [p.destination.href] : [],
+)
 
 const HOTSPOT_PORTALS = PORTALS.map((portal) => ({
   ...portal,
@@ -549,8 +557,16 @@ export default function IslandExperience() {
     return () => { timeline.kill(); bloomTween?.kill(); };
   }, [started]);
 
+  // PREFETCH WHAT THE PORTALS ACTUALLY OPEN, read from the one table that
+  // says so. This prefetched "/portfolio" -- the index of the written work --
+  // and that route no longer exists: the pages are top-level now
+  // (app/(work)/) and the island reaches them through its portals. A prefetch
+  // of a deleted route is a 404 on every visit, which is exactly the bug
+  // app/(work)/layout.tsx's header records from the last time this drifted.
+  //
+  // Derived rather than listed, so adding a portal cannot leave this behind.
   useEffect(() => {
-    router.prefetch("/portfolio");
+    for (const href of PORTAL_PREFETCH) router.prefetch(href);
     const mountTimer = setTimeout(() => startTransition(() => setIslandMounted(true)), 0);
     return () => clearTimeout(mountTimer);
   }, [router, startTransition]);
@@ -1800,11 +1816,18 @@ export default function IslandExperience() {
         {/* "Achievement unlocked", top-right under the menu. */}
         <AchievementToast />
         <SceneHint />
-        {/* "You are here" on the globe in the Where I Am portal. Always
-            mounted so the node VietnamMarkerAnchor projects onto is stable,
-            and hidden by that anchor until the portal is actually open --
-            see helpers/globeMarker.ts for why it is DOM and not 3D. */}
-        <GlobeMarker />
+        {/* THE GLOBE'S PINS WENT WITH THE GLOBE.
+            `<GlobeMarker />` stood here -- the DOM half of the place pins,
+            always mounted so the node PlacePinsAnchor projected onto was
+            stable. Portal 02 is the phone reconstruction now
+            (config/portals.ts says why), so nothing inside the Canvas ever
+            places those nodes again. They would have stayed invisible -- each
+            Pin renders with `visibility: hidden` until a projected frame
+            clears it -- but they would still have been two mounted subtrees
+            and a jotai subscription serving a portal that no longer exists.
+            GlobeMarker.tsx, helpers/globeMarker.ts and the .globe-pin rules in
+            globals.css all stay in the tree and stay compiling; restoring the
+            globe is this line plus the `interior:` line in config/portals.ts. */}
         {/* Not before entering: the loading screen is ordinary chrome with a
             button to press, so it keeps the ordinary OS pointer. The custom
             cursor is part of the scene and arrives with it. Unmounted rather

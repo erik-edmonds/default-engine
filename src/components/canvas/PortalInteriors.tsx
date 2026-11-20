@@ -106,6 +106,14 @@ function PointCloudInterior({ count = 1400, accent = '#8fd4ff' }: { count?: numb
  *  WaterInterior.tsx. */
 const WaterInterior = lazy(() => import("@/components/canvas/WaterInterior"))
 
+/** Lazy for the same reason WaterInterior is, and one more.
+ *
+ *  phone.glb is 0.57 MB and Phone.tsx deliberately does not preload it at
+ *  module scope, so a static import here would be the thing that pulls it into
+ *  the island's first paint -- the exact trap WaterInterior.tsx documents.
+ *  Behind React.lazy the fetch starts when this portal's room first wakes. */
+const PhoneInterior = lazy(() => import("@/components/canvas/PhoneInterior"))
+
 /** The avatar that is stood on the island outside.
  *
  *  Its own clone of the cached scene, which is now all this needs to be.
@@ -562,5 +570,12 @@ export function PortalInterior({ kind, accent, count, open }: { kind: PortalInte
     )
   }
   if (kind === "vr") return <VrInterior />
+  if (kind === "phone") {
+    return (
+      <Suspense fallback={null}>
+        <PhoneInterior />
+      </Suspense>
+    )
+  }
   return <AvatarInterior />
 }

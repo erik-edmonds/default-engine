@@ -20,6 +20,7 @@ import { PaperSky } from "@/components/canvas/PaperSky"
 import { skyWorldMounted } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
 import { Sign } from "@/components/models/Sign"
+import { Hologram } from "@/components/models/Hologram"
 
 export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
@@ -114,7 +115,6 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 ISLAND_FOV_Y_PORTRAIT opens far enough to hold the original
                 layout instead, which is the change that was rejected earlier
                 as too large and is the right one. */}
-            <Sign scale={0.75} position={[-4.1,-1.3,0]} rotation={[0,0,0]} />
             <Waterfall />
             {/* Both mounted once for the whole scene, not per-Clouds-group --
                 a strike and a downpour are whole-scene events regardless of
@@ -126,7 +126,7 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 photograph: they are scenery, they move, and on a map they read
                 as debris scattered over the water. */}
             <group name="birds-flock">{showSeagulls && <SeagullFlock />}</group>
-            <group name="birds-gull"><Gull scale={1} position={[0,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/></group>
+            <group name="birds-gull"><Gull scale={1} position={[1,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/></group>
             <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
             {/* The scuba gear used to stand here, and clicking it dived the
                 avatar off the island edge and cut to /portfolio. It is gone
@@ -146,7 +146,12 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 the ball always belonged on, and the pair read correctly until
                 the sign was moved on top of it. With the sign returned and
                 the lens opened, neither has to give way to the other. */}
-            <Pokeball ref={pokeballRef} scale={2} position={[-3.25,-1.5,0]} rotation={[0, -Math.PI/4, 0]}/>
+            <Hologram scale={0.5} position={[1.75, -2.75, 8]} route={"/"} /> 
+            {/* The hologram is a beacon, and the beacon is the devices that 
+            follows the screen when clicked. This is the basic framework for 
+            adding AI into the scene. 
+            /*}
+
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth
                 raycast (plus every r3f pointer event on the island) pays for
@@ -168,7 +173,7 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                     then measured 2.31, 1.73 and 4.50 units of clearance on
                     three runs of unchanged geometry. */}
                 <group ref={islandRef} name="island-terrain">
-                    <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/2,0]}/>
+                    <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/1.8,0]}/>
                 </group>
             </Bvh>
         </>

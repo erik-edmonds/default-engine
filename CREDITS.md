@@ -37,12 +37,34 @@ leaves in the file, which survive in the gltfjsx output:
 | `Pokeball` | `pokeball.glb` |
 | `Seagull` | `seagull.glb` |
 | the island cluster (`MergedScene`) | `merged.glb` |
+| `Phone` | `phone.glb` |
+| `Glasses` (the VR headset) | `vr.glb` |
+| `Pipboy` | `pipboy.compressed.glb` |
 
 **These are not yet individually attributed.** Each needs its original author,
 source URL and licence recorded here before the site ships publicly — several
 Sketchfab licences (CC-BY in particular) require visible attribution, and a
 portfolio is exactly the context where that matters. Tracked as outstanding
 rather than quietly omitted.
+
+### `phone.glb` — what was done to it
+
+The file is a downloaded asset like the rest of the table above, and its author
+is likewise **not yet recorded**. What *is* recorded is the modification, which
+matters for any licence that asks derivatives to say so:
+
+It arrived as a 10.02 MB Blender scroll-reveal rig — sixteen sibling phone
+variants, fifteen of them collapsed to `scale 0`, revealed by a 132-channel
+animation clip. `scripts/trim-model.mjs` keeps the one visible rig, drops the
+clip (it ended on `scale 0 0 0` for that rig too) and simplifies the remaining
+geometry with meshoptimizer at a 0.1%-of-extent error bound:
+
+    10.02 MB -> 0.57 MB, 45,097 -> 12,238 vertices, all 8 materials intact
+
+The untouched original is kept at `sources/phone.original.glb` (gitignored), so
+the transform is reproducible and reversible. The stock asset also shipped a
+450x338 PowerPoint template JPEG as the screen's base colour; the site replaces
+that at the mesh rather than editing the file.
 
 Pokémon designs (Poké Ball, Dragonite, Charizard, Ditto) are trademarks of
 Nintendo / Creatures Inc. / GAME FREAK, used here decoratively and

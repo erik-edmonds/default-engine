@@ -6,7 +6,7 @@ import { ProjectWriteUp } from "../ProjectWriteUp"
 
 /** Everything on this page comes from config/projects.ts -- see the note in
  *  ProjectWriteUp. This file exists to claim the route and the metadata. */
-const project = projectByHref("/portfolio/driving")
+const project = projectByHref("/gaussian")
 
 export const metadata: Metadata = {
   title: project?.title ?? "Work",

@@ -3,6 +3,26 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+
+  // A BUILD MUST NOT CLOBBER A RUNNING DEV SERVER, which is what this exists
+  // to prevent. Default `.next` unless told otherwise, so nothing changes for
+  // an ordinary `yarn build` or `yarn dev`.
+  //
+  // `next dev` and `next build` both write `.next/static/chunks/`. Running a
+  // production build while a dev server is up therefore overwrites the exact
+  // files that dev server is serving to an open browser tab, and the next
+  // dynamic import in that tab fails with `ChunkLoadError` -- the loader chunk
+  // and the dependency it names no longer come from the same compile. The code
+  // is fine; a reload fixes it; and nothing on screen says so.
+  //
+  // That is not hypothetical: ten verification builds were run against this
+  // directory while a dev server had been up for thirty-four hours, and the
+  // route being verified had moved out of app/(work)/ in the meantime.
+  //
+  //   NEXT_DIST_DIR=.next-verify npx next build
+  //
+  // keeps a verification build entirely out of the dev server's way.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   allowedDevOrigins: ['192.168.0.17'],
   // No `typescript.ignoreBuildErrors` here any more, deliberately.
   //

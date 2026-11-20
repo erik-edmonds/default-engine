@@ -7,10 +7,16 @@ import "./styles.css"
  *
  *  There was no layout here at all: three of the four pages rendered a bare
  *  <main> with class names (`.about-page`, `.body`) that exist in no
- *  stylesheet, and /portfolio itself 404'd while app/page.tsx prefetched it on
- *  every visit. This is the shared frame -- the stylesheet, the way back to
+ *  stylesheet. This is the shared frame -- the stylesheet, the way back to
  *  the island, and metadata that is per-page rather than inherited from the
  *  homepage's "interactive 3D portfolio", which describes none of these.
+ *
+ *  A ROUTE GROUP, SO THE FOLDER IS NOT IN THE URL. These lived under
+ *  /portfolio/<slug> behind an index page listing all four. The index is gone
+ *  and the pages are top-level -- /detection, /annotation, /gaussian,
+ *  /driving, /election -- because the island's portals are how the work is
+ *  reached, and a section wrapper that nothing links to is just a longer URL.
+ *  `(work)` keeps them sharing this frame without appearing in it.
  *
  *  The root layout already pins the home logo at top-left on every route, so
  *  there is a way out of here even with JavaScript disabled; the text link

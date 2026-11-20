@@ -19,6 +19,7 @@ import { LeftController, RightController } from "@/components/scan/XrControllerH
 import { XrNavigate } from "@/components/scan/XrNavigate"
 import { WristGate } from "@/components/scan/WristGate"
 import { ScanMenuHost } from "@/components/scan/ScanMenuHost"
+import { ScanLayers } from "@/components/scan/ScanLayers"
 import { scanStats } from "@/helpers/scanStats"
 import { xrRig } from "@/helpers/xrRig"
 import { SceneBoundary } from "@/components/layout/SceneBoundary"
@@ -432,6 +433,11 @@ export default function ScanExperience({ scan }: { scan: ScanDefinition }) {
           </dl>
         )}
       </div>
+
+      {/* The annotation, switchable without a headset. Only once there are
+          points: before that every mode looks identical and the legend has
+          nothing to list. */}
+      {stats?.ready && <ScanLayers />}
 
       <EnterVrButton />
 

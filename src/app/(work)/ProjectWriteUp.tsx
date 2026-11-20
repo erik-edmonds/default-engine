@@ -6,7 +6,9 @@ import { PROJECTS, type Project } from "@/config/projects"
 /** One project page, rendered from config/projects.ts.
  *
  *  Colocated here rather than in components/layout because nothing outside
- *  /portfolio has any use for it. Not a route: only `page.tsx` is.
+ *  app/(work) has any use for it. Not a route: only `page.tsx` is -- the
+ *  parenthesised folder is a route group, so it contributes nothing to the
+ *  URL and these pages sit at /detection, /annotation and so on.
  *
  *  Three of the four pages this replaces were byte-identical placeholders, so
  *  the shape of the thing is the point -- a reader who has seen one knows
@@ -98,9 +100,14 @@ export function ProjectWriteUp({ project }: { project: Project }) {
             {previous.title}
           </Link>
         ) : (
-          <Link href="/portfolio">
-            <span>Index</span>
-            All work
+          /* HOME, NOT AN INDEX. This pointed at /portfolio, which was the
+             column listing every project. That page is gone -- the work is
+             reached from the island's portals now, and the pages are siblings
+             at the top level rather than children of a section -- so the first
+             project's "previous" is the way back out. */
+          <Link href="/">
+            <span>Back</span>
+            The island
           </Link>
         )}
         {next && (

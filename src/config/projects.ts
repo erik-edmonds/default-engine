@@ -6,7 +6,7 @@
  *  pointing at have existed in this repo the whole time, linked from nothing.
  *
  *  THIS TABLE IS NOW THE WRITE-UPS TOO, not just the card faces. Three of the
- *  four pages under app/portfolio were byte-identical seventeen-word
+ *  four pages under app/(work) were byte-identical seventeen-word
  *  placeholders ("You made it through the portal"), and the fix is not three
  *  hand-written pages that drift: the pages render from here, so a project is
  *  described in exactly one place. config/portals.ts states the same principle
@@ -52,23 +52,67 @@ export interface Project {
   links: ProjectLink[]
 }
 
-/** The column, gaussian first.
+/** The column, the annotation pipeline first.
  *
  *  Order is deliberate and it is the answer to "what do you want seen?" --
- *  splatting leads. Reordering is safe: nothing indexes this array by
- *  position, PortalInteriors reads only its length, and `label` and `id`
- *  travel with their own entry.
+ *  the two with the most engineering behind them lead, and the annotation
+ *  pipeline leads outright because it is the only one whose `outcome` is
+ *  measured numbers rather than a description. STATUS.md lists where a fifth
+ *  project sits as the owner's call; this is a default, not a verdict.
+ *  Reordering is safe: nothing indexes this array by position,
+ *  PortalInteriors reads only its length, and `label` and `id` travel with
+ *  their own entry -- but `label` is the number printed on the page, so it
+ *  has to be renumbered by hand when the order changes.
  *
- *  `id` is "work-01".."work-04" rather than "01".."04" on purpose: the wouter
- *  route while you are inside the Models portal IS /item/01, and anything in
- *  there sharing that id blends itself open. */
+ *  `id` is "work-01".."work-05" rather than "01".."05" on purpose: the wouter
+ *  route while you are inside a portal IS /item/01, and anything in there
+ *  sharing that id blends itself open. Note the ids are NOT in display order
+ *  -- they are allocation order, and `label` is what the page prints, so the
+ *  labels are renumbered whenever an entry is added or removed.
+ *
+ *  `work-02` IS DELIBERATELY ABSENT. It was the computer-vision write-up at
+ *  /detection -- problem, approach, outcome, like the rest. That route is now
+ *  a running demo (app/detection/) rather than a page of prose about one, so
+ *  there is nothing here for it to render and an entry would only put a dead
+ *  row in anything that lists this table. The gap in the id sequence is the
+ *  record that it existed. */
 export const PROJECTS: Project[] = [
   {
-    id: "work-04",
+    id: "work-05",
     label: "01",
+    title: "A Lidar Annotation Pipeline",
+    blurb: "Ten million points in, ground, canopy and crop rows out — scored against truth.",
+    href: "/annotation",
+    accent: "#7fd4c1",
+    count: 2600,
+    bg: "#0b1a18",
+    kicker: "3D data engineering",
+    problem:
+      "An annotation pipeline has two failure modes and only one of them is visible. The loud one is a crash. The quiet one is a file that opens cleanly in a viewer, renders beautifully, and is entirely wrong — no ground points found, so every height is measured from nothing; or a height range that says the corn is ninety metres tall. Nobody downstream can tell, because the output of annotation looks exactly the same whether it is right or not. And you cannot check it against reality, because reality is what you were trying to measure.",
+    approach:
+      "Make the data where the answer is already known. Maize fields are generated with CropCraft, given real terrain, and flown with a simulated lidar at the flight parameters of a published survey, so every returned point carries the object it hit — ground truth per point, which no real scan has. The labels are written to a separate file from the sensor data on purpose, so a careless feature selection cannot train on its own answers. The pipeline itself is classical and deliberately untrained: an outlier pass, a ground segmentation, height above ground, class bands, and crop rows recovered from the direction of maximum periodicity in vegetation density rather than from a Hough transform, which is what makes it hold up on a sparse point set. Every stage has a named guard that refuses rather than emitting a plausible file.",
+    outcome:
+      "Measured against SMRF on the same 10.65M-point scan and the same code, the SLG ground method removed the below-ground tail entirely — zero points more than a metre under the surface against 649, a minimum of 0.000 m against −31.110 m — at the same cost, 91 seconds against 90. Crop-row detection recovers heading exactly and spacing to the half-centimetre scan step, locating rows to within a millimetre, and holds under 60% weed contamination and a 40% sparse stand. 88 tests across the pipeline and the simulator, and a decoder validated point-for-point against an independent implementation.",
+    stack: [
+      "Python",
+      "PDAL",
+      "NumPy / SciPy",
+      "HELIOS++",
+      "CropCraft",
+      "Blender",
+      "Docker",
+      "PostgreSQL",
+      "COPC / LAZ",
+      "WebXR",
+    ],
+    links: [],
+  },
+  {
+    id: "work-04",
+    label: "02",
     title: "Gaussian Splatting",
     blurb: "Photographs in, a scene you can fly through out — in real time.",
-    href: "/portfolio/gaussian",
+    href: "/gaussian",
     accent: "#d9a7ff",
     count: 2200,
     bg: "#150f1c",
@@ -84,10 +128,10 @@ export const PROJECTS: Project[] = [
   },
   {
     id: "work-03",
-    label: "02",
+    label: "03",
     title: "Autonomous Driving",
     blurb: "Closed-loop driving policies, evaluated in CARLA.",
-    href: "/portfolio/driving",
+    href: "/driving",
     accent: "#7ce3b1",
     count: 1400,
     bg: "#0c1a16",
@@ -102,30 +146,11 @@ export const PROJECTS: Project[] = [
     links: [],
   },
   {
-    id: "work-02",
-    label: "03",
-    title: "Object Detection",
-    blurb: "Finding and classifying things in images.",
-    href: "/portfolio/detection",
-    accent: "#ffb37a",
-    count: 1100,
-    bg: "#1b1410",
-    kicker: "Computer vision",
-    problem:
-      "Detection is where a vision model meets the long tail. The classes you care about are rare, the ones you do not are everywhere, and average precision over the whole set will happily climb while the model gets steadily worse at the thing you actually needed it for.",
-    approach:
-      "The work that moves the number is rarely the architecture. It is looking at what the model gets wrong and why — which classes are confused, which are simply never seen, where the labels disagree with each other — and fixing the data and the evaluation before touching the model.",
-    outcome:
-      "A detector whose score means something, because the set it is scored on reflects the cases it has to get right.",
-    stack: [],
-    links: [],
-  },
-  {
     id: "work-01",
     label: "04",
     title: "The Election Map",
     blurb: "Every US county, by turnout and margin — interactive, in D3.",
-    href: "/portfolio/election",
+    href: "/election",
     accent: "#6fa8ff",
     count: 1800,
     bg: "#0d1b2a",
@@ -144,13 +169,25 @@ export const PROJECTS: Project[] = [
 // ---------------------------------------------------------------------------
 // THINGS ONLY ERIK CAN FILL IN
 //
-// `stack` and `links` are empty above for every project but the election map,
-// whose stack is visible in its own source and so can be stated without
-// guessing. Everything else -- which framework, which dataset, which GPU, the
-// repo URL, the numbers -- is yours, and inventing a plausible-sounding list
-// would be the one thing a portfolio must not do. The pages omit a section
-// whose array is empty rather than printing a placeholder, so filling these in
-// is purely additive: add the strings, the section appears.
+// `links` is empty on EVERY project, and that is the outstanding item: the
+// repo URLs are yours. The pages omit a section whose array is empty rather
+// than printing a placeholder, so filling them in is purely additive -- add
+// the strings, the section appears.
+//
+// `stack` is now filled for the three whose tooling is a matter of record:
+// the election map (visible in its own source), the annotation pipeline
+// (pipeline/, sim/ and db/ name every one of them) and the 3D search
+// (sfm/environment.yml). Gaussian splatting and the driving work are still
+// empty because nothing in this repository says which framework or which GPU,
+// and inventing a plausible-sounding list would be the one thing a portfolio
+// must not do.
+//
+// THE NUMBERS IN `outcome` ARE THE SAME RULE. The annotation pipeline's are
+// quoted from STATUS.md and pipeline/README.md and can be re-derived by
+// running the suites. The 3D search states what it measures rather than what
+// it measured, because no capture has been shot through it yet --
+// config/sfm.ts carries `ready: false` for the same reason. When the first
+// reconstruction runs, the counting gap goes in that sentence.
 //
 // The prose above is deliberately about the PROBLEM and the APPROACH rather
 // than about results, for the same reason. Where you have a number -- an mAP,
