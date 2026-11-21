@@ -28,11 +28,41 @@ import * as THREE from 'three'
  *  called dispose() to force a rebuild, which threw "Invalid value used as weak
  *  map key" out of three's property cache and only ever caught one of the four.
  *
- *  The discriminator is from the same measurement: a depth TEXTURE (rather than
- *  a depth renderbuffer) is drei useFBO's signature -- the composer's own
- *  multisampled buffers have none, and the water's hand-rolled targets are not
- *  multisampled. So "multisampled and has a depthTexture" is exactly the set we
- *  mean, and nothing else.
+ *  The discriminator is a depth TEXTURE (rather than a depth renderbuffer),
+ *  which is drei useFBO's signature, AND a name test. The name test is not
+ *  belt-and-braces -- without it this patch silently disabled antialiasing for
+ *  the entire scene.
+ *
+ *  WHAT THIS COMMENT USED TO CLAIM, AND WHY IT WAS WRONG. It said "the
+ *  composer's own multisampled buffers have none [no depthTexture], so
+ *  'multisampled and has a depthTexture' is exactly the set we mean, and
+ *  nothing else." That is false for postprocessing@6.39.2, and the chain is
+ *  three links, each verified in node_modules:
+ *
+ *    1. n8ao/dist/N8AO.js            `needsDepthTexture = true`
+ *    2. postprocessing/build/index.js `inputBuffer.depthTexture = this.depthTexture`
+ *                                     -- assigned EVERY FRAME, before every pass
+ *    3. @react-three/postprocessing   the composer is built `multisampling: 8`
+ *
+ *  So N8AO forces a depth texture into existence, the composer hangs it on its
+ *  OWN input buffer, RenderPass binds that buffer to draw the island, and the
+ *  old predicate matched it. samples went to 0 before three ever allocated the
+ *  multisample renderbuffer, and the island rendered with no antialiasing of
+ *  any kind -- no MSAA, and no SMAA/FXAA pass in the chain to stand in for it.
+ *  The `antialias: true` on the default framebuffer is irrelevant, because the
+ *  scene is never drawn there.
+ *
+ *  THE NAME IS THE LIBRARY'S OWN MARKER, not something inferred. postprocessing
+ *  sets `renderTarget.texture.name = "EffectComposer.Buffer"` in createBuffer,
+ *  and three's Texture.copy copies `name`, so the clone that becomes
+ *  outputBuffer carries it too. It is assigned at CONSTRUCTION, which is what
+ *  makes it usable here: capturing the composer's buffer identities instead
+ *  would need the composer to exist first, and by then a bind has already
+ *  happened and `samples` is already 0 -- and 0 is sticky, because three reads
+ *  it once when it builds the framebuffer.
+ *
+ *  drei's portal targets have no name at all, so they still match and are still
+ *  stripped. The memory saving below is unchanged.
  *
  *  ONE EXCEPTION, AND IT IS NOT HYPOTHETICAL. three's XR manager builds the
  *  headset's own framebuffer with `depthTexture: new DepthTexture(...)` and
@@ -63,6 +93,12 @@ import * as THREE from 'three'
  *  samples -- measured: three of the four were caught from an effect and the
  *  fourth stayed at 93.8MB for the life of the page. onCreated runs when the
  *  renderer is made, before anything can bind. */
+/** postprocessing's own label for the buffers EffectComposer renders the scene
+ *  into -- `createBuffer` sets it, and it survives the clone that makes
+ *  outputBuffer. Matching on it is how this patch tells the composer's buffers
+ *  apart from drei's portal FBOs, which carry no name. */
+const COMPOSER_BUFFER = "EffectComposer.Buffer"
+
 export function budgetPortalTargets(gl: THREE.WebGLRenderer, samples = 0) {
   const patched = gl as THREE.WebGLRenderer & { __portalBudget?: boolean }
   if (patched.__portalBudget) return
@@ -77,6 +113,10 @@ export function budgetPortalTargets(gl: THREE.WebGLRenderer, samples = 0) {
       target &&
       target.samples > samples &&
       target.depthTexture &&
+      // The composer's own input/output buffers. See the header: without this
+      // the whole scene loses MSAA, because N8AO gives those buffers a
+      // depthTexture and they would otherwise match on every bind.
+      target.texture?.name !== COMPOSER_BUFFER &&
       !(target as THREE.WebGLRenderTarget & { isXRRenderTarget?: boolean }).isXRRenderTarget
     ) {
       target.samples = samples

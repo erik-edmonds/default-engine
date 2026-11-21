@@ -1541,7 +1541,21 @@ export default function IslandExperience() {
               The composer stays mounted, so its NoToneMapping pin stays in
               force -- XrTransition step 4 is what puts AgX back on the
               renderer for the session. */}
-          <EffectComposer enabled={!xrArmedValue}>
+          {/* multisampling IS the scene's antialiasing, and it is stated here
+              rather than left to the library default because it spent a long
+              time silently being zero.
+
+              @react-three/postprocessing defaults this to 8 and the scene
+              never drew with it: helpers/usePortalTargetBudget.ts patches
+              setRenderTarget to strip MSAA off drei's portal FBOs, and its
+              predicate also matched the composer's own input buffer -- N8AO
+              forces a depthTexture onto it, which was the discriminator. So
+              the island rendered with no AA of any kind, and the blur that
+              was reported as "the scene looks blurry" was partly this and
+              partly the dpr ratchet. The predicate is fixed; writing the
+              number here means the next person can see what it is without
+              knowing any of that. */}
+          <EffectComposer enabled={!xrArmedValue} multisampling={8}>
             {/* Turned DOWN in the paper world, not unmounted. Ambient occlusion
                 is exactly what a cutout must not have -- it puts contact shading
                 into the gaps between flat shapes and turns a sheet of paper back
