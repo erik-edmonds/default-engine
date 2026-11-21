@@ -22,6 +22,12 @@ import { skyWorldMounted } from "@/helpers/StateProvider"
 import { useAtomValue } from "jotai"
 import { Sign } from "@/components/models/Sign"
 import { Hologram } from "@/components/models/Hologram"
+import { opticsRun } from "@/helpers/optics"
+
+/** Module scope, so the identity is stable for the session. The beacon
+ *  re-registers its magnetic target whenever this changes, and an inline arrow
+ *  would hand it a new function on every render of this component. */
+const startOptics = () => { opticsRun.start() }
 
 export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a
@@ -147,10 +153,19 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 the ball always belonged on, and the pair read correctly until
                 the sign was moved on top of it. With the sign returned and
                 the lens opened, neither has to give way to the other. */}
-            <Hologram scale={0.5} position={[1.75, -2.75, 8]} route={"/"} /> 
-            {/* The hologram is a beacon, and the beacon is the devices that 
-            follows the screen when clicked. This is the basic framework for 
-            adding AI into the scene. */}
+            {/* The hologram is a beacon, and the beacon is the device that
+                follows the screen when clicked. This is the basic framework
+                for adding AI into the scene.
+
+                `route` is gone and nothing is lost: it was "/", so clicking
+                the beacon pushed the route you were already on. Dead, in the
+                same way layout/Icon.tsx records the home button being dead at
+                a hotspot -- a control that looks live and does nothing. */}
+            <Hologram
+                scale={0.5}
+                position={[1.75, -2.75, 8]}
+                onActivate={startOptics}
+            />
 
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth

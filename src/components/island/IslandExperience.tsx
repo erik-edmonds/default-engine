@@ -17,6 +17,8 @@ import SoundToggle from "@/components/layout/SoundToggle";
 import { AmbientBeds } from "@/components/layout/AmbientBeds";
 import { Scene } from "@/components/canvas/Scene";
 import { CameraController, type CameraControllerHandle } from "@/components/canvas/CameraController";
+import { OpticsCamera } from "@/components/canvas/OpticsCamera";
+import { opticsHoldsInput, opticsPhase } from "@/helpers/optics";
 import { AvatarController, type AvatarControllerHandle } from "@/components/canvas/AvatarController";
 import { Environment } from "@/components/canvas/Environment";
 import { SunFlare } from "@/components/canvas/SunFlare";
@@ -429,13 +431,29 @@ export default function IslandExperience() {
   // assisted click come off capture-phase window listeners that no scrim can
   // intercept -- so with the modal open the cursor went on locking onto
   // hotspots behind it, and a click still fired them.
+  //
+  // Where the beacon is in its run. Four values over a whole sequence, which
+  // is why this one piece of optics state is an atom and the clock behind it
+  // is not -- see helpers/optics.ts. Declared here rather than with the other
+  // atom reads below because the effect that follows is the first thing that
+  // needs it.
+  const opticsPhaseValue = useAtomValue(opticsPhase);
+  // THE OPTICS RUN IS THE FOURTH, and it is not full-screen chrome -- it is
+  // the one case where the scene is fully visible and still must not be
+  // touched. While the beacon is flying off its base and the camera is pulling
+  // back, a click would start a hotspot flight into a camera that is already
+  // moving. It stands down again the moment the sweep begins: by then the
+  // camera has arrived and the scan is something you watch, not something that
+  // holds you still.
   useEffect(() => {
-    setSceneInputSuppressed(Boolean(openPortal) || mapOpen || menuOpen);
+    setSceneInputSuppressed(
+      Boolean(openPortal) || mapOpen || menuOpen || opticsHoldsInput(opticsPhaseValue),
+    );
     // Restoring on unmount matters more than it looks: the flag is module
     // state, so a page that unmounted while suppressed would leave the next
     // mount's scene dead.
     return () => setSceneInputSuppressed(false);
-  }, [openPortal, mapOpen, menuOpen]);
+  }, [openPortal, mapOpen, menuOpen, opticsPhaseValue]);
   // Entering/leaving a portal is expressed entirely as the wouter route
   // Card.tsx's Frame already reads (`/item/:id`), so there's no separate
   // "which portal is open" state here. All wouter calls live in
@@ -1634,7 +1652,12 @@ export default function IslandExperience() {
                   them floating ON TOP of its interior. Every other piece of
                   chrome (the rail, the minimap, the name stamp, the hint)
                   already checks this; the rings were the one that didn't. */}
-              {sceneReady && revealStage >= 3 && !isCoarsePointer && !openPortal && <>
+              {/* `opticsPhaseValue !== "scanning"` joins the gate for the same
+                  reason `!openPortal` did: these rings draw with
+                  depthTest={false} at renderOrder 998-1000, so during a sweep
+                  they would sit on top of the detection brackets rather than
+                  behind them. They come back the moment the sweep clears. */}
+              {sceneReady && revealStage >= 3 && !isCoarsePointer && !openPortal && opticsPhaseValue !== "scanning" && <>
                 {/* <group visible={!motion}><NavTotems onUp={() => { setMotion(true); handleUpClick(); }} onDown={() => { setMotion(true); handleDownClick(); }} /></group> */}
                 <CameraHotspot label={HOTSPOT_LABELS["upper"]} labelsIntro={labelsIntro} position={UPPER_ISLAND_HOTSPOT_POSITION} onClick={handleUpperIslandHotspotClick} hidden={isHotspotHidden("upper")} viewpoint={HOTSPOT_VIEWPOINTS["upper"].position} pendingOffscreen={isHotspotPendingOffscreen("upper")} onOffscreen={() => handleHotspotOffscreen("upper")} />
                 <CameraHotspot label={HOTSPOT_LABELS["left-tree"]} labelsIntro={labelsIntro} position={LEFT_TREE_HOTSPOT_POSITION} onClick={handleLeftTreeHotspotClick} hidden={isHotspotHidden("left-tree")} viewpoint={HOTSPOT_VIEWPOINTS["left-tree"].position} pendingOffscreen={isHotspotPendingOffscreen("left-tree")} onOffscreen={() => handleHotspotOffscreen("left-tree")} />
@@ -1681,6 +1704,14 @@ export default function IslandExperience() {
               ))}
             </group>
             <CameraController ref={cameraControllerRef} />
+            {/* Beside the controller because this is where the handle lives.
+                The beacon's own flight belongs to BeaconCompanion, down in
+                Scene where the beacon is; neither component knows about the
+                other and both read the same clock. */}
+            <OpticsCamera
+              controller={cameraControllerRef}
+              blocked={Boolean(openPortal) || skySequenceValue || xrArmedValue}
+            />
             {/* Inside the Canvas on purpose -- it owns every wouter call, and
                 wouter reads `location` at render, which would break this
                 page's static prerender if it ran at the page's top level. */}

@@ -1,0 +1,193 @@
+Erik Edmonds
+Applied Computer Vision & Perception Engineer
+Chicago, IL 60657 · erikedmonds2019@u.northwestern.edu · +1 (312) 681-7131
+erikedmonds.com · github.com/erik-edmonds · Authorized to work in the US for any employer
+
+SUMMARY
+Computer vision and perception engineer with 10 years in software and machine learning. Built and shipped
+visual-perception models for robot- and vehicle-mounted cameras in agriculture, autonomous rail and heavy equipment,
+carrying the work from data labeling and training through validation, deployment and drift monitoring. Hands-on with object
+detection, segmentation, pose estimation and multi-object tracking in Python and TensorFlow; multi-sensor integration and
+calibration (stereo cameras, LiDAR, radar, IMU, GPS-RTK); and large-scale data processing with SQL, Spark and AWS.
+
+EXPERIENCE
+Senior Computer Vision Engineer
+PowerPollen Inc. · Waterloo, IA
+
+Sep 2023 – Apr 2026
+
+Business problem: PowerPollen applies preserved pollen to hybrid seed-corn fields on demand. Pollen has to reach the silks at
+the right height and moment, so the tractor needed to detect silk in the field and drive pollination automatically.
+• Developed the corn-silk height detection that determines when and where pollen is applied in the field.
+• Fed real-time detections into actuation control, closing the loop from perception to application.
+• Processed radar and LiDAR range data for the in-field perception system.
+• Integrated the controls into the tractor platform, giving the pollination process greater autonomy.
+
+Result: 30% increase in kernel yield from silk-height–guided pollination.
+
+Senior Machine Learning Architect, Perception & Mapping/Localization
+Intramotev · St. Louis, MO
+
+Aug 2022 – Aug 2023
+
+Business problem: Intramotev builds autonomous, battery-electric freight railcars. The railcar needed a real-time perception
+and localization stack running on its multi-sensor suite so it could move freight on its own.
+• Architected the real-time perception system and roadmap following AUTOSAR software-architecture guidelines; led
+perception development in collaboration with the other team leads.
+• Integrated stereo cameras, LiDAR, IMU and GPS-RTK; calibrated and configured the cameras for stereo depth perception.
+• Developed 3D object detection, pose estimation, multi-object tracking and pixel-level segmentation, including algorithms
+built from scratch.
+• Built visual odometry and graph-based SLAM with GNSS-RTK integration, along with sensor fusion, mapping, localization
+and motion planning.
+• Optimized the image pipeline with digital signal processing to raise throughput and cut latency.
+• Integrated sensors into the vehicle's CAN ecosystem on NVIDIA Jetson AGX Orin.
+• Built visualization and simulation tooling (Unreal Engine/AirSim, PCL/LidarView, Webviz); used NeRF for 3D rendering and
+scene synthesis, and optical-flow video super-resolution to improve image quality.
+
+Result: Reduced image input-stream latency to 10 ms.
+
+Data Scientist Consultant (Contract)
+Microsoft · Redmond, WA
+
+Nov 2021 – Jan 2022
+
+Business problem: Customer teams needed predictive-maintenance and customer-segmentation models running at scale on
+Azure.
+• Built, deployed and maintained predictive-maintenance and customer-segmentation models on Azure ML and Azure
+Databricks.
+• Defined requirements with customers and set realistic goals for data acquisition and usage.
+• Mentored junior data scientists.
+
+Erik Edmonds · page 1
+
+Research Data Scientist, Carbon Emissions & Battery Health (Contract)
+Toyota Connected · St. Louis, MO
+
+Apr 2021 – Oct 2021
+
+Business problem: Use connected-vehicle telemetry and video to drive R&D on battery health, emissions and next-generation
+vehicle products.
+• Applied statistical and ML methods to vehicle telemetry and video data, building scalable solutions for R&D on new
+vehicle products and accessories.
+• Developed ML on streaming CAN data with Kafka, Spark, AWS EMR and TensorFlow.
+• Owned end-to-end delivery: APIs serving models in production, plus model monitoring.
+• Led a team building GAN-based generative models to create artifacts for 3D visualization, and graph networks for
+adaptive volumetric shape representations.
+• Researched battery degradation and optimization; built physics-based cell and pack models.
+
+Software Engineer, Perception – Computer Vision (Contract)
+Caterpillar · Champaign, IL
+
+Dec 2020 – Mar 2021
+
+Business problem: Develop, validate and monitor perception models for Caterpillar truck sensors, and evaluate ADAS
+approaches in simulation.
+• Trained object-detection models with Mask R-CNN and the TensorFlow Object Detection API on a modified COCO dataset.
+• Built labeled training data with VGG Image Annotator, PixelAnnotationTool and AWS SageMaker Ground Truth.
+• Tested, validated and moved models to production with AWS SageMaker and TensorFlow; monitored model drift for
+truck-sensor models with SageMaker Model Monitor and edge monitoring.
+• Automated ML workflows with Airflow and SageMaker Pipelines.
+• Ran proof-of-concept evaluation of ADAS customization with NVIDIA DRIVE AV and comma.ai openpilot in CARLA; tested
+models in CARLA/Unreal Engine.
+• Built vision components in OpenCV and MATLAB/Simulink; path planning with ROS/ROS2, tested in Gazebo with
+TurtleBot.
+
+Lead Machine Learning Engineer (Contract)
+Intel · Seattle, WA
+
+Sep 2020 – Nov 2020
+
+Business problem: Make trained models from several frameworks run fast on target hardware.
+• Optimized models with the Apache TVM compiler stack; ported TensorFlow, PyTorch, MXNet and ONNX models from
+Python to C++.
+• Quantized, deployed and monitored the optimized models; built models from scratch and tuned them for GPU (and TPU
+where needed).
+• Mentored 3 junior data scientists, handling prioritization and onboarding; worked with stakeholders and clients to deliver
+data-driven recommendations.
+
+Lead Software Engineer, Robotics (Contract)
+Centene · St. Louis, MO
+
+Jul 2020 – Aug 2020
+
+Business problem: Build and validate a ROS-based robotics software stack.
+• Designed ROS messages and nodes on Ubuntu with a C++/Python architecture; tested in simulation with TurtleBot and
+Gazebo.
+• Built vision components in OpenCV and MATLAB/Simulink; unit-tested and validated the software; tested and
+productionized models with AWS SageMaker and TensorFlow.
+
+Data Scientist Consultant
+Daugherty Business Solutions · St. Louis, MO
+
+Sep 2019 – Jun 2020
+
+Business problem: Client and internal projects spanning a self-driving RC car prototype, custom object detection, document OCR
+and AWS data platforms.
+• First lead data scientist on a self-driving RC car: perception and control with OpenCV, keras-rl, the TensorFlow Object
+Detection API and TensorRT/CUDA on ROS, Raspberry Pi 3B+ and NVIDIA Jetson Nano.
+• Extended a COCO-pretrained TensorFlow detector to new object classes such as dumpsters through transfer learning
+(unfreezing layers), trained on GPU.
+Erik Edmonds · page 2
+
+• Ported trained models to Android with TensorFlow Lite and MobileNet V2.
+• Built OCR and text extraction for scanned health-data PDFs to flag missing form fields.
+• Architected an end-to-end AWS ETL/analytics pipeline (S3, EC2, Lambda, Glue, Aurora RDS, Redshift) and real-time data
+pipelines with Airflow, Spark and Kafka.
+Result: The new AWS architecture cut development time and maintenance costs by 90% versus the previous one, with
+better scalability and reliability.
+
+Data Scientist / Analytics Consultant (Contract)
+Wells Fargo · Springfield, IL
+
+Jan 2017 – Aug 2019
+
+Business problem: Turn dealer and sales results into predictive models and actionable findings for product teams.
+• Wrote SQL, R and Python to query and analyze internal and external data sources.
+• Developed predictive models that improved as real-time dealer and sales results came in (TensorFlow, H2O, scikit-learn,
+Keras, GLM).
+• Validated model fit with cross-validation, bootstrapping and hypothesis testing, measuring error and confidence.
+• Partnered with Product, Operations and Sales to frame problems; delivered in Scrum sprints.
+
+Software Engineer
+MSFW · Springfield, IL
+
+Jan 2016 – Dec 2016
+
+Business problem: Technology solutions to improve clients' delivery approach.
+• Built and configured client applications in C++, C# and .NET (MVC, Angular) and maintained client databases on SQL Server
+/ Azure SQL.
+
+SKILLS
+Computer vision: Object detection (Mask R-CNN, TensorFlow Object Detection API, MobileNet V2), 3D object detection,
+pixel-level segmentation, pose estimation, multi-object tracking, transfer learning, OCR, stereo depth, visual odometry /
+graph SLAM, NeRF, optical-flow video super-resolution, OpenCV
+Evaluation & data: Model testing and validation, drift monitoring (SageMaker Model Monitor), cross-validation,
+bootstrapping, hypothesis testing, simulation-based evaluation (CARLA); annotation with SageMaker Ground Truth, VGG
+Image Annotator and PixelAnnotationTool; COCO-format datasets
+ML & deployment: TensorFlow, Keras, TensorFlow Lite, TensorRT/CUDA, Apache TVM, quantization, ONNX, PyTorch and
+MXNet (model conversion), scikit-learn, H2O
+Data & MLOps: SQL (SQL Server, PostgreSQL, Aurora, Redshift), Spark, Kafka, Airflow, AWS (SageMaker, SageMaker
+Pipelines, EMR, S3, Lambda, Glue), Azure ML, Databricks, Docker, Git
+Robotics & sensors: Stereo cameras, LiDAR, radar, IMU, GPS/GNSS-RTK, camera calibration, CAN, NVIDIA Jetson AGX Orin /
+Nano, ROS/ROS2, Gazebo, CARLA, AirSim/Unreal Engine, PCL
+Languages: Python, SQL, C++, C#, R, MATLAB
+
+EDUCATION
+Master's, Robotics Engineering — Autonomous Vehicle Specialization
+Worcester Polytechnic Institute · Worcester, MA
+
+Jan 2020 – Present
+
+Bachelor's, Electrical Engineering
+Northwestern University · Evanston, IL
+
+Jan 2018 – Jan 2020
+
+Bachelor's, Computer Science / Philosophy
+Monmouth College · Monmouth, IL
+
+May 2016
+
+Erik Edmonds · page 3
+
+
