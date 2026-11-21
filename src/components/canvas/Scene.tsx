@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { ISLAND_ROTATION_Y } from "@/config/positions"
 import * as THREE from "three"
 import { Bvh } from "@react-three/drei"
 import { registerCursorSurface } from "@/helpers/cursor"
@@ -149,8 +150,7 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
             <Hologram scale={0.5} position={[1.75, -2.75, 8]} route={"/"} /> 
             {/* The hologram is a beacon, and the beacon is the devices that 
             follows the screen when clicked. This is the basic framework for 
-            adding AI into the scene. 
-            /*}
+            adding AI into the scene. */}
 
             {/* Wrapped in its own Bvh, unlike the one above: merged.glb is 166
                 separate meshes with no bounds tree, and the cursor's depth
@@ -173,7 +173,7 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                     then measured 2.31, 1.73 and 4.50 units of clearance on
                     three runs of unchanged geometry. */}
                 <group ref={islandRef} name="island-terrain">
-                    <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,Math.PI/1.8,0]}/>
+                    <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,ISLAND_ROTATION_Y,0]}/>
                 </group>
             </Bvh>
         </>

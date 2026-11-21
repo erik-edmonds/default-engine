@@ -25,32 +25,38 @@
  *
  *  It agrees with the independent reach-by-bearing table in config/journey.ts,
  *  which was derived from 48.9k transformed vertices: the tall island around
- *  bearing 155-235 standing to y 17.8, the moon island near 135-155, the left
- *  tree near 240-260, open water everywhere else. The radii here read larger
+ *  bearing 165-245 standing to y 17.8, the moon island near 145-165, the left
+ *  tree near 250-270, open water everywhere else. The radii here read larger
  *  because this measures each mesh's furthest bounding-box corner rather than
  *  its furthest vertex, which is the conservative direction for a keep-out test.
  *
  *  To re-measure after moving anything: scratchpad/terrainprobe.mjs.
+ *
+ *  ROLLED +2 BINS (+10 degrees) when the island turned from rotateY(90) to
+ *  rotateY(100). The island is rigid and the bins are 5 degrees wide, so a
+ *  10-degree turn is an exact 2-place roll of both tables -- the silhouette is
+ *  unchanged, it just sits at a different bearing. No re-measure was needed.
+ *  A turn that is not a multiple of 5 degrees WOULD need one.
  */
 
 /** Furthest the island reaches from the world origin, per 5-degree bearing. */
 const REACH = [
-  9.6, 9.6, 9.6, 9.6, 8.9, 0, 0, 4.2, 4.2, 4.2, 4.2, 4.2,
-  4.2, 4.2, 0, 0, 0, 0, 0, 5.7, 11.5, 11.5, 11.5, 11.5,
-  11.1, 0, 0, 27.5, 27.5, 27.5, 27.5, 39, 39, 39, 39, 39,
+  0, 9.2, 9.6, 9.6, 9.6, 9.6, 8.9, 0, 0, 4.2, 4.2, 4.2,
+  4.2, 4.2, 4.2, 4.2, 0, 0, 0, 0, 0, 5.7, 11.5, 11.5,
+  11.5, 11.5, 11.1, 0, 0, 27.5, 27.5, 27.5, 27.5, 39, 39, 39,
   39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39,
-  30.9, 30.9, 30.9, 30.9, 0, 0, 0, 8.8, 9, 9, 9, 9,
-  8.6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9.2,
+  39, 39, 30.9, 30.9, 30.9, 30.9, 0, 0, 0, 8.8, 9, 9,
+  9, 9, 8.6, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ]
 
 /** Highest it stands, per the same bearing. -10 means nothing is there at all. */
 const TOP = [
-  10, 10, 10, 10, 9.9, -10, -10, 1.6, 1.6, 1.6, 1.6, 1.6,
-  1.6, 1.6, -10, -10, -10, -10, -10, 4.8, 12.8, 12.8, 12.8, 12.8,
-  12.5, -10, -10, 4.4, 4.4, 7.3, 6.9, 17.8, 17.8, 17.8, 17.8, 17.8,
+  -10, 8.7, 10, 10, 10, 10, 9.9, -10, -10, 1.6, 1.6, 1.6,
+  1.6, 1.6, 1.6, 1.6, -10, -10, -10, -10, -10, 4.8, 12.8, 12.8,
+  12.8, 12.8, 12.5, -10, -10, 4.4, 4.4, 7.3, 6.9, 17.8, 17.8, 17.8,
   17.8, 17.8, 17.8, 17.8, 17.8, 17.8, 17.8, 17.8, 17.8, 17.8, 17.8, 17.8,
-  8.2, 8.5, 1.5, 1.5, -10, -10, -10, 7.7, 8.3, 8.3, 8.3, 8.3,
-  7.5, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 8.7,
+  17.8, 17.8, 8.2, 8.5, 1.5, 1.5, -10, -10, -10, 7.7, 8.3, 8.3,
+  8.3, 8.3, 7.5, -10, -10, -10, -10, -10, -10, -10, -10, -10
 ]
 
 const BIN_DEGREES = 360 / REACH.length

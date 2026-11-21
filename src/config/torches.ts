@@ -11,7 +11,7 @@
  *  The floating islands are hand-placed nodes inside the gltfjsx dump
  *  `components/models/MergedScene.tsx`, under one `Sketchfab_model` subtree
  *  whose own transform is then composed with `<Merged>`'s
- *  `translate(0,-5.5,0) · rotateY(90°) · scale(3)` (Scene.tsx). There is no
+ *  `translate(0,-5.5,0) · rotateY(100°) · scale(3)` (Scene.tsx). There is no
  *  table of island transforms to hang children off, and two of the four
  *  island groups carry a mesh-level offset INSIDE them, so a torch added as a
  *  child of those groups hangs in open air.
@@ -71,16 +71,30 @@ export const TORCH_SCALE = 0.8
  *  light with the fire instead of leaving it floating at the old height. */
 export const TORCH_FLAME_HEIGHT = 2.32 * 0.86 * TORCH_SCALE
 
+/** ROTATED +10 DEGREES WITH THE ISLAND, and not re-surveyed.
+ *
+ *  The island turned from rotateY(90 deg) to rotateY(100 deg) and left these
+ *  three standing in open air. They are rigidly attached to it, so the repair
+ *  is the same rotation about the world Y axis rather than a fresh scan --
+ *  each torch keeps the ground height it was measured at, because a Y
+ *  rotation does not change Y. `scripts/rotate-island-props.mjs` did the
+ *  arithmetic; rotationY gets the delta added so the three stay turned away
+ *  from each other.
+ *
+ *  THE SCREEN POSITIONS QUOTED ABOVE ARE FROM THE 90-DEGREE SURVEY. The
+ *  reasoning behind each one still holds, but the pixel numbers do not -- the
+ *  camera now looks at a differently-turned island. Re-measure before trusting
+ *  them. */
 export const TORCH_SITES: TorchSite[] = [
   // The tree island -- portal 01, the Gallery. Projects to screen x 1012
   // against a portal that ends at 955: clear of it, and on surface measured
   // at 1.51.
-  { island: "left-tree", portal: "01", position: [-18.9, 1.51, -10.24], rotationY: 1.2 },
+  { island: "left-tree", portal: "01", position: [-20.39, 1.51, -6.8], rotationY: 1.3745 },
 
   // The moon island -- portal 02, the globe. Screen x 1029 against a portal
   // ending at 936, on a shelf measured at 5.42 -- above the portal's own
   // base, so the torch stands in front of the frame's buried lower half.
-  { island: "moon-island", portal: "02", position: [9.6, 5.42, -19.51], rotationY: -0.6 },
+  { island: "moon-island", portal: "02", position: [6.07, 5.42, -20.88], rotationY: -0.4255 },
 
   // The big upper island -- portal 03, the mini-game. Screen x 1088 against
   // a portal ending at 858.
@@ -92,5 +106,5 @@ export const TORCH_SITES: TorchSite[] = [
   // came out hanging two metres above the grass, plainly, in a screenshot.
   // The island here carries a stand of trees; 11.2 is the band three cells
   // agree on BELOW them (11.17, 11.26, 11.18) and is the ground.
-  { island: "upper", portal: "03", position: [-8.58, 11.26, -12.23], rotationY: 0.5 },
+  { island: "upper", portal: "03", position: [-10.57, 11.26, -10.55], rotationY: 0.6745 },
 ]

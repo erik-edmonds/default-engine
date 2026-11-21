@@ -30,7 +30,20 @@ import { openPortalId } from "@/helpers/StateProvider";
 import { SceneBoundary } from "@/components/layout/SceneBoundary";
 import { SceneFallback } from "@/components/layout/SceneFallback";
 import { useContextLoss } from "@/helpers/useContextLoss";
-import { ISLAND_CAMERA_POSITION, ISLAND_CAMERA_ROTATION } from "@/config/positions";
+import {
+  ISLAND_CAMERA_POSITION,
+  ISLAND_CAMERA_ROTATION,
+  UPPER_ISLAND_HOTSPOT_POSITION,
+  UPPER_ISLAND_VIEWPOINT_POSITION,
+  UPPER_ISLAND_VIEWPOINT_ROTATION,
+  LEFT_TREE_HOTSPOT_POSITION,
+  LEFT_TREE_VIEWPOINT_POSITION,
+  LEFT_TREE_VIEWPOINT_ROTATION,
+  MOON_ISLAND_HOTSPOT_POSITION,
+  MOON_ISLAND_VIEWPOINT_POSITION,
+  MOON_ISLAND_VIEWPOINT_ROTATION,
+  HOME_HOTSPOT_POSITION,
+} from "@/config/positions";
 import { CameraHotspot } from "@/components/canvas/CameraHotspot";
 import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/canvas/HotspotPortal";
 import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
@@ -120,19 +133,15 @@ const LABEL_INTRO_MS = 3500;
 
 
 
-const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-9.11, 12.97, -13.08];
-const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-12.138549003045972, 15.973606020841718, -28.466165069815958);
-const UPPER_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.836699146874793, -0.5418705211428874, -2.980689379532905);
-
-const LEFT_TREE_HOTSPOT_POSITION: [number, number, number] = [-14.69, 3.47, -12.94];
-const LEFT_TREE_VIEWPOINT_POSITION = new THREE.Vector3(-30.122744508150035, 3.1939029441428497, -17.846728003905334);
-const LEFT_TREE_VIEWPOINT_ROTATION = new THREE.Euler(2.9832870595298493, -1.210737021708071, 2.9932851097059734);
-
-const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [11.0, 5.57, -19.72];
-const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(15.098318983889161, 6.795693566831701, -23.697681471253638);
-const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394);
-
-const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.14, -1.8, 2.82];
+/* The hotspot rings and the destination viewpoints now live in
+ * config/positions.ts, imported above.
+ *
+ * They were local to this file, and config/journey.ts kept a second, identical
+ * set of literals for the sky journey's stops. Nothing tied the two together,
+ * so turning the island corrected one and not the other and the same
+ * destination got framed two different ways depending on whether you clicked a
+ * ring or scrolled the journey into it. positions.ts carries the numbers and
+ * the note on why they have to move when ISLAND_ROTATION_Y does. */
 
 /** One label per hotspot id, read by the 3D ring markers. */
 /** What the ring markers, both rails and the minimap call each destination.

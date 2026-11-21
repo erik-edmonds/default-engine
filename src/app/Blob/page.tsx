@@ -11,7 +11,12 @@ export default function Page() {
   return (
     <>
       <Canvas className='absolute top-0 flex size-full flex-col items-center justify-center'>
-        <Hologram />
+        {/* Position and scale live at the call site, as on the island
+            (Scene.tsx). Rendered with none at all this page threw on
+            `const [x, y, z] = props.position` -- it was only ever type-clean
+            because `props` was implicitly `any`. Centred for the camera
+            below: fov 40 at z=6 shows ~4.4 units of height. */}
+        <Hologram position={[0, -1.1, 0]} scale={0.8} />
         <Suspense fallback={null}>
             <color attach='background' args={["black"]} />
             <ambientLight />

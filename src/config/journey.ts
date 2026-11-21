@@ -3,6 +3,12 @@ import * as THREE from "three"
 import {
   ISLAND_CAMERA_POSITION,
   ISLAND_CAMERA_ROTATION,
+  UPPER_ISLAND_VIEWPOINT_POSITION,
+  UPPER_ISLAND_VIEWPOINT_ROTATION,
+  LEFT_TREE_VIEWPOINT_POSITION,
+  LEFT_TREE_VIEWPOINT_ROTATION,
+  MOON_ISLAND_VIEWPOINT_POSITION,
+  MOON_ISLAND_VIEWPOINT_ROTATION,
 } from "@/config/positions"
 
 /** The scroll journey: one continuous curve that sweeps around the OUTSIDE of
@@ -20,11 +26,11 @@ import {
  *  counting only geometry between y -8 and y +24 (the band a camera actually
  *  flies through; a deep underside is not something you have to go around):
  *
- *      bearing      0..135    reach  15.6   tops out at y  -0.4
- *      bearing    140..160    reach  25.1   tops out at y   6.3   (moon island -- Donate)
- *      bearing    165..220    reach  34.0   tops out at y  17.8   (Contact's, the tall one)
- *      bearing    225..245    reach  26.3   tops out at y   5.8   (the left tree -- Models)
- *      bearing    250..355    reach  15.4   tops out at y  -1.0
+ *      bearing     10..145    reach  15.6   tops out at y  -0.4
+ *      bearing    150..170    reach  25.1   tops out at y   6.3   (moon island -- Donate)
+ *      bearing    175..230    reach  34.0   tops out at y  17.8   (Contact's, the tall one)
+ *      bearing    235..255    reach  26.3   tops out at y   5.8   (the left tree -- Models)
+ *      bearing    260..005    reach  15.4   tops out at y  -1.0
  *
  *  An earlier version of this table put the moon island at "bearings 120..135,
  *  reach 33.7". Both halves were wrong -- it spans 133..164 and reaches 25.1 --
@@ -48,20 +54,16 @@ type Waypoint =
   /** A point on the arc between destinations. */
   | { bearing: number; radius: number; height: number; look: [number, number, number] }
 
+/** The same four viewpoints the hotspot rings fly to, imported rather than
+ *  restated. This block used to carry its own copies of the three island
+ *  vectors; when the island was turned, IslandExperience.tsx was corrected and
+ *  these were not, so a destination reached by scrolling was framed differently
+ *  from the same destination reached by clicking its ring. */
 const STOP_VIEWPOINTS: Record<JourneyStopId, { position: THREE.Vector3; rotation: THREE.Euler }> = {
   home: { position: ISLAND_CAMERA_POSITION, rotation: ISLAND_CAMERA_ROTATION },
-  "moon-island": {
-    position: new THREE.Vector3(15.098318983889161, 6.795693566831701, -23.697681471253638),
-    rotation: new THREE.Euler(-2.9175429419626573, 0.625576950652443, 3.0089403059512394),
-  },
-  "left-tree": {
-    position: new THREE.Vector3(-30.122744508150035, 3.1939029441428497, -17.846728003905334),
-    rotation: new THREE.Euler(2.9832870595298493, -1.210737021708071, 2.9932851097059734),
-  },
-  upper: {
-    position: new THREE.Vector3(-12.138549003045972, 15.973606020841718, -28.466165069815958),
-    rotation: new THREE.Euler(-2.836699146874793, -0.5418705211428874, -2.980689379532905),
-  },
+  "moon-island": { position: MOON_ISLAND_VIEWPOINT_POSITION, rotation: MOON_ISLAND_VIEWPOINT_ROTATION },
+  "left-tree": { position: LEFT_TREE_VIEWPOINT_POSITION, rotation: LEFT_TREE_VIEWPOINT_ROTATION },
+  upper: { position: UPPER_ISLAND_VIEWPOINT_POSITION, rotation: UPPER_ISLAND_VIEWPOINT_ROTATION },
 }
 
 /** How far ahead a destination's look-target is placed along its own view axis.
@@ -87,23 +89,23 @@ const WAYPOINTS: Waypoint[] = [
   // pulled outward by the wide waypoint that follows, so 20 measured 22.6 on
   // the path itself. These are the numbers to raise if the camera ever ends up
   // clipping the island's skirt.
-  { bearing: 40, radius: 18, height: 1.5, look: [0, -1, 2] },
-  { bearing: 95, radius: 19, height: 3, look: [0, 0, -2] },
+  { bearing: 50, radius: 18, height: 1.5, look: [0.35, -1, 1.97] },
+  { bearing: 105, radius: 19, height: 3, look: [-0.35, 0, -1.97] },
   // This used to be radius 37 at height 10, "because the moon island reaches
   // r 33.6 through bearings 120-135". It does not -- it starts at bearing 133
   // and reaches 25.1, and out here the terrain stops at r 14.8 and y -0.6. The
   // old numbers swung the camera 17 units wider and 5 higher than anything
   // required, and then had to come back in for the arrival: that out-and-back
   // was the whole complaint about this leg.
-  { bearing: 128, radius: 24, height: 5, look: [8, 4, -16] },
+  { bearing: 138, radius: 24, height: 5, look: [5.1, 4, -17.15] },
   // Where the moon island actually begins. Coming outside it HERE, rather than
   // 20 degrees early, is what lets the radius climb once instead of twice.
-  { bearing: 140, radius: 29, height: 6.5, look: [10, 4, -18] },
+  { bearing: 150, radius: 29, height: 6.5, look: [6.72, 4, -19.46] },
   { stop: "moon-island" },
   // Behind everything. Contact's island stands to y 23 at r 28.7 around
   // bearing 195, so this passes it at r 40 rather than over the top.
-  { bearing: 172, radius: 40, height: 9, look: [2, 3, -18] },
-  { bearing: 212, radius: 40, height: 8, look: [-10, 4, -20] },
+  { bearing: 182, radius: 40, height: 9, look: [-1.16, 3, -18.07] },
+  { bearing: 222, radius: 40, height: 8, look: [-13.32, 4, -17.96] },
   { stop: "left-tree" },
   // The climb, and it has to happen BEHIND Contact rather than beside it.
   // Contact's island occupies x -19..-8, z -27..-15, and its viewpoint sits at
@@ -120,7 +122,7 @@ const WAYPOINTS: Waypoint[] = [
   // out-and-back into an ascending loop, which is both a gentler turn and a
   // better arrival -- the camera rises over Contact's island and settles down
   // onto the viewpoint rather than sidling up to it.
-  { bearing: 216, radius: 43, height: 20, look: [-14, 9, -22] },
+  { bearing: 226, radius: 43, height: 20, look: [-17.61, 9, -19.23] },
   { stop: "upper" },
 ]
 
@@ -354,30 +356,30 @@ export const JOURNEY_STOP_SCROLL: { id: JourneyStopId; scroll: number; holdUntil
  *  person can tell a deliberate margin from a stale number. Sampled where the
  *  silhouette actually changes rather than at round bearings. */
 const ROUTE_ARC: { bearing: number; radius: number }[] = [
-  { bearing: 0, radius: 20 },    // reach 15.4
-  { bearing: 40, radius: 20 },   // reach 15.6
-  { bearing: 70, radius: 20 },   // reach 15.5
-  { bearing: 95, radius: 20 },   // reach 15.5
-  { bearing: 115, radius: 20 },  // reach 15.4
+  { bearing: 10, radius: 20 },    // reach 15.4
+  { bearing: 50, radius: 20 },   // reach 15.6
+  { bearing: 80, radius: 20 },   // reach 15.5
+  { bearing: 105, radius: 20 },   // reach 15.5
+  { bearing: 125, radius: 20 },  // reach 15.4
   // Was 37, from a table that put the moon island here. It is not here -- it
   // starts at bearing 133 -- and this is open water to r 14.8.
-  { bearing: 128, radius: 20 },  // reach 14.8
-  { bearing: 145, radius: 29 },  // reach 25.1  the moon island (Donate)
-  { bearing: 160, radius: 29 },  // reach 24.4
-  { bearing: 172, radius: 38 },  // reach 31.1
+  { bearing: 138, radius: 20 },  // reach 14.8
+  { bearing: 155, radius: 29 },  // reach 25.1  the moon island (Donate)
+  { bearing: 170, radius: 29 },  // reach 24.4
+  { bearing: 182, radius: 38 },  // reach 31.1
   // Contact's island is the tall one: it stands to y 17.8, so there is no
   // going over it and the radius has to do all the work. These carry a wider
   // margin than the rest of the table for that reason -- a reach+4 here
   // measured 2.93 units of real clearance, because the bin maxima understate
   // a silhouette this ragged and height cannot make up the difference.
-  { bearing: 190, radius: 41 },  // reach 34.0
-  { bearing: 212, radius: 40 },  // reach 33.1
-  { bearing: 230, radius: 33 },  // reach 26.3  the left tree (Models)
-  { bearing: 250, radius: 30 },  // reach 24.9
-  { bearing: 270, radius: 20 },  // reach 15.1
-  { bearing: 290, radius: 20 },  // reach 14.2
-  { bearing: 310, radius: 20 },  // reach 15.3
-  { bearing: 330, radius: 20 },  // reach 15.4
+  { bearing: 200, radius: 41 },  // reach 34.0
+  { bearing: 222, radius: 40 },  // reach 33.1
+  { bearing: 240, radius: 33 },  // reach 26.3  the left tree (Models)
+  { bearing: 260, radius: 30 },  // reach 24.9
+  { bearing: 280, radius: 20 },  // reach 15.1
+  { bearing: 300, radius: 20 },  // reach 14.2
+  { bearing: 320, radius: 20 },  // reach 15.3
+  { bearing: 340, radius: 20 },  // reach 15.4
 ]
 
 /** Where a travelling route looks: inward and slightly down, at a point on its

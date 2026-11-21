@@ -1,11 +1,30 @@
-import React, { useRef, useEffect } from 'react'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import React, { useRef, useEffect, useMemo } from 'react'
+import { useAnimations } from '@react-three/drei'
+import type { ThreeElements } from '@react-three/fiber'
+import type * as THREE from 'three'
+// The project's typed wrapper, not drei's. drei types the graph as
+// `nodes: { [name: string]: THREE.Object3D }`, and `geometry` is not on
+// Object3D -- so every one of the 114 `nodes.Circle001_0.geometry` reads below
+// was a type error. This file was the LAST component in this folder still
+// importing useGLTF straight from drei, and it was 117 of the repo's 118
+// type errors on its own. See src/helpers/useGLTF.ts.
+import { useGLTF } from '@/helpers/useGLTF'
 
-export function Base(props) {
-  const group = useRef()
+export function Base(props: ThreeElements['group']) {
+  const group = useRef<THREE.Group>(null)
   const { nodes, materials, animations } = useGLTF('/models/base.glb')
-  animations[0].name = "Circles"
-  const { actions } = useAnimations(animations, group)
+  // CLONED, NOT RENAMED IN PLACE. `useGLTF` caches per URL and hands every
+  // caller the same clip objects, so `animations[0].name = "Circles"` was
+  // writing into that shared cache -- harmless only because it happens to
+  // rewrite the same string every time. Cloning keeps the rename local, and
+  // the memo holds the clip identities steady so useAnimations does not
+  // rebuild its mixer on every render.
+  const clips = useMemo(() => {
+    const copy = animations.map((clip) => clip.clone())
+    if (copy[0]) copy[0].name = "Circles"
+    return copy
+  }, [animations])
+  const { actions } = useAnimations(clips, group)
   useEffect(() => {
     actions["Circles"]?.reset().play()
   }, [])
