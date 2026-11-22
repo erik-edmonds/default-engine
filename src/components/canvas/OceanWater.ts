@@ -84,6 +84,10 @@ const fragmentShader = /* glsl */ `
   /** 1 normally; driven down toward OPTICS_DIM while the beacon surveys the
    *  island. See the note at the bottom of this shader. */
   uniform float uDim;
+  /** 1 normally; driven to 0 while the beacon surveys. The HARDER cut of the
+   *  two, for the terms a fortieth is not enough for -- see uSurvey's own note
+   *  further down. */
+  uniform float uSurvey;
 
   varying vec3 vWorldPos;
 
@@ -239,9 +243,18 @@ const fragmentShader = /* glsl */ `
     // itself organically noise-driven, a plain smooth specular term is
     // already naturally broken up into scattered dapples by the normal
     // field underneath it, without needing an extra artificial mask on top.
+    //
+    // uSURVEY, NOT uDim, ON BOTH SPECULAR TERMS. These are the only places in
+    // this shader that ADD light rather than mixing it, and the sum reaches
+    // ~1.75 where the half-vector lines up -- so a fortieth of it is still
+    // 0.044 linear against a lagoon that the dim leaves at about 0.008, and
+    // AgX lifts that back into a solid warm disc. MEASURED at evening from the
+    // survey pose: the sun's glint on the water sat blown out at frame centre
+    // while everything around it was black, which is the glare the scan was
+    // being read against.
     vec3 halfDir = normalize(uSunDirection + viewDir);
     float spec = pow(max(dot(normal, halfDir), 0.0), 40.0);
-    color += uSunColor * spec * 1.4;
+    color += uSunColor * spec * 1.4 * uSurvey;
 
     // Moon shimmer: broader, dimmer falloff on the same term -- there's
     // only one directional light in the whole rig (see Environment.tsx),
@@ -250,7 +263,7 @@ const fragmentShader = /* glsl */ `
     // uMoonOpacity (mirrors the field driving the moon disc's own opacity)
     // gates this to night only.
     float moonSpec = pow(max(dot(normal, halfDir), 0.0), 10.0);
-    color += uSunColor * moonSpec * 0.35 * uMoonOpacity;
+    color += uSunColor * moonSpec * 0.35 * uMoonOpacity * uSurvey;
 
     // Shore foam -- "interaction with the island": a band right at the
     // sand/water boundary, reusing the shore-distance field already
@@ -290,7 +303,10 @@ const fragmentShader = /* glsl */ `
     // Hand-rolled fog -- a custom ShaderMaterial doesn't get Three's
     // automatic fog for free the way MeshBasicMaterial does.
     float fogFactor = clamp((length(vWorldPos - cameraPosition) - uFogNear) / max(uFogFar - uFogNear, 0.001), 0.0, 1.0);
-    color = mix(color, uFogColor * uDim, fogFactor);
+    // uSurvey here too, and it has to match the scene fog's own multiply in
+    // Environment.tsx exactly -- the lagoon and the terrain meet at the shore,
+    // so two different haze colours there would draw a line around the island.
+    color = mix(color, uFogColor * uSurvey, fogFactor);
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -319,6 +335,7 @@ export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitio
         uShoreRadius: { value: SHORE_RADIUS },
         uShoreFade: { value: SHORE_FADE },
         uDim: { value: 1 },
+        uSurvey: { value: 1 },
       },
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -406,6 +423,10 @@ export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitio
     // the whole session until the beacon scans, so this is a multiply by 1 in
     // the ordinary case.
     u.uDim.value = 1 - opticsRun.dim * (1 - OPTICS_DIM)
+    // And the hard cut, for the additive terms. OPTICS_DIM is a floor under
+    // the LIT world so the island does not go pitch black; nothing additive
+    // wants a floor, because a floor under a highlight is still a highlight.
+    u.uSurvey.value = 1 - opticsRun.dim
   })
 
   return material

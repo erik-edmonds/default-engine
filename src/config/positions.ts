@@ -27,7 +27,7 @@ import * as THREE from "three"
  *  prints into the three places it names. Positions go through applyAxisAngle;
  *  recorded camera Eulers go through quaternion composition, which is NOT the
  *  same as adding the delta to the Euler's Y component. */
-export const ISLAND_ROTATION_Y = Math.PI / 1.8
+export const ISLAND_ROTATION_Y = (85 * Math.PI) / 180
 
 /** The establishing shot, and the `home` destination.
  *
@@ -55,19 +55,19 @@ export const ISLAND_CAMERA_ROTATION = new THREE.Euler(0.1425715380736859, -0.200
  *  there. Both now read these.
  *
  *  Rotated +10 degrees with the island; see ISLAND_ROTATION_Y above. */
-export const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-16.89723485805785, 15.973606020841718, -25.92586314538039)
-export const UPPER_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.796415022766344, -0.7073409748468277, -2.912054737215411)
+export const UPPER_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(-9.61136839952399, 15.973606020841718, -29.415786971794414)
+export const UPPER_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.8507058038585673, -0.4584408575755659, -3.0098695545139247)
 
-export const LEFT_TREE_VIEWPOINT_POSITION = new THREE.Vector3(-32.7641641288276, 3.1939029441428497, -12.344836413979273)
-export const LEFT_TREE_VIEWPOINT_ROTATION = new THREE.Euler(2.842485524524102, -1.381167490290896, 2.8475409479402063)
+export const LEFT_TREE_VIEWPOINT_POSITION = new THREE.Vector3(-28.452673536195512, 3.1939029441428497, -20.404185986981727)
+export const LEFT_TREE_VIEWPOINT_ROTATION = new THREE.Euler(3.012590123791438, -1.124359065891715, 3.025113379716042)
 
-export const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(10.753882390370874, 6.795693566831701, -25.959456018690705)
-export const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9397248864109176, 0.45495698796346024, 3.0519035400785604)
+export const MOON_ISLAND_VIEWPOINT_POSITION = new THREE.Vector3(17.10625435187286, 6.795693566831701, -22.291599433447946)
+export const MOON_ISLAND_VIEWPOINT_ROTATION = new THREE.Euler(-2.9017021663177154, 0.7105115216526952, 2.9833919696530478)
 
 /** The rings you click, resting on the terrain itself. Rotated with the
  *  island, heights unchanged -- each one is still on the rock it was measured
  *  on. */
-export const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-11.24, 12.97, -11.3]
-export const LEFT_TREE_HOTSPOT_POSITION: [number, number, number] = [-16.71, 3.47, -10.19]
-export const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [7.41, 5.57, -21.33]
-export const HOME_HOTSPOT_POSITION: [number, number, number] = [-3.59, -1.8, 3.5]
+export const UPPER_ISLAND_HOTSPOT_POSITION: [number, number, number] = [-7.93, 12.97, -13.82]
+export const LEFT_TREE_HOTSPOT_POSITION: [number, number, number] = [-13.5, 3.47, -14.17]
+export const MOON_ISLAND_HOTSPOT_POSITION: [number, number, number] = [12.68, 5.57, -18.69]
+export const HOME_HOTSPOT_POSITION: [number, number, number] = [-4.37, -1.8, 2.45]

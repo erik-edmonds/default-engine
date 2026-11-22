@@ -7,10 +7,21 @@ import { useAtomValue, useSetAtom } from "jotai"
 
 import { activeHint, hintNode, hintOnScreen } from "@/helpers/hints"
 
-/** How far into the margin a target may sit and still count as "in frame".
- *  Slightly inside the edge (NDC runs -1..1) so a hint never pins itself half
- *  off the side of the viewport. */
-const NDC_MARGIN = 0.82
+/** How close to the edge a target may sit and still count as "in frame".
+ *
+ *  PIXELS, not a fraction of NDC, and that is the whole point. This was 0.82
+ *  of the half-frame, which reserves 128px on a 1280-wide desktop and 35px on
+ *  a 393-wide phone -- backwards, since the narrow viewport is the one that
+ *  cannot spare a tenth of itself. MEASURED: with the island at 85 degrees the
+ *  beacon lands at ndc x 0.8197 on a 393x852 phone, so the hint pointing at it
+ *  blinked out on the frame the idle sway pushed it past 0.82, on the one
+ *  viewport where that hint matters most.
+ *
+ *  What actually has to fit is the marker -- a 16px ring, so 8px plus a little
+ *  -- because the CAPTION is already handled: it flips to the marker's left
+ *  past two thirds of the width (see dataset.hintSide below), which is exactly
+ *  the case where a right-hand caption would run off. */
+const EDGE_INSET_PX = 24
 
 // Puts the active hint's marker where its subject is.
 //
@@ -72,7 +83,7 @@ export function HintAnchor() {
     // z > 1 means the target is behind the camera. project() still returns
     // plausible-looking x/y there (mirrored through the origin), which would
     // park the marker on the opposite side of the frame from its subject.
-    if (source.z > 1 || !onScreen(source)) {
+    if (source.z > 1 || !onScreen(source, size.width, size.height)) {
       el.style.visibility = "hidden"
       report(false)
       return
@@ -94,7 +105,13 @@ export function HintAnchor() {
   return null
 }
 
-/** True once `ndc` has been projected and lands comfortably inside the frame. */
-function onScreen(ndc: THREE.Vector3) {
-  return ndc.z <= 1 && Math.abs(ndc.x) < NDC_MARGIN && Math.abs(ndc.y) < NDC_MARGIN
+/** True once `ndc` has been projected and lands comfortably inside the frame.
+ *
+ *  The inset is converted per AXIS, so a tall narrow viewport gets the same
+ *  24px at the top as at the side rather than the same FRACTION, which on a
+ *  phone is three times as many pixels vertically as horizontally. */
+function onScreen(ndc: THREE.Vector3, width: number, height: number) {
+  const marginX = 1 - (2 * EDGE_INSET_PX) / width
+  const marginY = 1 - (2 * EDGE_INSET_PX) / height
+  return ndc.z <= 1 && Math.abs(ndc.x) < marginX && Math.abs(ndc.y) < marginY
 }

@@ -113,7 +113,22 @@ export interface CameraControllerHandle {
   /** Hands the camera back. Symmetric with beginSkyJourney, and with
    *  AvatarController.returnHome, which drops the avatar's own latch. */
   endSkyJourney: () => void
-  flyTo: (position: THREE.Vector3, rotation: THREE.Euler, duration?: number) => Promise<void>
+  /** `ease` is gsap's, applied to BOTH the position tween and the quaternion
+   *  slerp, and defaults to the symmetric "power2.inOut" every call site used
+   *  before it existed. A function is allowed -- gsap core accepts one, no
+   *  plugin -- which is how the optics pull-back places its peak velocity at a
+   *  named moment rather than in the middle.
+   *
+   *  NOTHING THAT OVERSHOOTS. `rotateProgress.t` is fed straight into
+   *  slerpQuaternions, so a curve leaving [0, 1] extrapolates past the
+   *  destination orientation and whips the camera. Rules out back.* and
+   *  elastic.*. */
+  flyTo: (
+    position: THREE.Vector3,
+    rotation: THREE.Euler,
+    duration?: number,
+    ease?: string | ((progress: number) => number),
+  ) => Promise<void>
   intro: (duration?: number) => Promise<void>
   /** Drive the camera along the scroll journey. `u` is the target distance
    *  along the path, 0 at Home and 1 at Contact; the spring is what actually
@@ -746,7 +761,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           },
         }))
       }),
-    flyTo: (position, rotation, duration = 2.5) =>
+    flyTo: (position, rotation, duration = 2.5, ease = "power2.inOut") =>
       new Promise<void>((resolve) => {
         beginFlight()
         const total = tweenDuration(duration)
@@ -788,7 +803,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
             y: position.y,
             z: position.z,
             duration: total,
-            ease: "power2.inOut",
+            ease,
             onUpdate: () => syncOrbitTarget(camera.rotation),
           },
           0,
@@ -798,7 +813,7 @@ export const CameraController = forwardRef<CameraControllerHandle>((_props, ref)
           {
             t: 1,
             duration: turnDuration,
-            ease: "power2.inOut",
+            ease,
             onUpdate: () => {
               camera.quaternion.slerpQuaternions(startQuaternion, endQuaternion, rotateProgress.t)
               setCameraBase(camera.quaternion)

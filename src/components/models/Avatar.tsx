@@ -1,6 +1,7 @@
 import type { ThreeElements } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useRef, useEffect, useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useAnimations } from '@react-three/drei'
 import { SkeletonUtils } from 'three-stdlib'
 import { useGLTF } from '@/helpers/useGLTF'
@@ -77,6 +78,46 @@ export function Avatar(props: ThreeElements['group']) {
   useEffect(() => {
     actions["Idle"]?.reset().play()
   }, [actions])
+
+  // MIRROR THE RIGHT ARM ONTO THE LEFT, every frame, after the mixer.
+  //
+  // The left arm hangs wrong, and it is the CLIP, not the rig or anything this
+  // app does. Decoded from base.glb: "Idle_Subtle" has 62 keys on rotation for
+  // all eight arm bones, so no track is missing -- the two sides are simply
+  // posed differently. The clavicles are the tell, because they ARE an exact
+  // mirror (dirY [-0.155, 0.238, 0.959] against [+0.155, 0.238, 0.959]) while
+  // the bones hanging off them are not:
+  //
+  //     upperarm_l  dirY [-0.738, 0.019, -0.675]
+  //     upperarm_r  dirY [+0.500, 0.382, -0.778]
+  //
+  // 0.019 against 0.382 is about twenty-two degrees of shoulder, held for the
+  // whole clip. A rig that mirrors at the clavicle and diverges below it is
+  // an authoring slip, not deliberate asymmetry.
+  //
+  // Mirroring across the body's YZ plane is `(x, -y, -z, w)` -- which is
+  // exactly the relationship the clavicles and the bind pose already use, so
+  // this is the rig's own convention rather than an invention.
+  //
+  // AFTER THE MIXER: drei's useAnimations registers its frame callback inside
+  // the hook above, so this one -- registered later at the same priority --
+  // runs after it each frame and has the last word. Writing it in an effect
+  // instead would be overwritten on the very next tick.
+  const arms = useRef<[THREE.Object3D, THREE.Object3D][] | null>(null)
+  useFrame(() => {
+    if (arms.current === null) {
+      const pairs: [THREE.Object3D, THREE.Object3D][] = []
+      for (const base of ["upperarm", "lowerarm", "hand"]) {
+        const l = model.getObjectByName(`${base}_l`)
+        const r = model.getObjectByName(`${base}_r`)
+        if (l && r) pairs.push([l, r])
+      }
+      arms.current = pairs
+    }
+    for (const [l, r] of arms.current) {
+      l.quaternion.set(r.quaternion.x, -r.quaternion.y, -r.quaternion.z, r.quaternion.w)
+    }
+  })
 
   return (
     <group ref={group} {...props} dispose={null}>

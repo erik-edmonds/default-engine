@@ -17,8 +17,11 @@ import {
   type ActiveHint,
   type HintId,
   PORTAL_HINT_MAX_DISTANCE,
+  BEACON_HINT_MAX_DISTANCE,
 } from "@/helpers/hints"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
+import { OPTICS_WAKE_PATH } from "@/config/optics"
+import { opticsPhase } from "@/helpers/optics"
 
 /** Priority order, highest first. Only one hint is ever on screen; a
  *  higher-priority one may take the slot from a lower one, but only once the
@@ -31,7 +34,11 @@ import { useCoarsePointer } from "@/helpers/useCoarsePointer"
  *  existed to ration one slot between four competing nudges, two of which
  *  realistically never appeared. A queue the visitor steps through does not
  *  need rationing. */
-const PRIORITY: HintId[] = ["portalExit", "portalEnter"]
+//
+// `beacon` sits LAST. The two portal beats are instructions about the state
+// you are currently in and expire with it; the beacon is an invitation that
+// stays true for the whole session, so it can wait its turn.
+const PRIORITY: HintId[] = ["portalExit", "portalEnter", "beacon"]
 
 const EVALUATE_INTERVAL_MS = 400
 
@@ -70,6 +77,7 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
   const openPortal = useAtomValue(openPortalId)
   const flying = useAtomValue(cameraFlying)
   const onScreen = useAtomValue(hintOnScreen)
+  const opticsPhaseValue = useAtomValue(opticsPhase)
   const coarse = useCoarsePointer()
 
   // "The onboarding beat is over." On a mouse that's InteractionHint being
@@ -85,9 +93,20 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
   // decide the portal was unentered all over again and re-offer the
   // instruction for something demonstrably already done.
   const done = useRef<Record<HintId, boolean>>({
+    beacon: false,
     portalEnter: false,
     portalExit: false,
   })
+  // The beacon has been used the moment it leaves its base, and `opticsPhase`
+  // already says so -- it is "idle" only while the thing has never been
+  // clicked. No new state, and it is sticky by construction: the phase never
+  // returns to "idle" once a run has started (helpers/optics.ts).
+  //
+  // In an effect rather than written during render, like every other write to
+  // this ref in the file.
+  useEffect(() => {
+    done.current.beacon = opticsPhaseValue !== "idle"
+  }, [opticsPhaseValue])
   /** Hints already shown and retired. A hint appears at most once per load. */
   const spent = useRef<Set<HintId>>(new Set())
   const shownAt = useRef<number | null>(null)
@@ -155,6 +174,24 @@ export function useHintDirector({ started, hasInteracted, currentHotspot, portal
           // to double-click.
           return { id, target: { kind: "world", position, maxDistance: PORTAL_HINT_MAX_DISTANCE } }
         }
+
+        case "beacon":
+          // Not while a portal fills the screen, and not mid-flight -- the
+          // same two gates portalEnter uses, for the same reason.
+          if (state.openPortal !== null || state.flying) return null
+          // OPTICS_WAKE_PATH.points[0] IS the beacon's resting position: it is
+          // the point BeaconCompanion measures its own offset against, so
+          // pointing at it here cannot drift from where the beacon actually
+          // sits. config/positions.ts records at length what this codebase
+          // pays when one place holds two copies of a position.
+          return {
+            id,
+            target: {
+              kind: "world",
+              position: OPTICS_WAKE_PATH.points[0],
+              maxDistance: BEACON_HINT_MAX_DISTANCE,
+            },
+          }
       }
     }
 

@@ -89,12 +89,12 @@ export const TORCH_SITES: TorchSite[] = [
   // The tree island -- portal 01, the Gallery. Projects to screen x 1012
   // against a portal that ends at 955: clear of it, and on surface measured
   // at 1.51.
-  { island: "left-tree", portal: "01", position: [-20.39, 1.51, -6.8], rotationY: 1.3745 },
+  { island: "left-tree", portal: "01", position: [-17.94, 1.51, -11.85], rotationY: 1.3745 - Math.PI / 12 },
 
   // The moon island -- portal 02, the globe. Screen x 1029 against a portal
   // ending at 936, on a shelf measured at 5.42 -- above the portal's own
   // base, so the torch stands in front of the frame's buried lower half.
-  { island: "moon-island", portal: "02", position: [6.07, 5.42, -20.88], rotationY: -0.4255 },
+  { island: "moon-island", portal: "02", position: [11.27, 5.42, -18.6], rotationY: -0.4255 - Math.PI / 12 },
 
   // The big upper island -- portal 03, the mini-game. Screen x 1088 against
   // a portal ending at 858.
@@ -106,5 +106,5 @@ export const TORCH_SITES: TorchSite[] = [
   // came out hanging two metres above the grass, plainly, in a screenshot.
   // The island here carries a stand of trees; 11.2 is the band three cells
   // agree on BELOW them (11.17, 11.26, 11.18) and is the ground.
-  { island: "upper", portal: "03", position: [-10.57, 11.26, -10.55], rotationY: 0.6745 },
+  { island: "upper", portal: "03", position: [-7.48, 11.26, -12.93], rotationY: 0.6745 - Math.PI / 12 },
 ]

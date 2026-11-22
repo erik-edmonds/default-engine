@@ -5,7 +5,6 @@ import { atom } from "jotai"
 
 import {
   OPTICS_DONE_AT,
-  OPTICS_LIFT_AT,
   OPTICS_SCAN_AT,
   OPTICS_WAKE_SECONDS,
 } from "@/config/optics"
@@ -29,11 +28,9 @@ export type OpticsPhase =
    *  and THE CAMERA DOES NOT MOVE. */
   | "waking"
   /** The tour is over and the beacon is closing on its screen anchor. Still
-   *  inert, and the camera is still held -- nothing may take the camera until
-   *  the beacon has arrived. */
+   *  inert. The camera is already in motion by now -- it left halfway through
+   *  the tour; see OPTICS_CAMERA_AT. */
   | "settling"
-  /** The beacon is anchored; the camera pulls back to the survey pose. */
-  | "lifting"
   /** The sweep. Hotspot rings stand down so their depthTest={false} rings do
    *  not sit on top of the brackets. */
   | "scanning"
@@ -53,7 +50,7 @@ export const opticsPhase = atom<OpticsPhase>("idle")
  *  `scanning`: by then the camera has arrived and the sweep is something you
  *  watch, not something that holds you still. */
 export function opticsHoldsInput(phase: OpticsPhase) {
-  return phase === "waking" || phase === "settling" || phase === "lifting"
+  return phase === "waking" || phase === "settling"
 }
 
 export const opticsRun = {
@@ -148,8 +145,7 @@ export const opticsRun = {
 export function opticsPhaseAt(t: number, airborne: boolean): OpticsPhase {
   if (t < 0) return airborne ? "companion" : "idle"
   if (t < OPTICS_WAKE_SECONDS) return "waking"
-  if (t < OPTICS_LIFT_AT) return "settling"
-  if (t < OPTICS_SCAN_AT) return "lifting"
+  if (t < OPTICS_SCAN_AT) return "settling"
   if (t < OPTICS_DONE_AT) return "scanning"
   return "companion"
 }

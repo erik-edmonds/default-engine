@@ -89,23 +89,23 @@ const WAYPOINTS: Waypoint[] = [
   // pulled outward by the wide waypoint that follows, so 20 measured 22.6 on
   // the path itself. These are the numbers to raise if the camera ever ends up
   // clipping the island's skirt.
-  { bearing: 50, radius: 18, height: 1.5, look: [0.35, -1, 1.97] },
-  { bearing: 105, radius: 19, height: 3, look: [-0.35, 0, -1.97] },
+  { bearing: 35, radius: 18, height: 1.5, look: [-0.17, -1, 1.99] },
+  { bearing: 90, radius: 19, height: 3, look: [0.17, 0, -1.99] },
   // This used to be radius 37 at height 10, "because the moon island reaches
   // r 33.6 through bearings 120-135". It does not -- it starts at bearing 133
   // and reaches 25.1, and out here the terrain stops at r 14.8 and y -0.6. The
   // old numbers swung the camera 17 units wider and 5 higher than anything
   // required, and then had to come back in for the arrival: that out-and-back
   // was the whole complaint about this leg.
-  { bearing: 138, radius: 24, height: 5, look: [5.1, 4, -17.15] },
+  { bearing: 123, radius: 24, height: 5, look: [9.36, 4, -15.25] },
   // Where the moon island actually begins. Coming outside it HERE, rather than
   // 20 degrees early, is what lets the radius climb once instead of twice.
-  { bearing: 150, radius: 29, height: 6.5, look: [6.72, 4, -19.46] },
+  { bearing: 135, radius: 29, height: 6.5, look: [11.53, 4, -17.06] },
   { stop: "moon-island" },
   // Behind everything. Contact's island stands to y 23 at r 28.7 around
   // bearing 195, so this passes it at r 40 rather than over the top.
-  { bearing: 182, radius: 40, height: 9, look: [-1.16, 3, -18.07] },
-  { bearing: 222, radius: 40, height: 8, look: [-13.32, 4, -17.96] },
+  { bearing: 167, radius: 40, height: 9, look: [3.56, 3, -17.75] },
+  { bearing: 207, radius: 40, height: 8, look: [-8.22, 4, -20.8] },
   { stop: "left-tree" },
   // The climb, and it has to happen BEHIND Contact rather than beside it.
   // Contact's island occupies x -19..-8, z -27..-15, and its viewpoint sits at
@@ -122,7 +122,7 @@ const WAYPOINTS: Waypoint[] = [
   // out-and-back into an ascending loop, which is both a gentler turn and a
   // better arrival -- the camera rises over Contact's island and settles down
   // onto the viewpoint rather than sidling up to it.
-  { bearing: 226, radius: 43, height: 20, look: [-17.61, 9, -19.23] },
+  { bearing: 211, radius: 43, height: 20, look: [-12.03, 9, -23.13] },
   { stop: "upper" },
 ]
 

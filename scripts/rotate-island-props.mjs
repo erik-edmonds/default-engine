@@ -89,3 +89,61 @@ console.log('    ...and every `look` target is a world point, so rotate it with 
 console.log('\n--- config/terrain.ts : REACH and TOP are 72 bins of 5 degrees ---')
 console.log('    A multiple of 5 degrees is an exact roll of delta/5 places.')
 console.log(`    This delta = ${THREE.MathUtils.radToDeg(D)} deg = ${THREE.MathUtils.radToDeg(D) / 5} bins.`)
+
+// ---------------------------------------------------------------------------
+// EVERYTHING BELOW WAS MISSING, and that is why the 90->100 turn took two
+// goes. The script above covered positions.ts, torches.ts and a prose note
+// about journey.ts; six more groups of hand-measured world points were left
+// for the human to notice, and Charizard was the one that got away -- it spent
+// three rounds 3.71 units out over open water (see Scene.tsx).
+//
+// If a value is a world point on or above the island, it belongs here.
+// ---------------------------------------------------------------------------
+
+console.log('\n--- config/journey.ts : WAYPOINTS ---')
+console.log('    bearings take the delta; `look` targets are world points.\n')
+for (const b of [50, 105, 138, 150, 182, 222, 226]) bearing(`  bearing`, b)
+console.log()
+pos('look @50', [0.35, -1, 1.97])
+pos('look @105', [-0.35, 0, -1.97])
+pos('look @138', [5.1, 4, -17.15])
+pos('look @150', [6.72, 4, -19.46])
+pos('look @182', [-1.16, 3, -18.07])
+pos('look @222', [-13.32, 4, -17.96])
+pos('look @226', [-17.61, 9, -19.23])
+
+console.log('\n--- components/canvas/Scene.tsx : the props standing on the island ---\n')
+pos('Hologram', [1.75, -2.75, 8])
+pos('palm-near', [-3.231, -1.481, -0.762])
+pos('palm-left', [-0.922, -1.402, -2.939])
+pos('palm-right', [-0.122, -1.434, -1.858])
+pos('Guitar', [0.1, -0.7, 1])
+pos('Gull', [1, -2.76, 5.8])
+pos('Charizard', [7.67, 3.63, -19.83])
+console.log('    Charizard, the palms and the Gull also carry a rotation; a Y-only')
+console.log('    turn means ADDING the delta to their rotation[1]. In radians that')
+console.log(`    is ${D}.`)
+
+console.log('\n--- components/models/Waterfall.tsx ---\n')
+pos('splash group', [-3, -4, -12])
+
+console.log('\n--- config/optics.ts : OPTICS_WAKE_POINTS ---')
+console.log('    [0] MUST stay equal to the rotated Hologram position + [0, 1.4, 0],')
+console.log("    or BeaconCompanion's offset stops being zero and silently")
+console.log('    translates the whole tour.\n')
+for (const p of [
+  [1.75, -1.35, 8.0], [2.6, 0.8, 5.5], [0.0, 1.6, 2.0], [-2.3, -0.5, 4.0],
+  [-6.0, 0.6, -1.0], [-7.5, 0.4, -4.8], [-3.0, 2.2, -5.5], [3.0, 1.8, -3.0],
+  [7.2, 0.0, -0.8], [2.5, 0.4, 3.5], [-1.0, -0.4, 8.0], [-3.2, -0.9, 9.9],
+]) pos('  ', p)
+
+console.log('\n--- config/optics.ts : the survey pose ---\n')
+pos('OPTICS_CAMERA_POSITION', [-5, 12, 32])
+pos('OPTICS_CAMERA_LOOK', [-5, 0, -6])
+
+console.log('\n--- config/minimap.ts : MAP_CENTER ---\n')
+pos('MAP_CENTER_X/Z (y is ignored)', [-7.36, 0, -9.45])
+
+console.log('\n--- components/canvas/MiniIsland.tsx ---')
+console.log('    ISLAND_ROTATION was a hardcoded Math.PI/2 and went stale the last')
+console.log('    time. It imports ISLAND_ROTATION_Y now, so there is nothing to do.')

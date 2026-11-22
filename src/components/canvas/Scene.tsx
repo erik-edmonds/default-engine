@@ -131,9 +131,9 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 to +0.7. Move them wherever you like now: what Scene.tsx says
                 is finally what the screen shows, which is also what lets the
                 survey box them. */}
-            <PalmTree name="palm-near" scale={0.65} position={[-3.231,-1.481,-0.762]} rotation={[0,Math.PI/4,Math.PI/12]}/>
-            <PalmTree name="palm-left" scale={0.55} position={[-0.922,-1.402,-2.939]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
-            <PalmTree name="palm-right" scale={0.72} position={[-0.122,-1.434,-1.858]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
+            <PalmTree name="palm-near" scale={0.65} position={[-2.92,-1.48,-1.57]} rotation={[0,Math.PI/4 - Math.PI/12,Math.PI/12]}/>
+            <PalmTree name="palm-left" scale={0.55} position={[-0.13,-1.4,-3.08]} rotation={[0,-Math.PI/3 - Math.PI/12,-Math.PI/16]} windOffset={1.7}/>
+            <PalmTree name="palm-right" scale={0.72} position={[0.36,-1.43,-1.83]} rotation={[0,Math.PI/1.6 - Math.PI/12,Math.PI/20]} windOffset={3.4}/>
             {/* BACK WHERE IT STARTED, and the LENS moved instead.
                 
                 This was dragged 1.07 units inboard so the board would be in
@@ -153,12 +153,12 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 which cloud fired them. */}
             <Thunder />
             <RainController />
-            <Guitar scale={0.25} position={[0.1,-0.7,1]} rotation={[-Math.PI/12,Math.PI/3,Math.PI/2]}/>
+            <Guitar scale={0.25} position={[-0.16,-0.7,0.99]} rotation={[-Math.PI/12,Math.PI/3,Math.PI/2]}/>
             {/* Named so the minimap can leave the birds out of its overhead
                 photograph: they are scenery, they move, and on a map they read
                 as debris scattered over the water. */}
             <group name="birds-flock">{showSeagulls && <SeagullFlock />}</group>
-            <group name="birds-gull"><Gull scale={1} position={[1,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/></group>
+            <group name="birds-gull"><Gull scale={1} position={[-0.54,-2.76,5.86]} rotation={[0,-Math.PI/4 - Math.PI/12,0]}/></group>
             {/* MOVED, finally. The island turned from 90 to 100 degrees
                 (config/positions.ts) and everything standing on it was
                 rotated to follow -- except this, which was raised at the time
@@ -170,7 +170,7 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
 
                 Named so the survey can find it -- it is the one target in the
                 "alive" class that is not a bird. */}
-            <Charizard name="charizard" scale={0.1} position={[7.67,3.63,-19.83]} rotation={[0,Math.PI + Math.PI/18,0]}/>
+            <Charizard name="charizard" scale={0.1} position={[12.54,3.63,-17.17]} rotation={[0,Math.PI + Math.PI/18 - Math.PI/12,0]}/>
             {/* The scuba gear used to stand here, and clicking it dived the
                 avatar off the island edge and cut to /portfolio. It is gone
                 because it was the second door to a room that already had one:
@@ -199,7 +199,7 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 a hotspot -- a control that looks live and does nothing. */}
             <Hologram
                 scale={0.5}
-                position={[1.75, -2.75, 8]}
+                position={[-0.38, -2.75, 8.18]}
                 onActivate={startOptics}
             />
 

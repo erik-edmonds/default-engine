@@ -33,16 +33,17 @@ export const OPTICS_SETTLE_SECONDS = 1.0
  *  damp costs nothing to leave running afterwards. */
 export const OPTICS_SETTLE_LAMBDA = 6
 
-/** The pull-back, and the flight home afterwards. Both the same, so the
- *  sequence is symmetric.
+/** How long the pull-back takes. The flight HOME reuses it.
  *
- *  This has been round the houses: 1.5 read as a jump rather than as a camera
- *  backing off, so it went to 2.6, which then read as dawdling once the rest
- *  of the sequence tightened. 1.3 is where it landed. The difference between
- *  1.5 feeling wrong and 1.3 feeling right is not the number -- it is that
- *  the camera no longer moves while the beacon is still flying, so the eye has
- *  only one thing to follow. */
-export const OPTICS_CAMERA_SECONDS = 1.3
+ *  This has been round the houses: 1.5 read as a jump, 2.6 as dawdling, 1.3
+ *  was right while the camera waited its turn. It is 1.8 now because the
+ *  camera no longer waits -- it leaves at OPTICS_CAMERA_AT, halfway through
+ *  the tour, and most of that extra time is spent barely moving at all. The
+ *  ease (see OpticsCamera) is a smoothstep over a warped input, so the first
+ *  third of these 1.8 seconds covers almost no distance.
+ *
+ *  The perceived speed is therefore faster than 1.3 was, not slower. */
+export const OPTICS_CAMERA_SECONDS = 1.8
 
 /** The sweep. Half the speed it ran at first: the front crossed the island in
  *  under a second, which is long enough to see but not long enough to read. */
@@ -71,8 +72,27 @@ export const OPTICS_SCAN_REACH = 78
 
 /** Phase boundaries, in seconds from the click. DERIVED, never written out,
  *  so changing one duration above cannot leave a boundary stranded behind it. */
-export const OPTICS_LIFT_AT = OPTICS_WAKE_SECONDS + OPTICS_SETTLE_SECONDS
-export const OPTICS_SCAN_AT = OPTICS_LIFT_AT + OPTICS_CAMERA_SECONDS
+/** When the camera STARTS backing away -- halfway through the tour, not after
+ *  it.
+ *
+ *  A timestamp rather than a phase boundary, deliberately. The two motions are
+ *  meant to OVERLAP now: the camera drifts off while the beacon is still
+ *  flying, so the pull-back is already under way by the time the eye is free
+ *  to notice it. Expressing that as a phase would mean phases that overlap,
+ *  and `opticsPhaseAt` is a linear partition for good reason -- chrome and
+ *  input suppression want exactly one answer per instant.
+ *
+ *  Paired with the ease in OpticsCamera, which puts peak speed at 2.76s --
+ *  within a rounding error of the tour ending at 2.8. */
+export const OPTICS_CAMERA_AT = 1.4
+
+/** The sweep begins once the beacon has settled. It no longer waits for the
+ *  camera: the flight starts at OPTICS_CAMERA_AT and has arrived by 3.2,
+ *  comfortably before this. That also unpicks a coupling that was easy to trip
+ *  over -- OPTICS_CAMERA_SECONDS used to be a term in this sum, so the flight
+ *  duration WAS the scan schedule and retiming the camera silently moved the
+ *  sweep, the hold and the fade. */
+export const OPTICS_SCAN_AT = OPTICS_WAKE_SECONDS + OPTICS_SETTLE_SECONDS
 /** When the front has finished travelling and the hold begins. */
 export const OPTICS_SWEEP_END_AT = OPTICS_SCAN_AT + OPTICS_SWEEP_SECONDS
 /** When the hold ends and everything starts clearing. */
@@ -122,15 +142,15 @@ export const OPTICS_DIM = 0.025
  *  SMALLER z than the palm's own -- which is why each duck waypoint sits a
  *  unit or two further in than the trunk it hides behind. */
 export const OPTICS_WAKE_POINTS: [number, number, number][] = [
-  [1.75, -1.35, 8.0],   // rest, on the pier
-  [2.6, 0.8, 5.5],      // lift away, drifting inland
-  [0.0, 1.6, 2.0],      // over the beach, well clear of the Shack
-  [-2.3, -0.5, 4.0],    // duck behind the near palm's canopy (top y -0.41)
-  [-6.0, 0.6, -1.0],    // swing left
-  [-7.5, 0.4, -4.8],    // behind the left palm (canopy to y 1.23)
-  [-3.0, 2.2, -5.5],    // climb, cross the back
-  [3.0, 1.8, -3.0],     // cross to the right
-  [7.2, 0.0, -0.8],     // behind the right palm (canopy to y 0.19)
+  [-0.38, -1.35, 8.18],   // rest, on the pier
+  [1.09, 0.8, 5.99],      // lift away, drifting inland
+  [-0.52, 1.6, 1.93],      // over the beach, well clear of the Shack
+  [-3.26, -0.5, 3.27],    // duck behind the near palm's canopy (top y -0.41)
+  [-5.54, 0.6, -2.52],    // swing left
+  [-6.0, 0.4, -6.58],    // behind the left palm (canopy to y 1.23)
+  [-1.47, 2.2, -6.09],    // climb, cross the back
+  [3.67, 1.8, -2.12],     // cross to the right
+  [7.16, 0.0, 1.09],     // behind the right palm (canopy to y 0.19)
   // THE TAIL DOES NOT GO NEAR THE PIER, and it took three attempts to get
   // that right, so the arithmetic is written down.
   //
@@ -158,9 +178,19 @@ export const OPTICS_WAKE_POINTS: [number, number, number][] = [
   // anchor at about -2.0 -- and stay inside the middle of the frame. The last
   // one is roughly a unit from where the damp takes over, so the handover is
   // a continuation rather than a change of direction.
-  [1.0, -0.2, 4.0],     // back across the beach and already dropping
-  [-3.0, -1.0, 8.0],    // left and lower, 4.75 units clear of the base
-  [-4.5, -1.7, 10.8],   // settle beside the anchor, at its height
+  //
+  // AND IT HANDS OVER FROM UP-AND-RIGHT OF THE ANCHOR. The version before
+  // this one ended at [-4.5, -1.7, 10.8], which projects to screen (833, 937)
+  // against an anchor at (1190, 1330) -- so the beacon overshot LEFT past the
+  // anchor and the damp then dragged it back right and down. A dogleg, and a
+  // visible one.
+  //
+  // These three stay to the right of the anchor on screen the whole way
+  // (ndc +0.54 then +0.13) and above it, so the damp carries the beacon down
+  // and left in one continuous motion instead of reversing.
+  [1.51, 0.4, 4.03],      // forward over the beach, already dropping
+  [-3.04, -0.4, 7.47],    // still right of the anchor on screen
+  [-5.65, -0.9, 8.73],    // hand over up-and-right of it
 ]
 
 /** The flown curve. Centripetal, the same construction config/journey.ts uses
@@ -198,8 +228,8 @@ export const OPTICS_WAKE_PATH = new THREE.CatmullRomCurve3(
  *  anything, below is a flat side-on view, and above is the 45-degree map that
  *  was rejected. At radius 32.4 and height 12 this pose is squarely in the
  *  ring, and the clouds move instead: see OPTICS_CLOUD_DUCK_RADIUS. */
-export const OPTICS_CAMERA_POSITION = new THREE.Vector3(-5, 12, 32)
-export const OPTICS_CAMERA_LOOK = new THREE.Vector3(-5, 0, -6)
+export const OPTICS_CAMERA_POSITION = new THREE.Vector3(-13.11, 12, 29.62)
+export const OPTICS_CAMERA_LOOK = new THREE.Vector3(-3.28, 0, -7.09)
 
 /** Clouds within this many world units of the camera shrink out of the way
  *  while a run is live, and come back afterwards.

@@ -19,8 +19,8 @@
  *  centre out to (-6.8, -12.7) and the extent to 32. The route line is gone
  *  from the map -- the moving dot already says where you are -- so the extent
  *  only has to hold the land and the markers now. */
-export const MAP_CENTER_X = -7.36
-export const MAP_CENTER_Z = -9.45
+export const MAP_CENTER_X = -4.66
+export const MAP_CENTER_Z = -11.03
 
 /** Half the world-space width the map covers, around that centre.
  *

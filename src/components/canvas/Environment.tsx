@@ -614,6 +614,23 @@ export function Environment({
     // reads as the island's sky being drawn away first.
     const furnitureShare = Math.max(0, 1 - paperShare / 0.45)
 
+    // SKY FURNITURE GOES OUT ENTIRELY DURING A SURVEY, not down to OPTICS_DIM
+    // with the lit world. The discs are unlit meshBasicMaterials carrying HDR
+    // colour (Sun.tsx multiplies #ff8c1a by 2.6) and the aurora is an additive
+    // pass, so a fortieth of either is still several times whatever the island
+    // reads at when its lights are cut to 0.025 -- and AgX lifts the remainder
+    // back into a solid shape rather than letting it fall away.
+    //
+    // Measured, not assumed: on the survey frame the sun sat blazing at frame
+    // centre, directly under the detection boxes, with the island behind it
+    // black. The same `(1 - dim)` the lens flare already takes, and for the
+    // reason written out at that line.
+    //
+    // THE STARS ARE DELIBERATELY NOT IN THIS. They are points rather than
+    // areas, so they wash nothing out, and a dark sky with stars still in it
+    // is what gives the survey somewhere to happen.
+    const surveyShare = furnitureShare * (1 - opticsRun.dim)
+
     // Hidden outright when faded out, not merely transparent. Both materials
     // are `transparent` with depthWrite left on, so an opacity-0 disc was
     // still submitted and still wrote depth -- an invisible solid object
@@ -621,8 +638,8 @@ export function Environment({
     // Both discs are meshBasicMaterial, so they are unlit too and would hang
     // in a dark sky at full brightness. The moon is the one that shows: three
     // of the four phases have the sun at zero anyway.
-    if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity * furnitureShare * opticsDim
-    if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity * furnitureShare * opticsDim
+    if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity * surveyShare
+    if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity * surveyShare
     // Everything celestial is world-fixed at ground level, so the sky journey
     // rises PAST it rather than toward it.
     //
@@ -656,10 +673,15 @@ export function Environment({
     // through frame centre (-lensPosition * 0.25 and * 1.25), which lands them
     // squarely on the avatar. FLARE_GAIN is (22, 12, 6), added before Bloom and
     // before AgX, so it is not subtle.
-    sunState.flare = b.flareOpacity * furnitureShare
+    // THE GLARE GOES OUT ENTIRELY DURING A SURVEY, not just down with
+    // everything else -- `surveyShare`, not `opticsDim`. A lens flare is a
+    // full-screen additive pass, so even a fortieth of it is a wash across the
+    // picture the scan is trying to be read against. At evening -- the one
+    // phase with a real flare -- it was bleaching the detection boxes.
+    sunState.flare = b.flareOpacity * surveyShare
 
-    if (sunGroupRef.current) sunGroupRef.current.visible = b.sunOpacity * furnitureShare > 0.01
-    if (moonGroupRef.current) moonGroupRef.current.visible = b.moonOpacity * furnitureShare > 0.01
+    if (sunGroupRef.current) sunGroupRef.current.visible = b.sunOpacity * surveyShare > 0.01
+    if (moonGroupRef.current) moonGroupRef.current.visible = b.moonOpacity * surveyShare > 0.01
     if (starsGroupRef.current) starsGroupRef.current.visible = b.starsOpacity * furnitureShare > 0.5
     if (auroraMaterialRef.current) {
       auroraMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime
@@ -667,7 +689,7 @@ export function Environment({
       // The aurora's band height comes from direction-from-the-origin, so
       // rising 160 units sinks the curtain toward the horizon. Faded out with
       // the rest of the sky furniture.
-      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity * auroraVisibility * furnitureShare
+      auroraMaterialRef.current.uniforms.uOpacity.value = b.auroraOpacity * auroraVisibility * surveyShare
     }
 
     // The island's fog is depth cue for a world with depth. The paper world is
@@ -684,8 +706,16 @@ export function Environment({
     // camera's pose that floor is most of the image, because it stands 40 to
     // 60 units out against a fogFar of 70 at night. Without this the whole
     // frame washed to a uniform sepia instead of going dark.
+    //
+    // `1 - dim` AND NOT `opticsDim`, which was the first attempt at this. A
+    // fortieth of a warm evening haze is 0.025 of a colour near (1, 0.6, 0.35),
+    // and AgX hands that back as a brown most of the frame deep -- measurably
+    // better than the undimmed sepia and still not dark. Fog is a haze ADDED
+    // over distance, so it belongs with the other additive terms that go out
+    // entirely rather than with the lit world that stops at OPTICS_DIM. The
+    // ocean's hand-rolled fog takes the same factor, and has to.
     fogScratch.current.set(b.fogColor)
-    fog.color.lerpColors(fogScratch.current, paperFogColor.current, paperShare).multiplyScalar(opticsDim)
+    fog.color.lerpColors(fogScratch.current, paperFogColor.current, paperShare).multiplyScalar(1 - opticsRun.dim)
     fog.near = THREE.MathUtils.lerp(b.fogNear, 600, paperShare)
     fog.far = THREE.MathUtils.lerp(b.fogFar, 1400, paperShare)
 

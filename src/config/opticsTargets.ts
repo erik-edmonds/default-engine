@@ -127,13 +127,13 @@ export const OPTICS_TARGETS: OpticsTarget[] = [
   // skinned meshes once the nested armature is counted, and all three are the
   // same tree.
   //
-  // ONE LABEL BETWEEN THEM. They stand in a cluster alongside the avatar, the
-  // ball and the surfboard, where the captions already crowd each other --
-  // three more reading PALM would be a pile. The portals and the island get
-  // one each because they are far apart; these are not.
+  // ONE PALM, NOT THREE. All three were boxed first and it was a mess: they
+  // stand in a tight cluster alongside the avatar, the ball and the surfboard,
+  // so three overlapping wireframes turned the one part of the island with
+  // anything in it into a thicket. `palm-left` and `palm-right` are dropped;
+  // their nodes are named and `PALM_BOX` fits all three, so restoring them is
+  // two lines if the composition ever opens up.
   { id: "palm-near", cls: "object", label: "Palm", node: "palm-near", box: PALM_BOX },
-  { id: "palm-left", cls: "object", node: "palm-left", box: PALM_BOX },
-  { id: "palm-right", cls: "object", node: "palm-right", box: PALM_BOX },
 
   // --- the portals, each labelled: there are only three and they are far
   //     apart, so the labels cannot collide the way the beach props' do ---

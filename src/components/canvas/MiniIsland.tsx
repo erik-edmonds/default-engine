@@ -10,6 +10,7 @@ import {
   MAP_CENTER_X, MAP_CENTER_Z, MAP_HALF_EXTENT, MAP_TILT_COS, MAP_TILT_SIN,
 } from "@/config/minimap"
 import { getMinimapHeading, subscribeMinimapHeading } from "@/helpers/minimap"
+import { ISLAND_ROTATION_Y } from "@/config/positions"
 
 /** The island at map scale, for the minimap's own canvas.
  *
@@ -52,16 +53,24 @@ const DROP = new Set([
  *  water here is to say where the land stops. */
 const SEA_COLOR = "#8fc4d2"
 
-/** Matches Scene.tsx's own `<Merged scale={3} position={[0,-5.5,0]} rotation={[0,PI/2,0]}>`.
+/** Matches Scene.tsx's own
+ *  `<Merged scale={3} position={[0,-5.5,0]} rotation={[0,ISLAND_ROTATION_Y,0]}>`.
  *
  *  Not a coincidence and not tunable: the map camera below is positioned in the
  *  ISLAND's world coordinates, and `worldToMap` -- which places the four
  *  destination dots and the "you are here" marker over this canvas -- assumes
  *  those same coordinates. Change this and the island slides out from under its
- *  own markers. */
+ *  own markers.
+ *
+ *  IMPORTED NOW, AND IT USED TO BE A LITERAL. This read `Math.PI / 2` and the
+ *  comment above claimed that matched Scene.tsx -- which it did, until the
+ *  island turned to 100 degrees and nobody came back here. The miniature was
+ *  drawn ten degrees out from the markers laid over it for the whole of that
+ *  period. A constant whose entire job is to equal another constant has no
+ *  business being typed out twice. */
 const ISLAND_SCALE = 3
 const ISLAND_POSITION: [number, number, number] = [0, -5.5, 0]
-const ISLAND_ROTATION: [number, number, number] = [0, Math.PI / 2, 0]
+const ISLAND_ROTATION: [number, number, number] = [0, ISLAND_ROTATION_Y, 0]
 
 export function MiniIsland({ phase }: { phase: keyof typeof PRESETS }) {
   const { scene } = useGLTF("/models/merged.glb")

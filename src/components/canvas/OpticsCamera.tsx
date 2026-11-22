@@ -7,6 +7,7 @@ import { useSetAtom } from "jotai"
 
 import type { CameraControllerHandle } from "@/components/canvas/CameraController"
 import {
+  OPTICS_CAMERA_AT,
   OPTICS_CAMERA_LOOK,
   OPTICS_CAMERA_POSITION,
   OPTICS_CAMERA_SECONDS,
@@ -18,6 +19,31 @@ import { opticsPhase, opticsPhaseAt, opticsRun, type OpticsPhase } from "@/helpe
  *  4 reaches most of the way in about a quarter second, which is well ahead of
  *  the 2.6-second flight it is clearing the path for. */
 const DUCK_LAMBDA = 4
+
+/** The pull-back's curve: slow out, peak speed as the tour ends, settling in.
+ *
+ *  A smoothstep over a WARPED input. Smoothstep's velocity peaks where its
+ *  input passes 0.5, so feeding it `p^k` moves that peak to `p = 0.5^(1/k)`.
+ *  At k = 2.5 the peak lands at p = 0.758, and across a 1.8-second flight
+ *  starting at OPTICS_CAMERA_AT (1.4s) that is t = 2.76 -- within a rounding
+ *  error of the 2.8s the beacon's tour ends. Which is the whole point: the
+ *  camera is barely moving while the beacon is the thing to watch, and is
+ *  fastest exactly as the beacon stops being it.
+ *
+ *  A FUNCTION, NOT AN EASE STRING, because none of gsap's named curves put
+ *  their peak anywhere but the middle (power*.inOut) or an endpoint
+ *  (power*.in / .out). gsap core accepts a function; no plugin, no new
+ *  dependency. A spring was the other candidate and is the wrong instrument:
+ *  its velocity peak falls out of stiffness and damping rather than being
+ *  something you can place at a named moment.
+ *
+ *  Stays inside [0, 1] for every p in [0, 1], which it has to -- flyTo feeds
+ *  this same curve to slerpQuaternions, and extrapolating past the destination
+ *  orientation whips the camera. */
+const PULL_BACK_EASE = (p: number) => {
+  const q = Math.pow(p, 2.5)
+  return q * q * (3 - 2 * q)
+}
 
 /** The clock, the camera, the duck, and the one atom.
  *
@@ -47,6 +73,9 @@ export function OpticsCamera({
    *  so this is what keeps the clouds out of the way until the camera is back
    *  among them. */
   const returning = useRef(0)
+  /** Has the outbound flight been ordered this run? It fires on a TIMESTAMP
+   *  rather than a phase transition, so it needs its own latch. */
+  const flownOut = useRef(false)
 
   /** Derives the arrival Euler from "stand here, look there".
    *
@@ -82,12 +111,17 @@ export function OpticsCamera({
     // flight home is ordered, and clouds snapping back around a lens that is
     // still forty units out would be worse than never ducking at all.
     if (returning.current > 0) returning.current -= delta
-    const phase = phaseRef.current
-    const wantDuck =
-      phase === "lifting" || phase === "scanning" || returning.current > 0
+    // Ducked from the moment the camera starts moving until it is home again
+    // -- keyed off the flight, not the phase, now that the two no longer line
+    // up. The clouds have to be out of the way before the lens arrives, not
+    // as it arrives.
+    const wantDuck = opticsRun.t >= OPTICS_CAMERA_AT || returning.current > 0
     opticsRun.duck = THREE.MathUtils.damp(opticsRun.duck, wantDuck ? 1 : 0, DUCK_LAMBDA, delta)
 
-    if (opticsRun.t < 0) return
+    if (opticsRun.t < 0) {
+      flownOut.current = false
+      return
+    }
 
     // Checked here rather than in an effect, and not only to avoid the
     // cascading-render lint: the abort has to land on the same frame the
@@ -118,6 +152,24 @@ export function OpticsCamera({
 
     const before = phaseRef.current
     opticsRun.t += delta
+
+    // THE OUTBOUND FLIGHT FIRES ON ITS OWN CUE, mid-tour, not on a phase
+    // transition. The camera and the beacon are meant to overlap: the
+    // pull-back is already under way for 1.4 seconds before the beacon stops
+    // flying, so there is no moment where one motion visibly hands over to the
+    // other. Expressing that as a phase would need phases that overlap, and
+    // opticsPhaseAt is a linear partition precisely so chrome and input
+    // suppression get exactly one answer per instant.
+    if (!flownOut.current && opticsRun.t >= OPTICS_CAMERA_AT && controller.current) {
+      flownOut.current = true
+      controller.current.flyTo(
+        OPTICS_CAMERA_POSITION,
+        rig.rotation,
+        OPTICS_CAMERA_SECONDS,
+        PULL_BACK_EASE,
+      )
+    }
+
     const after = opticsPhaseAt(opticsRun.t, opticsRun.airborne)
     if (after === before) return
 
@@ -127,12 +179,7 @@ export function OpticsCamera({
     const fly = controller.current
     if (!fly) return
 
-    if (after === "lifting") {
-      // OUT -- and not one beat earlier. `lifting` begins only after `waking`
-      // (the tour) AND `settling` (the beacon reaching its anchor) are both
-      // done, so the camera never moves while the beacon is still travelling.
-      fly.flyTo(OPTICS_CAMERA_POSITION, rig.rotation, OPTICS_CAMERA_SECONDS)
-    } else if (after === "companion") {
+    if (after === "companion") {
       homeEuler.setFromQuaternion(opticsRun.home.quaternion)
       fly.flyTo(opticsRun.home.position, homeEuler, OPTICS_CAMERA_SECONDS)
       returning.current = OPTICS_CAMERA_SECONDS
