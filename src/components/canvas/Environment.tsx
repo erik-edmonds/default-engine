@@ -19,6 +19,8 @@ import gsap from "gsap"
 
 import { PRESETS, TRANSITION_SECONDS, type TimeOfDay, type EnvironmentBlend } from "./environmentPresets"
 import { ISLAND_CAMERA_POSITION } from "@/config/positions"
+import { OPTICS_DIM } from "@/config/optics"
+import { opticsRun } from "@/helpers/optics"
 import { Sun } from "@/components/models/Sun"
 import { Moon } from "@/components/models/Moon"
 import { Campfire } from "@/components/models/Campfire"
@@ -467,14 +469,47 @@ export function Environment({
     // 2.6 and the rim #ff7a6b at 1.9, which is a strong orange raking light
     // across what is meant to read aswhite paper. It is dimmed rather than cut so
     // the avatar keeps some of its own modelling on the way up.
-    const islandLight = 1 - paperShare * ISLAND_RIG_DIM
+    // THE SURVEY DIMMER, folded into the rig's existing multiplier.
+    //
+    // While the beacon is scanning, the world is taken down to OPTICS_DIM so
+    // the wave and the detection boxes are the picture. Dimming the LIGHTS is
+    // what makes that work, and the two obvious alternatives were measured and
+    // both break it:
+    //
+    //   - A black quad in the scene dims the BLOOM INPUT. The composer
+    //     rasterises every mesh into the buffer the passes read, so an 85%
+    //     scrim drops the scan edge from linear luminance 1.32 to 0.20 --
+    //     under Bloom's 0.9 threshold, and the glow disappears entirely. The
+    //     wave cannot be drawn over a scrim either: it lives in the terrain's
+    //     own fragment shader, in the opaque pass.
+    //   - toneMappingExposure (written below) is applied AFTER Bloom, inside
+    //     the <ToneMapping> effect, so it dims the finished image -- halo,
+    //     boxes and all -- without changing what Bloom selects.
+    //
+    // The light rig has neither problem. The scan edge is added to
+    // outgoingLight after totalDiffuse + totalSpecular + totalEmissiveRadiance
+    // and contains no light term, so it survives bit-identical and GAINS
+    // headroom as the terrain falls away beneath it.
+    const opticsDim = 1 - opticsRun.dim * (1 - OPTICS_DIM)
+    const islandLight = (1 - paperShare * ISLAND_RIG_DIM) * opticsDim
 
     if (paperAmbientRef.current) paperAmbientRef.current.intensity = PAPER_LIGHT.ambientIntensity * paperShare
     if (paperKeyRef.current) paperKeyRef.current.intensity = PAPER_LIGHT.keyIntensity * paperShare
 
-    skyMaterial.uniforms.uTop.value.set(b.skyTop)
-    skyMaterial.uniforms.uHorizon.value.set(b.skyHorizon)
+    // The sky is unlit -- its fragment shader writes gl_FragColor from these
+    // two colours and nothing else -- so the rig above does not reach it, and
+    // a bright sky behind a dark island would read as the effect only half
+    // happening. Scaled rather than given a brightness uniform, because there
+    // is no third place these are read from.
+    skyMaterial.uniforms.uTop.value.set(b.skyTop).multiplyScalar(opticsDim)
+    skyMaterial.uniforms.uHorizon.value.set(b.skyHorizon).multiplyScalar(opticsDim)
 
+    // THESE THREE ARE DEAD and have been since the paper world arrived. The
+    // block near the end of this callback (search for paperFogColor) writes
+    // colour, near and far again, unconditionally, so whatever is set here is
+    // overwritten before the frame renders. Left in place rather than deleted
+    // because the ordering is the point: the survey dimmer was first applied
+    // HERE, measured as having literally no effect, and the reason was this.
     fog.color.set(b.fogColor)
     fog.near = b.fogNear
     fog.far = b.fogFar
@@ -583,8 +618,11 @@ export function Environment({
     // are `transparent` with depthWrite left on, so an opacity-0 disc was
     // still submitted and still wrote depth -- an invisible solid object
     // parked in the sky. Three of the four phases have the moon at 0.
-    if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity * furnitureShare
-    if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity * furnitureShare
+    // Both discs are meshBasicMaterial, so they are unlit too and would hang
+    // in a dark sky at full brightness. The moon is the one that shows: three
+    // of the four phases have the sun at zero anyway.
+    if (sunMaterialRef.current) sunMaterialRef.current.opacity = b.sunOpacity * furnitureShare * opticsDim
+    if (moonMaterialRef.current) moonMaterialRef.current.opacity = b.moonOpacity * furnitureShare * opticsDim
     // Everything celestial is world-fixed at ground level, so the sky journey
     // rises PAST it rather than toward it.
     //
@@ -636,8 +674,18 @@ export function Environment({
     // a flat sheet a few units behind flat cutouts, and fog over that reads as
     // a smear -- so it is pushed out of range as the paper arrives rather than
     // switched off, which would pop.
+    //
+    // THE AUTHORITATIVE FOG WRITE. An earlier copy near the top of this
+    // callback sets the same three fields and is overwritten here.
+    //
+    // The survey dimmer belongs on this one. Fog mixes every surface toward
+    // its colour by distance, so an undimmed haze puts a floor under the
+    // picture that dimming the lights cannot get below -- and at the survey
+    // camera's pose that floor is most of the image, because it stands 40 to
+    // 60 units out against a fogFar of 70 at night. Without this the whole
+    // frame washed to a uniform sepia instead of going dark.
     fogScratch.current.set(b.fogColor)
-    fog.color.lerpColors(fogScratch.current, paperFogColor.current, paperShare)
+    fog.color.lerpColors(fogScratch.current, paperFogColor.current, paperShare).multiplyScalar(opticsDim)
     fog.near = THREE.MathUtils.lerp(b.fogNear, 600, paperShare)
     fog.far = THREE.MathUtils.lerp(b.fogFar, 1400, paperShare)
 

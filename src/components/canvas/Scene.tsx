@@ -23,6 +23,8 @@ import { useAtomValue } from "jotai"
 import { Sign } from "@/components/models/Sign"
 import { Hologram } from "@/components/models/Hologram"
 import { opticsRun } from "@/helpers/optics"
+import { OpticsPulse } from "@/components/canvas/OpticsPulse"
+import { DetectionBrackets } from "@/components/canvas/DetectionBrackets"
 
 /** Module scope, so the identity is stable for the session. The beacon
  *  re-registers its magnetic target whenever this changes, and an inline arrow
@@ -106,9 +108,32 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 instance (see the note in PalmTree.tsx), and windOffset keeps
                 them from swaying in lockstep. The two below the original are
                 placeholders: move them wherever you want them. */}
-            <PalmTree scale={0.65} position={[-2,-6,5.5]} rotation={[0,Math.PI/4,Math.PI/12]}/>
-            <PalmTree scale={0.55} position={[-7,-3.5,-4.5]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
-            <PalmTree scale={0.72} position={[7,-6,0]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
+            {/* Named so the survey can find them. These three ARE the main
+                island's trees -- merged.glb's own Tree2 and Tree3 are
+                commented out of MergedScene.tsx and never render. See
+                config/opticsTargets.ts. */}
+            {/* THESE POSITIONS LOOK WRONG AND ARE CORRECT. They used to read
+                -2/-7/+7 on X, which is what you would author for three palms
+                spread across an island -- and the palms rendered bunched in
+                the middle anyway, because PalmTree.tsx was adding 13.9 units
+                of the rig's own baked offset to every one of them (see the
+                long note on Armature001_61 there).
+
+                That offset is gone now, so these numbers finally describe
+                where the trees actually are. They were chosen to keep the
+                scene PIXEL-IDENTICAL to how it looked with the bug -- the
+                composition was signed off, and correcting the rig was about
+                making the transforms honest, not about re-dressing the beach.
+                Each is the old position plus R*S applied to the removed
+                offset; verified identical to 3e-5.
+
+                So the trees really do stand in a loose cluster around x -3.6
+                to +0.7. Move them wherever you like now: what Scene.tsx says
+                is finally what the screen shows, which is also what lets the
+                survey box them. */}
+            <PalmTree name="palm-near" scale={0.65} position={[-3.231,-1.481,-0.762]} rotation={[0,Math.PI/4,Math.PI/12]}/>
+            <PalmTree name="palm-left" scale={0.55} position={[-0.922,-1.402,-2.939]} rotation={[0,-Math.PI/3,-Math.PI/16]} windOffset={1.7}/>
+            <PalmTree name="palm-right" scale={0.72} position={[-0.122,-1.434,-1.858]} rotation={[0,Math.PI/1.6,Math.PI/20]} windOffset={3.4}/>
             {/* BACK WHERE IT STARTED, and the LENS moved instead.
                 
                 This was dragged 1.07 units inboard so the board would be in
@@ -134,7 +159,18 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 as debris scattered over the water. */}
             <group name="birds-flock">{showSeagulls && <SeagullFlock />}</group>
             <group name="birds-gull"><Gull scale={1} position={[1,-2.76,5.8]} rotation={[0,-Math.PI/4,0]}/></group>
-            <Charizard scale={0.1} position={[11,3.63,-18.2]} rotation={[0,Math.PI,0]}/>
+            {/* MOVED, finally. The island turned from 90 to 100 degrees
+                (config/positions.ts) and everything standing on it was
+                rotated to follow -- except this, which was raised at the time
+                and never done. It sits beside the moon island at radius 21.3,
+                so ten degrees left it 3.71 units out over open air.
+                applyAxisAngle on the position, and the delta ADDED to the
+                Y rotation, which for a Y-only turn is the same as composing
+                the quaternions.
+
+                Named so the survey can find it -- it is the one target in the
+                "alive" class that is not a bird. */}
+            <Charizard name="charizard" scale={0.1} position={[7.67,3.63,-19.83]} rotation={[0,Math.PI + Math.PI/18,0]}/>
             {/* The scuba gear used to stand here, and clicking it dived the
                 avatar off the island edge and cut to /portfolio. It is gone
                 because it was the second door to a room that already had one:
@@ -190,7 +226,19 @@ export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls 
                 <group ref={islandRef} name="island-terrain">
                     <Merged from={from} day={day} transitionSeconds={transitionSeconds} scale={3} position={[0,-5.5,0]} rotation={[0,ISLAND_ROTATION_Y,0]}/>
                 </group>
+                {/* Arms the terrain's own materials with the survey wave and
+                    drives it. Renders nothing; it needs the ref above because
+                    the wave is injected into the materials the island already
+                    has rather than drawn as geometry of its own. */}
             </Bvh>
+            {/* Both OUTSIDE the Bvh above, and outside the island group.
+                The pulse renders nothing at all; the brackets write
+                world-space matrices, so parenting them under the terrain would
+                apply its scale-3 / rotate-100deg chain a second time. Neither
+                wants a bounds tree built over it either -- that Bvh exists for
+                merged.glb's 166 raycastable meshes. */}
+            <OpticsPulse island={islandRef} />
+            <DetectionBrackets />
         </>
     )
 }

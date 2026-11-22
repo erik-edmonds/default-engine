@@ -64,7 +64,33 @@ export function PalmTree({ windOffset = 0, ...props }) {
     <group ref={group} {...props} dispose={null}>
         <group name="Sketchfab_model" rotation={[-Math.PI / 2, 0, 0]}>
             <group name="GLTF_SceneRootNode" rotation={[Math.PI / 2, 0, 0]}>
-              <group name="Armature001_61" position={[7.086, 5.299, -8.15]}>
+              {/* NO POSITION HERE, AND PUTTING ONE BACK IS A BUG.
+                  gltfjsx writes `position={[7.086, 5.299, -8.15]}` on this
+                  node, faithfully copying the glTF, and it is wrong in
+                  combination with the asset.
+
+                  palmtree.glb's vertices are stored in FINAL SCENE
+                  COORDINATES -- not one of the 843 is near the origin, x runs
+                  4.67 to 9.16 -- and its inverseBindMatrices carry the exact
+                  inverse, so `boneWorld * IBM` collapses to the identity and
+                  the raw accessor values ARE the drawn values. Writing the
+                  armature's translation again therefore adds a surviving copy
+                  of it: 13.9 units, which is why the three palms rendered
+                  clustered near the middle of the island at drawn x -3.6,
+                  -1.1 and +0.7 while Scene.tsx asked for -2, -7 and +7.
+
+                  Measured: deleting it moves the drawn geometry by exactly
+                  [7.086, 5.299, -8.15] and changes nothing else -- shape,
+                  pose, skinning and the wind sway are bit-identical, because
+                  this is a pure translation above the whole bone chain and no
+                  animation channel targets this node.
+
+                  models/Seagull.tsx does the same thing for the same reason:
+                  seagull.glb bakes its placement onto Sketchfab_model and the
+                  JSX there writes rotation and scale but NOT position. If a
+                  future re-export puts this attribute back, the palms will
+                  bunch up again. */}
+              <group name="Armature001_61">
                 <group name="GLTF_created_2">
                   <primitive object={nodes.GLTF_created_2_rootJoint} />
                   <skinnedMesh

@@ -7,6 +7,8 @@ import gsap from "gsap"
 
 import { PRESETS, TRANSITION_SECONDS, type TimeOfDay } from "./environmentPresets"
 import { tweenDuration } from "@/helpers/motion"
+import { OPTICS_DIM } from "@/config/optics"
+import { opticsRun } from "@/helpers/optics"
 
 // Calm tropical lagoon, not open ocean -- fixed, not tweened per time of
 // day, same as the sky-reflection tint below now is too.
@@ -79,6 +81,9 @@ const fragmentShader = /* glsl */ `
   uniform float uShoreRadius;
   uniform float uShoreFade;
   uniform float uTime;
+  /** 1 normally; driven down toward OPTICS_DIM while the beacon surveys the
+   *  island. See the note at the bottom of this shader. */
+  uniform float uDim;
 
   varying vec3 vWorldPos;
 
@@ -269,10 +274,23 @@ const fragmentShader = /* glsl */ `
     float caustic = causticMask(vWorldPos.xz, uTime);
     color = mix(color, vec3(0.8, 0.97, 1.0), caustic * 0.8);
 
+    // THE SURVEY DIMMER, and it has to be here rather than on a uniform
+    // further up. This shader is fully hand-rolled and takes no scene lights,
+    // so Environment's light rig cannot reach it -- and at the survey camera's
+    // pose the lagoon is the largest bright area in frame, so a dark island
+    // ringed by a glowing pond reads as the effect only half applied. The two
+    // brightest terms above, the foam band and the caustic patches, are
+    // hard-coded colours that no existing uniform touches, which is why one
+    // multiply at the end is the only single point that catches everything.
+    //
+    // Before the fog, so a dimmed surface still recedes into the same haze the
+    // terrain does rather than staying unnaturally crisp at distance.
+    color *= uDim;
+
     // Hand-rolled fog -- a custom ShaderMaterial doesn't get Three's
     // automatic fog for free the way MeshBasicMaterial does.
     float fogFactor = clamp((length(vWorldPos - cameraPosition) - uFogNear) / max(uFogFar - uFogNear, 0.001), 0.0, 1.0);
-    color = mix(color, uFogColor, fogFactor);
+    color = mix(color, uFogColor * uDim, fogFactor);
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -300,6 +318,7 @@ export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitio
         uIslandCenter: { value: new THREE.Vector2(...ISLAND_CENTER) },
         uShoreRadius: { value: SHORE_RADIUS },
         uShoreFade: { value: SHORE_FADE },
+        uDim: { value: 1 },
       },
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,6 +401,11 @@ export function useOceanWaterMaterial(from: TimeOfDay, day: TimeOfDay, transitio
 
     u.uFogNear.value = b.fogNear
     u.uFogFar.value = b.fogFar
+
+    // The survey dimmer. opticsRun.dim is damped by OpticsPulse and is 0 for
+    // the whole session until the beacon scans, so this is a multiply by 1 in
+    // the ordinary case.
+    u.uDim.value = 1 - opticsRun.dim * (1 - OPTICS_DIM)
   })
 
   return material

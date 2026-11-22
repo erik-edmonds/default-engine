@@ -14,9 +14,14 @@ import {
 import { cameraBase } from "@/helpers/cameraBase"
 import { opticsPhase, opticsPhaseAt, opticsRun, type OpticsPhase } from "@/helpers/optics"
 
-/** The clock, the camera, and the one atom.
+/** How fast the clouds get out of the way, and back. A MathUtils.damp lambda;
+ *  4 reaches most of the way in about a quarter second, which is well ahead of
+ *  the 2.6-second flight it is clearing the path for. */
+const DUCK_LAMBDA = 4
+
+/** The clock, the camera, the duck, and the one atom.
  *
- *  SINGLE OWNER OF `opticsRun.t`. Four components read that clock and exactly
+ *  SINGLE OWNER OF `opticsRun.t`. Five components read that clock and exactly
  *  one advances it, which is this -- the same discipline IslandExperience
  *  applies to dpr (one writer, deliberately: see the note at its
  *  PerformanceMonitor). Two advancers would double the sequence's speed in a
@@ -38,13 +43,29 @@ export function OpticsCamera({
 }) {
   const setPhase = useSetAtom(opticsPhase)
   const phaseRef = useRef<OpticsPhase>("idle")
+  /** Seconds left on the flight home. The clock has already stopped by then,
+   *  so this is what keeps the clouds out of the way until the camera is back
+   *  among them. */
+  const returning = useRef(0)
 
-  /** Derives the arrival Euler from "stand here, look there". A real Object3D
-   *  rather than hand-rolled trigonometry: lookAt writes the quaternion and
-   *  three keeps `rotation` in sync with it, so this is exactly the arithmetic
-   *  the camera would do for itself. One allocation, at mount. */
+  /** Derives the arrival Euler from "stand here, look there".
+   *
+   *  A PerspectiveCamera, AND IT HAS TO BE ONE. Object3D.lookAt and
+   *  Camera.lookAt are different functions -- three branches on `isCamera`:
+   *
+   *      if ( this.isCamera || this.isLight ) _m1.lookAt( _position, _target, up )
+   *      else                                 _m1.lookAt( _target, _position, up )
+   *
+   *  A plain Object3D takes the second branch, which orients +Z from the
+   *  target back toward the object -- so the derived rotation points a camera
+   *  180 degrees the WRONG WAY. Measured with an Object3D here: the flight
+   *  landed looking up into the stars and the island never entered frame.
+   *
+   *  Nothing renders this and it is never added to the scene; it exists to
+   *  turn two vectors into the Euler flyTo wants, using three's own arithmetic
+   *  rather than a hand-rolled copy of it. One allocation, at mount. */
   const rig = useMemo(() => {
-    const object = new THREE.Object3D()
+    const object = new THREE.PerspectiveCamera()
     object.position.copy(OPTICS_CAMERA_POSITION)
     object.lookAt(OPTICS_CAMERA_LOOK)
     return object
@@ -56,6 +77,16 @@ export function OpticsCamera({
   const homeEuler = useMemo(() => new THREE.Euler(), [])
 
   useFrame((state, delta) => {
+    // THE DUCK RUNS WHETHER OR NOT THE CLOCK DOES, and that is the point of
+    // keeping it out of the phase machine. The clock stops the instant the
+    // flight home is ordered, and clouds snapping back around a lens that is
+    // still forty units out would be worse than never ducking at all.
+    if (returning.current > 0) returning.current -= delta
+    const phase = phaseRef.current
+    const wantDuck =
+      phase === "lifting" || phase === "scanning" || returning.current > 0
+    opticsRun.duck = THREE.MathUtils.damp(opticsRun.duck, wantDuck ? 1 : 0, DUCK_LAMBDA, delta)
+
     if (opticsRun.t < 0) return
 
     // Checked here rather than in an effect, and not only to avoid the
@@ -96,15 +127,20 @@ export function OpticsCamera({
     const fly = controller.current
     if (!fly) return
 
-    if (after === "settling") {
-      // Out. Position and rotation both authored; see config/optics.ts for
-      // why the frame is 44.8 units tall at this distance and the island is 45.
+    if (after === "lifting") {
+      // OUT -- and not one beat earlier. `lifting` begins only after `waking`
+      // (the tour) AND `settling` (the beacon reaching its anchor) are both
+      // done, so the camera never moves while the beacon is still travelling.
       fly.flyTo(OPTICS_CAMERA_POSITION, rig.rotation, OPTICS_CAMERA_SECONDS)
     } else if (after === "companion") {
       homeEuler.setFromQuaternion(opticsRun.home.quaternion)
       fly.flyTo(opticsRun.home.position, homeEuler, OPTICS_CAMERA_SECONDS)
+      returning.current = OPTICS_CAMERA_SECONDS
+      // Once only. A later click reads this and is swallowed -- see the note
+      // on `scanned` in helpers/optics.ts for where the AI picks it up.
+      opticsRun.scanned = true
       // The clock stops here, and `airborne` keeps the beacon on screen. A
-      // later click reads that flag and seeds the clock past the wake arc --
+      // later click reads that flag and seeds the clock past the tour --
       // see opticsRun.start.
       opticsRun.t = -1
     }

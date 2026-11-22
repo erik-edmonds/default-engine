@@ -8,6 +8,8 @@ import { useSetAtom } from 'jotai'
 import { rainRequest, thunder } from '@/helpers/StateProvider'
 import { useUnlock } from '@/helpers/achievements'
 import { MAGNETIC_SNAP_RADIUS, registerMagneticTarget, type MagneticTarget } from '@/helpers/cursor'
+import { opticsRun } from '@/helpers/optics'
+import { OPTICS_CLOUD_DUCK_RADIUS } from '@/config/optics'
 
 
 /** What the group's single frame loop needs to know about one cloud. Hover
@@ -19,6 +21,13 @@ interface CloudEntry {
   node: THREE.Object3D & { color: THREE.Color }
   random: number
   hovered: boolean
+  /** The cloud's AUTHORED world position, for the optics duck below.
+   *
+   *  Not `node.position`, which is the <Instance>'s offset inside its own
+   *  group and carries only the bob. The group is what holds the world
+   *  placement and it never moves, so this is copied once at registration
+   *  rather than read through getWorldPosition every frame for 42 clouds. */
+  position: THREE.Vector3
 }
 /** The live entries, shared as the REF rather than the array. A ref is the
  *  sanctioned mutable container: handing the array itself down makes every
@@ -46,12 +55,42 @@ export function Clouds({ data, limit }: { data: CloudDatum[]; limit: number }) {
   // question of what looks right rather than what the frame budget allows.
   useFrame((state) => {
     const t = state.clock.getElapsedTime()
+    // How far out of the way the clouds should be, 0..1, damped by
+    // OpticsCamera. Read once per frame rather than per cloud.
+    const duck = opticsRun.duck
     for (const entry of entries.current) {
       const node = entry.node
       if (!node) continue
       // The bob, offset per cloud so they don't rise and fall in step.
       node.position.y = Math.sin((t + entry.random * 10000) / 1.5) / 2
-      const scale = THREE.MathUtils.lerp(node.scale.z, entry.hovered ? 1.4 : 1, 0.1)
+
+      // THE OPTICS DUCK. Clouds near the lens shrink out of the way while the
+      // beacon is surveying, and come back afterwards.
+      //
+      // This exists because the survey camera has nowhere clear to stand. The
+      // clouds form a torus -- radius 12.7 to 40.6, height 2.3 to 27.7 -- and
+      // the only volumes outside it are too close, too low, or straight
+      // overhead. Measured by re-rolling placement 4,000 times: an oblique
+      // pose at a useful distance puts the lens INSIDE a cloud body about one
+      // session in ten. The authored sky journey crosses the same bands and
+      // survives it by moving; a held pose does not.
+      //
+      // Riding the existing scale lerp rather than adding opacity is what
+      // makes this nearly free: no material change, no transparency sorting,
+      // no second draw call, and the 0.1-per-frame lerp already is the ramp.
+      let shrink = 1
+      if (duck > 0) {
+        const edge = state.camera.position.distanceTo(entry.position) / OPTICS_CLOUD_DUCK_RADIUS
+        if (edge < 1) {
+          // Held fully down out to 55% of the radius, then eased back to full
+          // size at the rim -- a linear falloff left half-sized clouds sitting
+          // in the near field, which is still a cloud in the way.
+          const k = Math.min(1, Math.max(0, (edge - 0.55) / 0.45))
+          shrink = 1 - duck * (1 - k * k * (3 - 2 * k))
+        }
+      }
+
+      const scale = THREE.MathUtils.lerp(node.scale.z, (entry.hovered ? 1.4 : 1) * shrink, 0.1)
       node.scale.setScalar(scale)
       node.color.lerp(HOVER_COLOR.set(entry.hovered ? '#b3b2b2' : 'white'), entry.hovered ? 1 : 0.1)
     }
@@ -126,7 +165,7 @@ const CLOUD_MAGNETIC_RADIUS = 140
  *  colour, which is not on Object3D itself. */
 type InstanceRef = THREE.Object3D & { color: THREE.Color }
 
-function Cloud({ random, ...props }: CloudDatum) {
+function Cloud({ random, position, ...props }: CloudDatum) {
   const ref = useRef<InstanceRef>(null)
   const entries = useContext(CloudGroup)
   const setRainRequest = useSetAtom(rainRequest)
@@ -135,20 +174,28 @@ function Cloud({ random, ...props }: CloudDatum) {
   // Join the group's frame loop. The entry object is the only channel between
   // this component and that loop, which is why hover is written onto it
   // directly rather than held in state.
-  const entry = useRef<CloudEntry>({ node: null as unknown as InstanceRef, random, hovered: false })
+  const entry = useRef<CloudEntry>({
+    node: null as unknown as InstanceRef,
+    random,
+    hovered: false,
+    position: new THREE.Vector3(),
+  })
   useEffect(() => {
     const node = ref.current
     if (!node || !entries) return
     const self = entry.current
     self.node = node
     self.random = random
+    // The group's placement, which is where the cloud actually is. Copied
+    // once: config/store.ts rolls these at mount and never moves them again.
+    self.position.fromArray(position)
     entries.current.push(self)
     return () => {
       const list = entries.current
       const i = list.indexOf(self)
       if (i !== -1) list.splice(i, 1)
     }
-  }, [entries, random])
+  }, [entries, random, position])
 
   // Clouds used to register themselves with the hint system here, so a
   // "make it rain" caption could pick whichever one was nearest screen centre
@@ -196,7 +243,7 @@ function Cloud({ random, ...props }: CloudDatum) {
   }, [])
 
   return (
-    <group {...props}>
+    <group position={position} {...props}>
       <Instance
         ref={ref}
         onPointerOver={(e) => (e.stopPropagation(), (entry.current.hovered = true))}
