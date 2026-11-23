@@ -50,7 +50,10 @@ import { CameraHotspot } from "@/components/canvas/CameraHotspot";
 import { HotspotPortal, PORTAL_HEIGHT, portalTransformFor } from "@/components/canvas/HotspotPortal";
 import { PortalRouteSync } from "@/components/canvas/PortalRouteSync";
 import { HintAnchor } from "@/components/canvas/HintAnchor";
+import { LensAnchor } from "@/components/canvas/LensAnchor";
 import { SceneHint } from "@/components/layout/SceneHint";
+import { LensPanel } from "@/components/layout/LensPanel";
+import { useLensPanel } from "@/helpers/lensPanel";
 import { CursorDriver } from "@/components/canvas/CursorDriver";
 import { CameraLook } from "@/components/canvas/CameraLook";
 import { JourneyPath } from "@/components/canvas/JourneyPath";
@@ -438,6 +441,10 @@ export default function IslandExperience() {
   // atom reads below because the effect that follows is the first thing that
   // needs it.
   const opticsPhaseValue = useAtomValue(opticsPhase);
+  // Not an atom: the panel is opened from module scope (Scene.tsx's
+  // startOptics), which a jotai setter cannot be called from without assuming
+  // the default store. helpers/lensPanel.ts says why in full.
+  const { open: lensOpen } = useLensPanel();
   // THE OPTICS RUN IS THE FOURTH, and it is not full-screen chrome -- it is
   // the one case where the scene is fully visible and still must not be
   // touched. While the beacon is flying off its base and the camera is pulling
@@ -447,13 +454,16 @@ export default function IslandExperience() {
   // holds you still.
   useEffect(() => {
     setSceneInputSuppressed(
-      Boolean(openPortal) || mapOpen || menuOpen || opticsHoldsInput(opticsPhaseValue),
+      // `lensOpen` joins the list for the reason the others are on it: the
+      // panel has a focused text input, and a keystroke or a click meant for
+      // it must not also drive the camera underneath.
+      Boolean(openPortal) || mapOpen || menuOpen || lensOpen || opticsHoldsInput(opticsPhaseValue),
     );
     // Restoring on unmount matters more than it looks: the flag is module
     // state, so a page that unmounted while suppressed would leave the next
     // mount's scene dead.
     return () => setSceneInputSuppressed(false);
-  }, [openPortal, mapOpen, menuOpen, opticsPhaseValue]);
+  }, [openPortal, mapOpen, menuOpen, lensOpen, opticsPhaseValue]);
   // Entering/leaving a portal is expressed entirely as the wouter route
   // Card.tsx's Frame already reads (`/item/:id`), so there's no separate
   // "which portal is open" state here. All wouter calls live in
@@ -1737,6 +1747,10 @@ export default function IslandExperience() {
                 the camera so it lives in here, while the thing it positions is
                 a DOM node outside the canvas (SceneHint, below). */}
             <HintAnchor />
+            {/* Same split again: the projection needs the camera so it lives
+                in here, while the panel it positions is a DOM node outside
+                the canvas (LensPanel, below). */}
+            <LensAnchor />
             {/* Projects the avatar's head so his bubble can hang off it.
                 He has been a named node since the sky sequence needed to
                 find a subject with no skeleton; this is the first thing to
@@ -1870,6 +1884,9 @@ export default function IslandExperience() {
         {/* "Achievement unlocked", top-right under the menu. */}
         <AchievementToast />
         <SceneHint />
+        {/* The beacon's second click opens this; see Scene.tsx's startOptics.
+            Always mounted, so LensAnchor has a stable node to write to. */}
+        <LensPanel />
         {/* THE GLOBE'S PINS WENT WITH THE GLOBE.
             `<GlobeMarker />` stood here -- the DOM half of the place pins,
             always mounted so the node PlacePinsAnchor projected onto was

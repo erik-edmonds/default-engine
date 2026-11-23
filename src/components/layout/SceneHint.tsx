@@ -7,7 +7,6 @@ import { HINTS, activeHint, hintNode, type ActiveHint } from "@/helpers/hints"
 import { useCoarsePointer } from "@/helpers/useCoarsePointer"
 
 const FADE_MS = 450
-const ACCENT = "#d25a1a"
 
 // The DOM half of a scene hint: a small breathing ring with a caption beside
 // it. The ring is deliberately the same white-ring-with-a-dot as
@@ -61,9 +60,8 @@ export function SceneHint() {
   }, [hint])
 
   const config = rendered ? HINTS[rendered.id] : null
+  // Read off `rendered`, not `hint`, so the copy survives the fade-out.
   const copy = config ? config[coarse ? "coarse" : "fine"] : ""
-  // Read off `rendered`, not `hint`, so both survive the fade-out.
-  const showMarker = config?.marker ?? false
   const anchorKind = rendered?.target.kind === "screen" ? "screen" : "world"
 
   return (
@@ -71,7 +69,6 @@ export function SceneHint() {
       ref={nodeRef}
       aria-hidden="true"
       data-hint-side="right"
-      data-hint-marker={showMarker ? "true" : "false"}
       data-hint-anchor={anchorKind}
       // z-30 sits above the scene chrome (all z-10) and below the home button
       // it sometimes points at (z-50). Never interactive: a hint that can
@@ -99,33 +96,6 @@ export function SceneHint() {
           transition: `opacity ${FADE_MS}ms ease`,
         }}
       >
-        {showMarker && (
-          <>
-            <span
-              className="hint-marker-ring"
-              style={{
-                position: "absolute",
-                left: -8,
-                top: -8,
-                width: 16,
-                height: 16,
-                borderRadius: "9999px",
-                border: "1.5px solid rgba(255,255,255,0.8)",
-              }}
-            />
-            <span
-              style={{
-                position: "absolute",
-                left: -2.5,
-                top: -2.5,
-                width: 5,
-                height: 5,
-                borderRadius: "9999px",
-                background: ACCENT,
-              }}
-            />
-          </>
-        )}
         {/* Same caption system as InteractionHint and HotspotJoystick's
             direction readout: Nunito 600, uppercase, 0.08em tracking, 2px
             corners, black glass. */}

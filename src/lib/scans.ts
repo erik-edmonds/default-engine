@@ -58,11 +58,50 @@ const UNREACHABLE = new Set([
   "EPIPE",
 ])
 
+/** The same state, reported by node-postgres ITSELF rather than by a socket --
+ *  and these carry no `code` at all, which is the whole problem.
+ *
+ *  THE "NEVER ON A MESSAGE" RULE ABOVE STILL HOLDS, and this is not a quiet
+ *  exception to it. That rule is about POSTGRES SERVER errors: those arrive
+ *  over the wire with a SQLSTATE, their text is localised, and it changes
+ *  between major versions, so matching the text when a code is right there is
+ *  simply worse. None of that applies here. These three strings are written in
+ *  JavaScript by pg, in a process that never reached a server, and pg attaches
+ *  no code to any of them:
+ *
+ *    pg-pool/index.js:276  new Error('Connection terminated due to connection timeout', { cause })
+ *    pg-pool/index.js:224  new Error('timeout exceeded when trying to connect')
+ *    pg/lib/client.js:204  new Error('Connection terminated unexpectedly')
+ *
+ *  There is no code to match. The string is the only handle the library gives,
+ *  so matching it is the only way to tell this apart from a query that failed
+ *  -- and telling those two apart is the distinction this whole file is built
+ *  on.
+ *
+ *  FOUND ON VERCEL, not locally. `connectionTimeoutMillis` in lib/db.ts gives
+ *  Neon 5 seconds to wake from zero; a build runner that cannot reach it at all
+ *  spends those 5 seconds and then throws the first error above, which fell
+ *  straight through this guard and killed the deploy with
+ *  `Failed to collect page data for /scan/[id]`. Raising the timeout does not
+ *  fix that -- there is nothing on the other end to answer slowly -- and a
+ *  build that needs a database to render a page that has a static fallback is
+ *  the exact thing UNREACHABLE was added to prevent. */
+const PG_NO_CONNECTION = new Set([
+  "Connection terminated due to connection timeout",
+  "timeout exceeded when trying to connect",
+  "Connection terminated unexpectedly",
+])
+
 function isUnreachable(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false
-  const e = error as { code?: string; errors?: unknown[] }
+  const e = error as { code?: string; message?: string; errors?: unknown[]; cause?: unknown }
   if (typeof e.code === "string" && UNREACHABLE.has(e.code)) return true
-  return Array.isArray(e.errors) && e.errors.some(isUnreachable)
+  if (typeof e.message === "string" && PG_NO_CONNECTION.has(e.message)) return true
+  if (Array.isArray(e.errors) && e.errors.some(isUnreachable)) return true
+  // The pool's timeout error carries the socket's own failure as `cause`, so
+  // the transport code that explains it is one level down rather than in
+  // `errors`. Checked after the list above, which is the common path.
+  return e.cause !== undefined && isUnreachable(e.cause)
 }
 
 /** The scan registry: Postgres when there is one, the static table otherwise.

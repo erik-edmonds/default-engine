@@ -112,6 +112,16 @@ export const opticsRun = {
    *  running inside the frame loop, with nothing useful to say to React. */
   beacon: new THREE.Vector3(),
 
+  /** Is the pointer on the beacon right now?
+   *
+   *  Written by Beacon.tsx, read by BeaconLure.tsx's frame callback so the
+   *  ring on the pier tightens and quickens under the cursor. A module value
+   *  rather than lifted React state for the usual reason this file and
+   *  helpers/sunTracker.ts both give: the reader runs inside the frame loop
+   *  and has nothing useful to say to React, and hovering a prop is not worth
+   *  a re-render of the scene tree. */
+  hovered: false,
+
   /** Fire a run. Allocates nothing.
    *
    *  THE SECOND CLICK SKIPS THE TOUR, and it does so by starting the clock

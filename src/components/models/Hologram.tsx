@@ -1,5 +1,6 @@
 import { Base } from '@/components/models/Base'
 import { BeaconCompanion } from '@/components/canvas/BeaconCompanion'
+import { BeaconLure } from '@/components/canvas/BeaconLure'
 
 type HologramProps = {
   /** Where the hologram stands, in island world space. Owned by the CALL SITE
@@ -35,6 +36,11 @@ export function Hologram(props: HologramProps) {
         onActivate={props.onActivate}
       />
       <Base scale={props.scale * 1.25} position={[x, y, z]} />
+      {/* The "click me", in the scene rather than over it. Sits on the
+          pedestal's own plane and not on the beacon's, so it stays on the pier
+          when the beacon leaves -- and it stops drawing at that moment anyway.
+          See BeaconLure for what it replaced. */}
+      <BeaconLure position={[x, y, z]} scale={props.scale * 1.25} />
     </>
   )
 }

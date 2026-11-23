@@ -25,7 +25,7 @@ import { atom } from "jotai"
 // single "the scene is interactive at all" onboarding beat and finishes long
 // before either of these can fire.
 
-export type HintId = "beacon" | "portalEnter" | "portalExit"
+export type HintId = "portalEnter" | "portalExit"
 
 /** Where a hint pins itself.
  *
@@ -55,38 +55,22 @@ export interface ActiveHint {
   target: HintTarget
 }
 
-// Copy, plus whether the hint draws its marker dot.
-//
-// Two copy variants only where the gesture itself differs by input device -- a
-// portal opens on double-click with a mouse and on a long press by touch
+// Copy. Two variants only where the gesture itself differs by input device --
+// a portal opens on double-click with a mouse and on a long press by touch
 // (Card.tsx). Rendered uppercase by CSS, so these stay sentence case here.
 //
-// `marker` is false for the two portal beats, and that is not a coincidence:
-// the dot exists to single out one small prop in a busy scene, and those two
-// point at the thing filling the frame and at a button in the corner. A dot
-// beside the caption there is clutter hanging off the text.
-//
-// `beacon` is the first to set it TRUE, and it is the case the marker was
-// written for -- a small glowing sphere at the end of a pier, in a scene with
-// a waterfall, three palms and four floating islands competing for the eye.
-// `hint-marker-breathe` in globals.css has been sitting unused since the
-// discovery hints were removed; its own comment calls it "the same sonar
-// breath CameraHotspot's rings use on hover, running continuously here because
-// a hint has to catch an eye that isn't already on it."
-export const HINTS: Record<HintId, { fine: string; coarse: string; marker: boolean }> = {
-  beacon: { fine: "Click the beacon to scan", coarse: "Tap the beacon to scan", marker: true },
-  portalEnter: { fine: "Double-click to enter", coarse: "Press and hold to enter", marker: false },
-  portalExit: { fine: "Click home to exit", coarse: "Tap home to exit", marker: false },
+// A `marker` flag sat beside the copy, saying whether a hint drew a breathing
+// dot on its subject. It went with the beacon hint, which was the only row
+// that ever set it true. THE BEACON ADVERTISES ITSELF IN THE WORLD NOW -- a
+// ring widening on the pier under it, see canvas/BeaconLure.tsx -- because a
+// caption floating over the scene to say "click the glowing thing" was chrome
+// sitting on top of the one view the whole page is built to show. Both hints
+// left are instructions about chrome or about a gesture, which is exactly the
+// kind of thing a caption is for and a glowing ring is not.
+export const HINTS: Record<HintId, { fine: string; coarse: string }> = {
+  portalEnter: { fine: "Double-click to enter", coarse: "Press and hold to enter" },
+  portalExit: { fine: "Click home to exit", coarse: "Tap home to exit" },
 }
-
-/** How near the camera has to be for the beacon hint to show.
- *
- *  The beacon sits 8.5 units from the home viewpoint, and 30-plus from the
- *  three destination viewpoints. 14 cleanly separates "you are looking at the
- *  beach" from "you are across the water at another island", which is the same
- *  distinction PORTAL_HINT_MAX_DISTANCE draws and for the same reason: being
- *  on screen is not enough for an instruction you cannot act on. */
-export const BEACON_HINT_MAX_DISTANCE = 14
 
 /** Where the portalExit caption starts: immediately to the right of the 56px
  *  home logo and vertically centred on it, so it reads as a label *for* the

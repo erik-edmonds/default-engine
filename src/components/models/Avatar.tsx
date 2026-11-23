@@ -1,7 +1,6 @@
 import type { ThreeElements } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useRef, useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
 import { useAnimations } from '@react-three/drei'
 import { SkeletonUtils } from 'three-stdlib'
 import { useGLTF } from '@/helpers/useGLTF'
@@ -79,45 +78,33 @@ export function Avatar(props: ThreeElements['group']) {
     actions["Idle"]?.reset().play()
   }, [actions])
 
-  // MIRROR THE RIGHT ARM ONTO THE LEFT, every frame, after the mixer.
+  // THE ARMS ARE LEFT EXACTLY AS THE RIG AND THE CLIP AUTHOR THEM, and that
+  // is a decision rather than an omission.
   //
-  // The left arm hangs wrong, and it is the CLIP, not the rig or anything this
-  // app does. Decoded from base.glb: "Idle_Subtle" has 62 keys on rotation for
-  // all eight arm bones, so no track is missing -- the two sides are simply
-  // posed differently. The clavicles are the tell, because they ARE an exact
-  // mirror (dirY [-0.155, 0.238, 0.959] against [+0.155, 0.238, 0.959]) while
-  // the bones hanging off them are not:
+  // base.glb is asymmetric in two measurable ways. `upperarm_l` rests 31.2
+  // degrees away from the mirror of `upperarm_r` -- the clavicles mirror
+  // exactly under (x, -y, -z, w), so that convention is the rig's own and the
+  // shoulders simply do not follow it. And the left forearm and hand sit
+  // 0.209 / 0.201 from their parents against the right's 0.150 / 0.140, a left
+  // arm 41% longer than the right.
   //
-  //     upperarm_l  dirY [-0.738, 0.019, -0.675]
-  //     upperarm_r  dirY [+0.500, 0.382, -0.778]
+  // Two corrections were tried here and both were rejected on sight:
   //
-  // 0.019 against 0.382 is about twenty-two degrees of shoulder, held for the
-  // whole clip. A rig that mirrors at the clavicle and diverges below it is
-  // an authoring slip, not deliberate asymmetry.
+  //   1. Writing the right bone's mirrored ABSOLUTE quaternion onto the left.
+  //      It squares the arms up and plants the left shoulder 31 degrees
+  //      outside the orientation its skin was bound for, which splays the
+  //      sleeve -- and the hoodie is one mesh across both shoulders, so both
+  //      sides read wrong.
+  //   2. Mirroring the clip's MOTION relative to each bone's own rest pose,
+  //      plus copying the right forearm and hand lengths onto the left. That
+  //      keeps every bone in the space its weights expect, and the silhouette
+  //      came out narrower and more sloped than the model is meant to be.
   //
-  // Mirroring across the body's YZ plane is `(x, -y, -z, w)` -- which is
-  // exactly the relationship the clavicles and the bind pose already use, so
-  // this is the rig's own convention rather than an invention.
-  //
-  // AFTER THE MIXER: drei's useAnimations registers its frame callback inside
-  // the hook above, so this one -- registered later at the same priority --
-  // runs after it each frame and has the last word. Writing it in an effect
-  // instead would be overwritten on the very next tick.
-  const arms = useRef<[THREE.Object3D, THREE.Object3D][] | null>(null)
-  useFrame(() => {
-    if (arms.current === null) {
-      const pairs: [THREE.Object3D, THREE.Object3D][] = []
-      for (const base of ["upperarm", "lowerarm", "hand"]) {
-        const l = model.getObjectByName(`${base}_l`)
-        const r = model.getObjectByName(`${base}_r`)
-        if (l && r) pairs.push([l, r])
-      }
-      arms.current = pairs
-    }
-    for (const [l, r] of arms.current) {
-      l.quaternion.set(r.quaternion.x, -r.quaternion.y, -r.quaternion.z, r.quaternion.w)
-    }
-  })
+  // The asymmetry is in the asset. Fixing it in a frame callback means fighting
+  // skin weights that were authored around it, and every version of that fight
+  // has looked worse than leaving it alone. If the arms are to match, the rig
+  // is the place -- rebind the left arm in Blender and re-export, and this file
+  // needs nothing at all.
 
   return (
     <group ref={group} {...props} dispose={null}>

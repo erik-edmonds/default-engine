@@ -86,6 +86,39 @@ export const OPTICS_SCAN_REACH = 78
  *  within a rounding error of the tour ending at 2.8. */
 export const OPTICS_CAMERA_AT = 1.4
 
+/** The pull-back's curve: slow out, peak speed as the tour ends, settling in.
+ *
+ *  A smoothstep over a WARPED input. Smoothstep's velocity peaks where its
+ *  input passes 0.5, so feeding it `p^k` moves that peak to `p = 0.5^(1/k)`.
+ *  At k = 2.5 the peak lands at p = 0.758, and across a 1.8-second flight
+ *  starting at OPTICS_CAMERA_AT (1.4s) that is t = 2.76 -- within a rounding
+ *  error of the 2.8s the beacon's tour ends. Which is the whole point: the
+ *  camera is barely moving while the beacon is the thing to watch, and is
+ *  fastest exactly as the beacon stops being it. Measured on a capture: peak
+ *  frame-to-frame motion at t = 2.80, the first sample at or after 2.76.
+ *
+ *  A FUNCTION, NOT AN EASE STRING, because none of gsap's named curves put
+ *  their peak anywhere but the middle (power*.inOut) or an endpoint
+ *  (power*.in / .out). gsap core accepts a function; no plugin, no new
+ *  dependency. A spring was the other candidate and is the wrong instrument:
+ *  its velocity peak falls out of stiffness and damping rather than being
+ *  something you can place at a named moment.
+ *
+ *  Stays inside [0, 1] for every p in [0, 1], which it has to -- flyTo feeds
+ *  this same curve to slerpQuaternions, and extrapolating past the destination
+ *  orientation whips the camera.
+ *
+ *  IT LIVES HERE RATHER THAN IN OpticsCamera BECAUSE TWO THINGS RIDE IT NOW.
+ *  The camera flies on it, and BeaconCompanion blends the beacon off its world
+ *  path and onto the screen anchor on the same curve -- which is what keeps
+ *  the beacon travelling WITH the camera instead of being left behind by it.
+ *  Two copies of this function would be two different pull-backs the first
+ *  time anyone tuned one of them. */
+export function opticsPullBackEase(p: number): number {
+  const q = Math.pow(p, 2.5)
+  return q * q * (3 - 2 * q)
+}
+
 /** The sweep begins once the beacon has settled. It no longer waits for the
  *  camera: the flight starts at OPTICS_CAMERA_AT and has arrived by 3.2,
  *  comfortably before this. That also unpicks a coupling that was easy to trip

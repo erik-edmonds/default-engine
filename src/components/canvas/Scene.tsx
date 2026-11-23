@@ -23,13 +23,23 @@ import { useAtomValue } from "jotai"
 import { Sign } from "@/components/models/Sign"
 import { Hologram } from "@/components/models/Hologram"
 import { opticsRun } from "@/helpers/optics"
+import { openLensPanel } from "@/helpers/lensPanel"
 import { OpticsPulse } from "@/components/canvas/OpticsPulse"
 import { DetectionBrackets } from "@/components/canvas/DetectionBrackets"
 
 /** Module scope, so the identity is stable for the session. The beacon
  *  re-registers its magnetic target whenever this changes, and an inline arrow
- *  would hand it a new function on every render of this component. */
-const startOptics = () => { opticsRun.start() }
+ *  would hand it a new function on every render of this component.
+ *
+ *  ONE CALLBACK, TWO JOBS, and the return value is what picks between them.
+ *  `start()` returns false once the island has already been surveyed --
+ *  helpers/optics.ts spells out that the scan runs once and that a second
+ *  click is what should open the AI. So this is the whole of that handover:
+ *  the first click scans, every click after it opens the panel. The beacon
+ *  stops being the dead control layout/Icon.tsx warns about. */
+const startOptics = () => {
+  if (!opticsRun.start()) openLensPanel()
+}
 
 export function Scene({ from, day, transitionSeconds, pokeballRef, showSeagulls = true }: { from: TimeOfDay; day: TimeOfDay; transitionSeconds?: number; pokeballRef?: React.Ref<PokeballHandle>; showSeagulls?: boolean }) {
     // The island itself is the cursor's depth reference. Registered as a

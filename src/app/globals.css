@@ -427,30 +427,17 @@ body {
   }
 }
 
-/* SceneHint's marker -- the same sonar breath CameraHotspot's rings use on
-   hover, running continuously here because a hint has to catch an eye that
-   isn't already on it. Scale only (no width/height), so it can't reflow the
-   caption sitting beside it. */
-@keyframes hint-marker-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.5; }
-  50% { transform: scale(1.55); opacity: 1; }
-}
+/* THE MARKER IS GONE, and with it `hint-marker-breathe` and
+   `.hint-marker-ring`. One hint ever drew that breathing dot -- the beacon's
+   -- and the beacon advertises itself in the scene now, with a ring widening
+   on the pier beneath it (canvas/BeaconLure.tsx). Both hints left are
+   captions about a gesture or about chrome, and neither has a small prop in
+   the scene to single out.
 
-.hint-marker-ring {
-  animation: hint-marker-breathe 2.4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hint-marker-ring {
-    animation: none;
-    opacity: 0.85;
-  }
-}
-
-/* With a marker, the caption hangs off its point, and flips to the marker's
-   left near the right edge of the viewport where a right-hand caption would
-   run off frame (HintAnchor sets data-hint-side each frame from the projected
-   x). Without one, the caption IS the hint and sits on the point itself. */
+   The caption is therefore always the hint itself, and sits on its own
+   anchor point; the side flip below is what keeps it inside the frame near
+   the right edge (HintAnchor sets data-hint-side each frame from the
+   projected x). */
 .hint-label {
   position: absolute;
   top: 0;
@@ -463,20 +450,20 @@ body {
   right: 18px;
 }
 
-/* Markerless + world-anchored (the portal's "double-click to enter"): centred
-   on the anchor, which sits just under the portal frame. The portal is always
-   dead centre of frame at its viewpoint, so there's no edge to flip away
-   from and the side rules above are overridden outright. */
-[data-hint-marker="false"][data-hint-anchor="world"] .hint-label {
+/* World-anchored (the portal's "double-click to enter"): centred on the
+   anchor, which sits just under the portal frame. The portal is always dead
+   centre of frame at its viewpoint, so there's no edge to flip away from and
+   the side rules above are overridden outright. */
+[data-hint-anchor="world"] .hint-label {
   left: 0;
   right: auto;
   transform: translate(-50%, -50%);
 }
 
-/* Markerless + screen-anchored (the home button's "click home to exit"):
-   starts at the anchor and is centred on its line, so it reads level with the
-   button rather than hanging below it. */
-[data-hint-marker="false"][data-hint-anchor="screen"] .hint-label {
+/* Screen-anchored (the home button's "click home to exit"): starts at the
+   anchor and is centred on its line, so it reads level with the button rather
+   than hanging below it. */
+[data-hint-anchor="screen"] .hint-label {
   left: 0;
   right: auto;
   transform: translateY(-50%);
@@ -2054,4 +2041,54 @@ html[data-keyboard="true"] .keyboard-rail {
 @media (max-width: 640px) {
   .sfm-live-hud { max-width: 11rem; font-size: 0.9em }
   .sfm-button { font-size: 0.8rem; padding: 0.55rem 0.8rem }
+}
+
+/* ------------------------------------------------------------------ *
+ * The lens panel (layout/LensPanel.tsx)
+ *
+ * Only the handful of things React cannot express inline live here: a
+ * keyframe, a placeholder pseudo-element, and two interaction states. Every
+ * layout and colour decision stays in the component, next to the markup it
+ * applies to, which is the split the cursor block above argues for at length
+ * -- this project's dev server has served half-stale CSS more than once, and
+ * anything that decides whether the panel is READABLE must not depend on a
+ * stylesheet arriving intact.
+ * ------------------------------------------------------------------ */
+
+/* Shared by the status dot and the thinking indicator, so the two obviously
+   belong to the same state rather than merely happening at the same time. */
+@keyframes lens-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+.lens-input::placeholder {
+  color: rgba(255, 255, 255, 0.38);
+  /* Not uppercase, unlike the labels. A placeholder is a sentence someone is
+     about to replace with their own, and small caps makes it read as a
+     heading for the field instead. */
+  letter-spacing: 0;
+}
+
+.lens-starter {
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.lens-starter:hover,
+.lens-starter:focus-visible {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* The one focus ring in the panel, in the site accent. Keyboard only: a
+   mouse user who has just clicked a starter does not need to be told where
+   the focus went. */
+.lens-starter:focus-visible,
+.lens-input:focus-visible {
+  outline: 1px solid #d25a1a;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lens-starter { transition: none; }
 }

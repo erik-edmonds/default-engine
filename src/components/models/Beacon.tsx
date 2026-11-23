@@ -12,6 +12,7 @@ import {
   registerMagneticTarget,
   type MagneticTarget,
 } from "@/helpers/cursor"
+import { opticsRun } from "@/helpers/optics"
 import { useCursorHover } from "@/helpers/useCursorHover"
 import { useSfx } from "@/helpers/useSfx"
 
@@ -58,6 +59,18 @@ export function Beacon({ route = "/", onActivate }: BeaconProps) {
   // scene draws its own cursor) and actively harmful (an inline style on
   // <body> beats the rule that hides the native one).
   useCursorHover(hovered, "interactive")
+
+  // Publish it for the lure ring on the pier, which lives in a frame callback
+  // and tightens under the cursor. An effect rather than a write during
+  // render: this is state crossing out of React, and writing it while
+  // rendering is the "cannot modify during render" rule the compiler lint
+  // enforces elsewhere in this project.
+  useEffect(() => {
+    opticsRun.hovered = hovered
+    return () => {
+      opticsRun.hovered = false
+    }
+  }, [hovered])
 
   /** The registered target, kept so the JSX click can route through it. */
   const magnet = useRef<MagneticTarget | null>(null)
